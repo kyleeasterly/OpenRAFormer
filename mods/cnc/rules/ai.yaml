@@ -99,7 +99,7 @@ Player:
 		SiloTypes: silo
 		DefenseTypes: gtwr,gun,atwr,obli,sam
 		BuildingLimits:
-			proc: 4
+			proc: 8
 			pyle: 3
 			hand: 3
 			hq: 1
@@ -111,7 +111,7 @@ Player:
 			fix: 1
 			silo: 1
 		BuildingFractions:
-			proc: 20
+			proc: 25
 			pyle: 5
 			hand: 5
 			hq: 4
@@ -143,7 +143,7 @@ Player:
 		SiloTypes: silo
 		DefenseTypes: gtwr,gun,atwr,obli,sam
 		BuildingLimits:
-			proc: 4
+			proc: 6
 			pyle: 3
 			hand: 3
 			hq: 1
@@ -155,7 +155,7 @@ Player:
 			fix: 1
 			silo: 1
 		BuildingFractions:
-			proc: 17
+			proc: 23
 			pyle: 2
 			hand: 2
 			hq: 1
@@ -187,7 +187,7 @@ Player:
 		SiloTypes: silo
 		DefenseTypes: gtwr,gun,atwr,obli,sam
 		BuildingLimits:
-			proc: 4
+			proc: 12
 			pyle: 4
 			hand: 4
 			hq: 1
@@ -199,7 +199,7 @@ Player:
 			fix: 1
 			silo: 1
 		BuildingFractions:
-			proc: 17
+			proc: 28
 			pyle: 7
 			hand: 9
 			hq: 1
@@ -233,7 +233,6 @@ Player:
 			e3: 40
 			e4: 15
 			e5: 15
-			harv: 10
 			bggy: 5
 			bike: 40
 			ltnk: 25
@@ -253,6 +252,7 @@ Player:
 		McvTypes: mcv
 		ConstructionYardTypes: fact
 		McvFactoryTypes: weap,afld
+		MinimumConstructionYardCount: 2
 	SquadManagerBotModule@watson:
 		RequiresCondition: enable-watson-ai
 		SquadSize: 15
@@ -270,7 +270,6 @@ Player:
 			e3: 40
 			e4: 30
 			e5: 30
-			harv: 10
 			bggy: 10
 			ftnk: 10
 			arty: 40
@@ -302,7 +301,6 @@ Player:
 			e3: 40
 			e4: 50
 			e5: 50
-			harv: 16
 			bggy: 10
 			bike: 10
 			ltnk: 40

@@ -126,14 +126,15 @@ namespace OpenRA.Mods.Common.Traits
 
 		bool ShouldBuildMCV()
 		{
-			// Only build MCV if we don't already have one in the field.
-			var allowedToBuildMCV = AIUtils.CountActorByCommonName(mcvs) == 0;
+			var currentBases = AIUtils.CountActorByCommonName(constructionYards);
+
+			// Allow building MCV if we need more bases and don't already have an MCV per base
+			var allowedToBuildMCV = AIUtils.CountActorByCommonName(mcvs) < Info.MinimumConstructionYardCount - currentBases;
 			if (!allowedToBuildMCV)
 				return false;
 
 			// Build MCV if we don't have the desired number of construction yards, unless we have no factory (can't build it).
-			return AIUtils.CountActorByCommonName(constructionYards) < Info.MinimumConstructionYardCount &&
-				AIUtils.CountActorByCommonName(mcvFactories) > 0;
+			return currentBases < Info.MinimumConstructionYardCount && AIUtils.CountActorByCommonName(mcvFactories) > 0;
 		}
 
 		void DeployMcvs(IBot bot, bool chooseLocation)
