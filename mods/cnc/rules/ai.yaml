@@ -247,8 +247,14 @@ Player:
 			orca: 5
 		UnitLimits:
 			harv: 8
-	McvManagerBotModule@cabal-watson:
-		RequiresCondition: enable-cabal-ai || enable-watson-ai
+	McvManagerBotModule@cabal:
+		RequiresCondition: enable-cabal-ai
+		McvTypes: mcv
+		ConstructionYardTypes: fact
+		McvFactoryTypes: weap,afld
+		MinimumConstructionYardCount: 2
+	McvManagerBotModule@watson:
+		RequiresCondition: enable-watson-ai
 		McvTypes: mcv
 		ConstructionYardTypes: fact
 		McvFactoryTypes: weap,afld
