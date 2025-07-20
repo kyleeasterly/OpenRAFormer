@@ -44,6 +44,15 @@ namespace OpenRA.Mods.Common.Traits
 		[Desc("Should deployment of additional MCVs be restricted to MaxBaseRadius if explicit deploy locations are missing or occupied?")]
 		public readonly bool RestrictMCVDeploymentFallbackToBase = true;
 
+		[Desc("Prefer deploying MCVs near resource patches outside the base.")]
+		public readonly bool PreferResourceExpansion = false;
+
+		[Desc("Number of resource cells to check when considering expansion locations.")]
+		public readonly int MaxResourceCellsToCheck = 10;
+
+		[Desc("Minimum distance from existing bases when expanding to resources.")]
+		public readonly int MinResourceExpansionDistance = 30;
+
 		public override object Create(ActorInitializer init) { return new McvManagerBotModule(init.Self, this); }
 	}
 
@@ -203,6 +212,33 @@ namespace OpenRA.Mods.Common.Traits
 
 			var baseCenter = GetRandomBaseCenter();
 
+			// Try to find resource patches for expansion
+			if (Info.PreferResourceExpansion && !distanceToBaseIsImportant)
+			{
+				var resourceLayer = world.WorldActor.TraitOrDefault<IResourceLayer>();
+				if (resourceLayer != null)
+				{
+					// Find resource cells far from existing bases
+					var minDistanceSquared = Info.MinResourceExpansionDistance * Info.MinResourceExpansionDistance;
+					var resourceCells = world.Map.AllCells
+						.Where(c => resourceLayer.GetResource(c).Type != null
+							&& resourceLayer.IsVisible(c)  // Respect fog of war
+							&& (c - baseCenter).LengthSquared > minDistanceSquared)
+						.OrderBy(c => (c - baseCenter).LengthSquared)  // Prefer closer resources
+						.Take(Info.MaxResourceCellsToCheck)
+						.ToList();
+
+					foreach (var resourceCell in resourceCells)
+					{
+						// Check if we can build near this resource
+						var location = FindPos(resourceCell, resourceCell, 3, 10);
+						if (location != null)
+							return location;
+					}
+				}
+			}
+
+			// Fallback to current logic
 			return FindPos(baseCenter, baseCenter, Info.MinBaseRadius,
 				distanceToBaseIsImportant ? Info.MaxBaseRadius : world.Map.Grid.MaximumTileSearchRange);
 		}
