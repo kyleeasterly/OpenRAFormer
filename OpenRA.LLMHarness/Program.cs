@@ -165,6 +165,14 @@ namespace OpenRA.LLMHarness
                     return;
                 }
 
+                // Skip menu/lobby states
+                if (gameState.Contains("Blank Shellmap") || gameState.Contains("Map: Shellmap") || 
+                    !gameState.Contains("Resource Cells:"))
+                {
+                    Console.WriteLine("Skipping menu/lobby state.");
+                    return;
+                }
+
                 Console.WriteLine($"Read {gameState.Length} characters from file.");
 
                 // Construct the prompt
