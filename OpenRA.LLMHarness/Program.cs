@@ -12,6 +12,7 @@ namespace OpenRA.LLMHarness
 	sealed class Program
 	{
 		const string WatchDirectory = @"C:\OpenRATest";
+		const string LogDirectory = @"C:\OpenRATest\LLM_Coach_Logs";
 		const string OllamaApiUrl = "http://localhost:11434/api/generate";
 		const string ModelName = "pidrilkin/gemma3_27b_abliterated:Q4_K_M";
 		static readonly HttpClient HttpClient = new() { Timeout = TimeSpan.FromMinutes(5) };
@@ -21,16 +22,32 @@ namespace OpenRA.LLMHarness
 			PropertyNamingPolicy = JsonNamingPolicy.CamelCase
 		};
 		static bool VerboseMode = false;
+		static string? CurrentLogFile;
 
 		static async Task Main()
 		{
 			Console.WriteLine("OpenRA LLM Harness Starting...");
 
-			// Create watch directory if it doesn't exist
+			// Create directories if they don't exist
 			if (!Directory.Exists(WatchDirectory))
 			{
 				Directory.CreateDirectory(WatchDirectory);
 			}
+			
+			if (!Directory.Exists(LogDirectory))
+			{
+				Directory.CreateDirectory(LogDirectory);
+			}
+
+			// Initialize log file for this session
+			var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+			CurrentLogFile = Path.Combine(LogDirectory, $"llm_coach_log_{timestamp}.txt");
+			Console.WriteLine($"Logging to: {CurrentLogFile}");
+			
+			await LogToFileAsync($"=== OpenRA LLM Coach Session Started at {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
+			await LogToFileAsync($"Model: {ModelName}");
+			await LogToFileAsync($"Watch Directory: {WatchDirectory}");
+			await LogToFileAsync("");
 
 			// Test Ollama API connectivity
 			if (!await TestOllamaConnection())
@@ -70,6 +87,7 @@ namespace OpenRA.LLMHarness
 			}
 
 			Console.WriteLine("Shutting down...");
+			await LogToFileAsync($"\n=== Session Ended at {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
 		}
 
 		static async Task<bool> TestOllamaConnection()
@@ -145,9 +163,14 @@ namespace OpenRA.LLMHarness
 
 			try
 			{
-				Console.WriteLine($"\n{new string('=', 80)}");
+				var separator = new string('=', 80);
+				Console.WriteLine($"\n{separator}");
 				Console.WriteLine($"Processing file: {Path.GetFileName(filePath)}");
-				Console.WriteLine(new string('=', 80));
+				Console.WriteLine(separator);
+				
+				await LogToFileAsync($"\n{separator}");
+				await LogToFileAsync($"Processing file: {Path.GetFileName(filePath)} at {DateTime.Now:HH:mm:ss}");
+				await LogToFileAsync(separator);
 
 				// Read the game state with retry logic for file access
 				var gameState = "";
@@ -186,6 +209,11 @@ namespace OpenRA.LLMHarness
 				var prompt = BuildPrompt(gameState);
 				Console.WriteLine($"Built prompt with {prompt.Length} characters.");
 
+				// Always log the full prompt to file
+				await LogToFileAsync("\n=== FULL PROMPT TO LLM ===");
+				await LogToFileAsync(prompt);
+				await LogToFileAsync("=== END OF PROMPT ===\n");
+
 				// Display full prompt in verbose mode
 				if (VerboseMode)
 				{
@@ -210,6 +238,11 @@ namespace OpenRA.LLMHarness
 			{
 				Console.WriteLine("\nSending prompt to Ollama API (streaming)...");
 				Console.WriteLine("\n=== LLM Response ===");
+				
+				await LogToFileAsync("Sending prompt to Ollama API...");
+				await LogToFileAsync("\n=== LLM RESPONSE ===");
+				
+				var responseBuilder = new StringBuilder();
 
 				var request = new
 				{
@@ -244,15 +277,22 @@ namespace OpenRA.LLMHarness
 							{
 								// Stream the response to console as it arrives
 								Console.Write(responseObj.Response);
+								responseBuilder.Append(responseObj.Response);
 							}
 
 							if (responseObj?.Done == true)
 							{
 								Console.WriteLine("\n===================\n");
+								
+								// Log the complete response
+								await LogToFileAsync(responseBuilder.ToString());
+								await LogToFileAsync("===================");
+								
 								if (responseObj.TotalDuration > 0)
 								{
 									var seconds = responseObj.TotalDuration / 1_000_000_000.0;
 									Console.WriteLine($"Generation completed in {seconds:F2} seconds");
+									await LogToFileAsync($"Generation completed in {seconds:F2} seconds");
 								}
 
 								break;
@@ -330,6 +370,21 @@ namespace OpenRA.LLMHarness
 			sb.AppendLine("Based on the game knowledge above and current state, what should the player do next?");
 
 			return sb.ToString();
+		}
+
+		static async Task LogToFileAsync(string message)
+		{
+			if (string.IsNullOrEmpty(CurrentLogFile))
+				return;
+				
+			try
+			{
+				await File.AppendAllTextAsync(CurrentLogFile, message + Environment.NewLine);
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"Warning: Failed to write to log file: {ex.Message}");
+			}
 		}
 
 		sealed class OllamaResponse
