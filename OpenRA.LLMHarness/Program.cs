@@ -1,8 +1,9 @@
 using System;
-using System.Diagnostics;
-using System.Globalization;
 using System.IO;
+using System.Linq;
+using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -11,13 +12,14 @@ namespace OpenRA.LLMHarness
     sealed class Program
     {
         private const string WatchDirectory = @"C:\OpenRATest";
-        private const string OllamaCommand = "ollama";
-        private const string OllamaArgs = "run pidrilkin/gemma3_27b_abliterated:Q4_K_M";
-        private static Process? ollamaProcess;
+        private const string OllamaApiUrl = "http://localhost:11434/api/generate";
+        private const string ModelName = "pidrilkin/gemma3_27b_abliterated:Q4_K_M";
+        private static readonly HttpClient httpClient = new HttpClient() { Timeout = TimeSpan.FromMinutes(5) };
         private static readonly HashSet<string> processedFiles = new HashSet<string>();
-        private static readonly StringBuilder responseBuffer = new StringBuilder();
-        private static readonly object lockObject = new object();
-        private static bool isWaitingForResponse = false;
+        private static readonly JsonSerializerOptions jsonOptions = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
 
         static async Task Main(string[] args)
         {
@@ -29,14 +31,10 @@ namespace OpenRA.LLMHarness
                 Directory.CreateDirectory(WatchDirectory);
             }
 
-            // Start Ollama process
-            try
+            // Test Ollama API connectivity
+            if (!await TestOllamaConnection())
             {
-                await StartOllamaAsync();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Failed to start Ollama: {ex.Message}");
+                Console.WriteLine("Failed to connect to Ollama API. Make sure Ollama is running.");
                 return;
             }
 
@@ -64,107 +62,40 @@ namespace OpenRA.LLMHarness
                 }
             }
 
-            // Cleanup
             Console.WriteLine("Shutting down...");
-            StopOllama();
         }
 
-        private static async Task StartOllamaAsync()
+        private static async Task<bool> TestOllamaConnection()
         {
-            ollamaProcess = new Process();
-
-            ollamaProcess.StartInfo = new ProcessStartInfo
+            try
             {
-                FileName = OllamaCommand,
-                Arguments = OllamaArgs,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                RedirectStandardInput = true,
-                CreateNoWindow = true,
-                UseShellExecute = false
-            };
-
-            Console.WriteLine($"Starting process: {ollamaProcess.StartInfo.FileName} {ollamaProcess.StartInfo.Arguments}");
-
-            DataReceivedEventHandler outputHandler = (sender, args) =>
-            {
-                if (args.Data != null)
+                Console.WriteLine("Testing Ollama API connection...");
+                var testRequest = new
                 {
-                    var timestamp = DateTime.Now.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture);
-                    Console.WriteLine($"[{timestamp}] [Ollama Output]: {args.Data}");
+                    model = ModelName,
+                    prompt = "Say 'OK' if you're working.",
+                    stream = false
+                };
 
-                    lock (lockObject)
-                    {
-                        if (isWaitingForResponse)
-                        {
-                            responseBuffer.AppendLine(args.Data);
-                        }
-                    }
-                }
-            };
+                var json = JsonSerializer.Serialize(testRequest, jsonOptions);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-            DataReceivedEventHandler errorHandler = (sender, args) =>
-            {
-                if (args.Data != null && args.Data.Trim() != "")
+                var response = await httpClient.PostAsync(OllamaApiUrl, content);
+                if (response.IsSuccessStatusCode)
                 {
-                    var timestamp = DateTime.Now.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture);
-                    Console.WriteLine($"[{timestamp}] [Ollama Error]: {args.Data}");
+                    Console.WriteLine("Ollama API is responding!");
+                    return true;
                 }
-            };
-
-            ollamaProcess.OutputDataReceived += outputHandler;
-            ollamaProcess.ErrorDataReceived += errorHandler;
-
-            ollamaProcess.Start();
-            ollamaProcess.BeginOutputReadLine();
-            ollamaProcess.BeginErrorReadLine();
-
-            Console.WriteLine($"Process started with PID: {ollamaProcess.Id}");
-            Console.WriteLine("Waiting 5 seconds for Ollama to initialize...");
-            await Task.Delay(5000);
-
-            // Test if process is still running
-            if (ollamaProcess.HasExited)
-            {
-                throw new Exception($"Ollama process exited during initialization with code: {ollamaProcess.ExitCode}");
+                else
+                {
+                    Console.WriteLine($"Ollama API returned error: {response.StatusCode}");
+                    return false;
+                }
             }
-
-            Console.WriteLine("Assuming Ollama is ready - proceeding...");
-        }
-
-        private static void StopOllama()
-        {
-            if (ollamaProcess != null && !ollamaProcess.HasExited)
+            catch (Exception ex)
             {
-                try
-                {
-                    Console.WriteLine("Stopping Ollama process...");
-                    ollamaProcess.CancelOutputRead();
-                    ollamaProcess.CancelErrorRead();
-                    ollamaProcess.StandardInput.Close();
-                    ollamaProcess.WaitForExit(1000);
-                    if (!ollamaProcess.HasExited)
-                    {
-                        ollamaProcess.CloseMainWindow();
-                        ollamaProcess.WaitForExit(1000);
-                        if (!ollamaProcess.HasExited)
-                        {
-                            Console.WriteLine("Force killing Ollama process...");
-                            ollamaProcess.Kill();
-                        }
-                    }
-
-                    Console.WriteLine($"Ollama process exited with code: {ollamaProcess.ExitCode}");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[ERROR] StopOllama: {ex.Message}");
-                }
-                finally
-                {
-                    ollamaProcess.Dispose();
-                    ollamaProcess = null;
-                }
+                Console.WriteLine($"Failed to connect to Ollama API: {ex.Message}");
+                return false;
             }
         }
 
@@ -197,12 +128,6 @@ namespace OpenRA.LLMHarness
 
         private static async Task ProcessFileAsync(string filePath)
         {
-            if (ollamaProcess == null || ollamaProcess.HasExited)
-            {
-                Console.WriteLine("Ollama process is not running.");
-                return;
-            }
-
             // Skip if already processed
             lock (processedFiles)
             {
@@ -246,47 +171,80 @@ namespace OpenRA.LLMHarness
                 var prompt = BuildPrompt(gameState);
                 Console.WriteLine($"Built prompt with {prompt.Length} characters.");
 
-                // Clear response buffer and set waiting flag
-                lock (lockObject)
-                {
-                    responseBuffer.Clear();
-                    isWaitingForResponse = true;
-                }
-
-                // Send prompt to Ollama
-                var timestamp = DateTime.Now.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture);
-                Console.WriteLine($"[{timestamp}] Sending prompt to Ollama stdin...");
-                Console.WriteLine($"First 200 chars of prompt: {prompt.Substring(0, Math.Min(200, prompt.Length))}...");
-
-                await ollamaProcess.StandardInput.WriteLineAsync(prompt);
-                await ollamaProcess.StandardInput.FlushAsync();
-
-                Console.WriteLine($"[{timestamp}] Prompt sent successfully.");
-
-                // Wait for response
-                Console.WriteLine("Waiting 10 seconds for response...");
-                await Task.Delay(10000);
-
-                // Check what we got
-                lock (lockObject)
-                {
-                    isWaitingForResponse = false;
-                    if (responseBuffer.Length > 0)
-                    {
-                        Console.WriteLine("\n=== LLM Response ===");
-                        Console.WriteLine(responseBuffer.ToString());
-                        Console.WriteLine("===================\n");
-                    }
-                    else
-                    {
-                        Console.WriteLine("No response received from Ollama.");
-                    }
-                }
+                // Send to Ollama API with streaming
+                await StreamOllamaResponse(prompt);
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error processing file {filePath}: {ex.Message}");
                 Console.WriteLine($"Stack trace: {ex.StackTrace}");
+            }
+        }
+
+        private static async Task StreamOllamaResponse(string prompt)
+        {
+            try
+            {
+                Console.WriteLine("\nSending prompt to Ollama API (streaming)...");
+                Console.WriteLine("\n=== LLM Response ===");
+
+                var request = new
+                {
+                    model = ModelName,
+                    prompt = prompt,
+                    stream = true
+                };
+
+                var json = JsonSerializer.Serialize(request, jsonOptions);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                using var requestMessage = new HttpRequestMessage(HttpMethod.Post, OllamaApiUrl)
+                {
+                    Content = content
+                };
+
+                using var response = await httpClient.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead);
+                response.EnsureSuccessStatusCode();
+
+                using var stream = await response.Content.ReadAsStreamAsync();
+                using var reader = new StreamReader(stream);
+
+                while (!reader.EndOfStream)
+                {
+                    var line = await reader.ReadLineAsync();
+                    if (!string.IsNullOrWhiteSpace(line))
+                    {
+                        try
+                        {
+                            var responseObj = JsonSerializer.Deserialize<OllamaResponse>(line, jsonOptions);
+                            if (responseObj != null && !string.IsNullOrEmpty(responseObj.Response))
+                            {
+                                // Stream the response to console as it arrives
+                                Console.Write(responseObj.Response);
+                            }
+
+                            if (responseObj?.Done == true)
+                            {
+                                Console.WriteLine("\n===================\n");
+                                if (responseObj.TotalDuration > 0)
+                                {
+                                    var seconds = responseObj.TotalDuration / 1_000_000_000.0;
+                                    Console.WriteLine($"Generation completed in {seconds:F2} seconds");
+                                }
+
+                                break;
+                            }
+                        }
+                        catch (JsonException ex)
+                        {
+                            Console.WriteLine($"\nError parsing response: {ex.Message}");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"\nError communicating with Ollama API: {ex.Message}");
             }
         }
 
@@ -306,6 +264,14 @@ namespace OpenRA.LLMHarness
             sb.AppendLine("</game_state>");
 
             return sb.ToString();
+        }
+
+        private sealed class OllamaResponse
+        {
+            public string? Model { get; set; }
+            public string? Response { get; set; }
+            public bool Done { get; set; }
+            public long TotalDuration { get; set; }
         }
     }
 }
