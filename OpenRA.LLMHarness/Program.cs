@@ -7,16 +7,17 @@ using System.Threading.Tasks;
 
 namespace OpenRA.LLMHarness
 {
-    class Program
+    sealed class Program
     {
         private static Process? ollamaProcess;
         private static StreamWriter? ollamaInput;
-        private static readonly string WatchDirectory = @"C:\OpenRATest";
-        private static readonly string OllamaCommand = "ollama";
-        private static readonly string OllamaArgs = "run pidrilkin/gemma3_27b_abliterated:Q4_K_M";
+        private const string WatchDirectory = @"C:\OpenRATest";
+        private const string OllamaCommand = "ollama";
+        private const string OllamaArgs = "run pidrilkin/gemma3_27b_abliterated:Q4_K_M";
         private static readonly HashSet<string> processedFiles = new HashSet<string>();
         private static bool ollamaReady = false;
         private static readonly object lockObject = new object();
+        private static readonly StringBuilder pendingOutput = new StringBuilder();
 
         static async Task Main(string[] args)
         {
@@ -29,7 +30,7 @@ namespace OpenRA.LLMHarness
             }
 
             // Start Ollama process
-            if (!StartOllama())
+            if (!await StartOllamaAsync())
             {
                 Console.WriteLine("Failed to start Ollama. Exiting.");
                 return;
@@ -63,15 +64,24 @@ namespace OpenRA.LLMHarness
             Console.WriteLine("Shutting down...");
             if (ollamaProcess != null && !ollamaProcess.HasExited)
             {
-                ollamaProcess.Kill();
+                try
+                {
+                    ollamaProcess.Kill();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error killing Ollama process: {ex.Message}");
+                }
                 ollamaProcess.Dispose();
             }
         }
 
-        private static bool StartOllama()
+        private static async Task<bool> StartOllamaAsync()
         {
             try
             {
+                Console.WriteLine($"Starting Ollama with command: {OllamaCommand} {OllamaArgs}");
+                
                 var startInfo = new ProcessStartInfo
                 {
                     FileName = OllamaCommand,
@@ -80,28 +90,40 @@ namespace OpenRA.LLMHarness
                     RedirectStandardInput = true,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
-                    CreateNoWindow = true
+                    CreateNoWindow = true,
+                    WorkingDirectory = Environment.CurrentDirectory
                 };
 
-                ollamaProcess = Process.Start(startInfo);
-                if (ollamaProcess == null)
+                ollamaProcess = new Process { StartInfo = startInfo };
+                
+                // Set up output handlers before starting
+                ollamaProcess.OutputDataReceived += OnOllamaOutputReceived;
+                ollamaProcess.ErrorDataReceived += OnOllamaErrorReceived;
+
+                if (!ollamaProcess.Start())
                 {
                     Console.WriteLine("Failed to start Ollama process.");
                     return false;
                 }
 
                 ollamaInput = ollamaProcess.StandardInput;
+                
+                // Begin async reading of streams
+                ollamaProcess.BeginOutputReadLine();
+                ollamaProcess.BeginErrorReadLine();
 
-                // Start reading output asynchronously
-                Task.Run(() => ReadOllamaOutput());
-                Task.Run(() => ReadOllamaError());
-
-                // Wait for Ollama to be ready
-                Console.WriteLine("Waiting for Ollama to initialize...");
-                var timeout = DateTime.Now.AddSeconds(30);
+                // Wait for Ollama to be ready (with timeout)
+                Console.WriteLine("Waiting for Ollama to initialize (this may take a while if downloading the model)...");
+                var timeout = DateTime.Now.AddMinutes(10); // Longer timeout for model download
+                
                 while (!ollamaReady && DateTime.Now < timeout)
                 {
-                    Thread.Sleep(100);
+                    if (ollamaProcess.HasExited)
+                    {
+                        Console.WriteLine($"Ollama process exited unexpectedly with code: {ollamaProcess.ExitCode}");
+                        return false;
+                    }
+                    await Task.Delay(100);
                 }
 
                 if (!ollamaReady)
@@ -116,85 +138,117 @@ namespace OpenRA.LLMHarness
             catch (Exception ex)
             {
                 Console.WriteLine($"Error starting Ollama: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                
+                // Check if ollama is installed
+                try
+                {
+                    var checkProcess = Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "where",
+                        Arguments = "ollama",
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        CreateNoWindow = true
+                    });
+                    
+                    if (checkProcess != null)
+                    {
+                        await checkProcess.WaitForExitAsync();
+                        if (checkProcess.ExitCode == 0)
+                        {
+                            var path = await checkProcess.StandardOutput.ReadToEndAsync();
+                            Console.WriteLine($"Ollama found at: {path.Trim()}");
+                        }
+                        else
+                        {
+                            Console.WriteLine("Ollama not found in PATH. Please ensure Ollama is installed.");
+                        }
+                    }
+                }
+                catch
+                {
+                    // Ignore errors from where command
+                }
+                
                 return false;
             }
         }
 
-        private static async Task ReadOllamaOutput()
+        private static void OnOllamaOutputReceived(object sender, DataReceivedEventArgs e)
         {
-            if (ollamaProcess?.StandardOutput == null) return;
+            if (string.IsNullOrEmpty(e.Data))
+                return;
 
-            var buffer = new StringBuilder();
-            var outputStarted = false;
-
-            while (!ollamaProcess.StandardOutput.EndOfStream)
+            lock (lockObject)
             {
-                var line = await ollamaProcess.StandardOutput.ReadLineAsync();
-                if (line != null)
+                // Check if Ollama is ready (looking for >>> prompt)
+                if (!ollamaReady && e.Data.Contains(">>>"))
                 {
-                    // Check if Ollama is ready
-                    if (line.Contains(">>>"))
+                    ollamaReady = true;
+                    // Clear any pending output
+                    pendingOutput.Clear();
+                }
+                else if (ollamaReady)
+                {
+                    // Check if this line contains the >>> prompt (end of response)
+                    if (e.Data.Contains(">>>"))
                     {
-                        if (!ollamaReady)
-                        {
-                            lock (lockObject)
-                            {
-                                ollamaReady = true;
-                            }
-                        }
-                        
-                        // If we were collecting output, print it now
-                        if (outputStarted && buffer.Length > 0)
+                        // Print accumulated output
+                        if (pendingOutput.Length > 0)
                         {
                             Console.WriteLine("\n=== LLM Response ===");
-                            Console.WriteLine(buffer.ToString());
+                            Console.WriteLine(pendingOutput.ToString());
                             Console.WriteLine("===================\n");
-                            buffer.Clear();
-                            outputStarted = false;
+                            pendingOutput.Clear();
                         }
                     }
-                    else if (ollamaReady)
+                    else
                     {
-                        // We're ready and this is actual output
-                        outputStarted = true;
-                        buffer.AppendLine(line);
+                        // Accumulate output
+                        pendingOutput.AppendLine(e.Data);
                     }
+                }
+                else
+                {
+                    // During initialization, show output to help debug
+                    Console.WriteLine($"[Ollama Init] {e.Data}");
                 }
             }
         }
 
-        private static async Task ReadOllamaError()
+        private static void OnOllamaErrorReceived(object sender, DataReceivedEventArgs e)
         {
-            if (ollamaProcess?.StandardError == null) return;
-
-            while (!ollamaProcess.StandardError.EndOfStream)
+            if (!string.IsNullOrEmpty(e.Data))
             {
-                var line = await ollamaProcess.StandardError.ReadLineAsync();
-                if (line != null)
-                {
-                    Console.WriteLine($"[Ollama Error] {line}");
-                }
+                Console.WriteLine($"[Ollama Error] {e.Data}");
             }
         }
 
         private static void ProcessExistingFiles()
         {
-            var files = Directory.GetFiles(WatchDirectory, "*.txt");
-            if (files.Length > 0)
+            try
             {
-                // Process only the most recent file
-                var mostRecent = files.OrderByDescending(f => File.GetCreationTime(f)).First();
-                ProcessFile(mostRecent);
+                var files = Directory.GetFiles(WatchDirectory, "*.txt");
+                if (files.Length > 0)
+                {
+                    // Process only the most recent file
+                    var mostRecent = files.OrderByDescending(f => File.GetCreationTime(f)).First();
+                    ProcessFile(mostRecent);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error processing existing files: {ex.Message}");
             }
         }
 
         private static void OnNewFile(object sender, FileSystemEventArgs e)
         {
-            if (e.FullPath != null && e.ChangeType == WatcherChangeTypes.Created || e.ChangeType == WatcherChangeTypes.Changed)
+            if (e.FullPath != null && (e.ChangeType == WatcherChangeTypes.Created || e.ChangeType == WatcherChangeTypes.Changed))
             {
                 // Small delay to ensure file is fully written
-                Thread.Sleep(500);
-                ProcessFile(e.FullPath);
+                Task.Delay(500).ContinueWith(_ => ProcessFile(e.FullPath));
             }
         }
 
@@ -203,7 +257,7 @@ namespace OpenRA.LLMHarness
             lock (lockObject)
             {
                 // Skip if already processed or Ollama not ready
-                if (processedFiles.Contains(filePath) || !ollamaReady)
+                if (processedFiles.Contains(filePath) || !ollamaReady || ollamaInput == null)
                 {
                     return;
                 }
@@ -215,18 +269,40 @@ namespace OpenRA.LLMHarness
             {
                 Console.WriteLine($"\nProcessing file: {Path.GetFileName(filePath)}");
 
-                // Read the game state
-                string gameState = File.ReadAllText(filePath);
+                // Read the game state with retry logic for file access
+                string gameState;
+                int retryCount = 0;
+                while (retryCount < 3)
+                {
+                    try
+                    {
+                        gameState = File.ReadAllText(filePath);
+                        break;
+                    }
+                    catch (IOException) when (retryCount < 2)
+                    {
+                        retryCount++;
+                        Thread.Sleep(100);
+                        continue;
+                    }
+                }
 
                 // Construct the prompt
-                var prompt = BuildPrompt(gameState);
+                var prompt = BuildPrompt(File.ReadAllText(filePath));
 
                 // Send to Ollama
-                if (ollamaInput != null)
+                lock (lockObject)
                 {
-                    Console.WriteLine("Sending game state to LLM for analysis...");
-                    ollamaInput.WriteLine(prompt);
-                    ollamaInput.Flush();
+                    if (ollamaInput != null && !ollamaProcess!.HasExited)
+                    {
+                        Console.WriteLine("Sending game state to LLM for analysis...");
+                        ollamaInput.WriteLine(prompt);
+                        ollamaInput.Flush();
+                    }
+                    else
+                    {
+                        Console.WriteLine("Warning: Cannot send to Ollama - process may have exited.");
+                    }
                 }
             }
             catch (Exception ex)
