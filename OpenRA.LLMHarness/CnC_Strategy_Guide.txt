@@ -79,8 +79,6 @@ You MUST follow this exact order at game start:
 - Orca VTOL: $1200, gunship with missiles (GDI)
 - Apache Attack Helicopter: $1200, gunship (Nod)
 - Chinook Transport: $750, transport helicopter
-- A-10 Warthog: Support power aircraft
-- C-17 Cargo Plane: Transport plane for vehicle delivery
 
 == STRATEGY TIPS ==
 

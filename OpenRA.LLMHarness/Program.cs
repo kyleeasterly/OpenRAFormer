@@ -313,24 +313,21 @@ namespace OpenRA.LLMHarness
 			}
 
 			sb.AppendLine("You are a helpful OpenRA Command & Conquer strategy game coach. Analyze the current game state and give advice to help the player win.");
-			sb.AppendLine("IMPORTANT: You MUST use the exact unit and building names from the GAME KNOWLEDGE section below.");
-			sb.AppendLine("IMPORTANT: The Temple is called 'Temple of Nod' NOT 'Temple of Ra'.");
-			sb.AppendLine("IMPORTANT: Power Plants provide electricity, they are NOT nuclear weapons!");
 			sb.AppendLine("Consider the economy, military strength, map control, and immediate threats.");
 			sb.AppendLine("Give specific, actionable advice about what to do next.");
 			sb.AppendLine("Keep your response concise and focused on the most important next steps.");
 			sb.AppendLine();
 
-			sb.AppendLine("=== GAME KNOWLEDGE (USE THESE EXACT NAMES!) ===");
+			sb.AppendLine("<game_knowledge>");
 			sb.AppendLine(strategyGuide);
-			sb.AppendLine("=== END OF GAME KNOWLEDGE ===");
+			sb.AppendLine("</game_knowledge>");
 			sb.AppendLine();
 
-			sb.AppendLine("=== CURRENT GAME STATE ===");
+			sb.AppendLine("<game_state>");
 			sb.AppendLine(gameState);
+			sb.AppendLine("</game_state>");
 			sb.AppendLine();
 			sb.AppendLine("Based on the game knowledge above and current state, what should the player do next?");
-			sb.AppendLine("Remember to use the EXACT unit names from the game knowledge section!");
 
 			return sb.ToString();
 		}
