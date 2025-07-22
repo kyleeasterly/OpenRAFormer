@@ -251,17 +251,15 @@ namespace OpenRA.LLMHarness
         private static string BuildPrompt(string gameState)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("Your task is to review the current game state and advise a next action.");
-            sb.AppendLine("Your should only respond with the next action and action parameters.");
-            sb.AppendLine("The available actions are:");
-            sb.AppendLine("MOVE(unit, x, y)");
-            sb.AppendLine("BUILD(unit, x, y)");
-            sb.AppendLine("ATTACK(friendly_unit, enemy_unit)");
-            sb.AppendLine("IDLE");
+            sb.AppendLine("You are a helpful OpenRA strategy game coach. Analyze the current game state and give advice to help the player win.");
+            sb.AppendLine("Consider the economy, military strength, map control, and immediate threats.");
+            sb.AppendLine("Give specific, actionable advice about what to do next.");
+            sb.AppendLine("Keep your response concise and focused on the most important next steps.");
             sb.AppendLine();
-            sb.AppendLine("<game_state>");
+            sb.AppendLine("Current game state:");
             sb.AppendLine(gameState);
-            sb.AppendLine("</game_state>");
+            sb.AppendLine();
+            sb.AppendLine("What should the player do next?");
 
             return sb.ToString();
         }
