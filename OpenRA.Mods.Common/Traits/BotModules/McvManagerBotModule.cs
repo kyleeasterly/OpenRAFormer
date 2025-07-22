@@ -225,9 +225,9 @@ namespace OpenRA.Mods.Common.Traits
 					var minDistanceSquared = Info.MinResourceExpansionDistance * Info.MinResourceExpansionDistance;
 					var resourceCells = world.Map.AllCells
 						.Where(c => resourceLayer.GetResource(c).Type != null
-							&& resourceLayer.IsVisible(c)  // Respect fog of war
+							&& resourceLayer.IsVisible(c) // Respect fog of war
 							&& (c - baseCenter).LengthSquared > minDistanceSquared)
-						.OrderBy(c => (c - baseCenter).LengthSquared)  // Prefer closer resources
+						.OrderBy(c => (c - baseCenter).LengthSquared) // Prefer closer resources
 						.Take(Info.MaxResourceCellsToCheck)
 						.ToList();
 

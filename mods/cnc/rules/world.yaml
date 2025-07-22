@@ -165,6 +165,10 @@ World:
 		Bridges: bridge1, bridge2, bridge3, bridge4
 	ProductionQueueFromSelection:
 		ProductionTabsWidget: PRODUCTION_TABS
+	GameStateExporter:
+		OutputDirectory: C:\OpenRATest
+		SnapshotInterval: 250
+		Enabled: true
 	SmudgeLayer@SCORCH:
 		Type: Scorch
 		Sequence: scorches
