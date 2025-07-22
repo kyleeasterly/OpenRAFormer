@@ -65,6 +65,28 @@ namespace OpenRA.Mods.Common.Traits
 				sb.AppendLine(CultureInfo.InvariantCulture, $"Game Tick: {world.WorldTick} (Time: {world.WorldTick / 25}s)");
 				sb.AppendLine(CultureInfo.InvariantCulture, $"Map: {world.Map.Title} ({world.Map.Uid})");
 				sb.AppendLine("Game Type: " + (world.LobbyInfo?.GlobalSettings?.ServerName ?? "Unknown"));
+				
+				// Export game settings
+				if (world.LobbyInfo?.GlobalSettings != null)
+				{
+					sb.AppendLine();
+					sb.AppendLine("=== Game Settings ===");
+					var settings = world.LobbyInfo.GlobalSettings;
+					
+					// Render common lobby options in a meaningful way
+					if (settings.LobbyOptions.Count > 0)
+					{
+						foreach (var option in settings.LobbyOptions.OrderBy(kv => kv.Key))
+						{
+							var description = GetFriendlyOptionDescription(option.Key, option.Value);
+							sb.AppendLine($"  {description}");
+						}
+					}
+					
+					sb.AppendLine($"  Spectators: {(settings.AllowSpectators ? "Allowed" : "Not allowed")}");
+					sb.AppendLine($"  Game Speed: {GetGameSpeedDescription(settings.NetFrameInterval)}");
+				}
+				
 				sb.AppendLine();
 
 				// Export player states
@@ -157,27 +179,32 @@ namespace OpenRA.Mods.Common.Traits
 
 					// Production queues
 					var queues = player.PlayerActor.TraitsImplementing<ProductionQueue>();
-					var activeProduction = new List<string>();
+					var hasProduction = false;
+					
 					foreach (var queue in queues)
 					{
-						if (queue.CurrentItem() != null)
+						var items = queue.AllQueued().ToList();
+						if (items.Count > 0)
 						{
-							var item = queue.CurrentItem();
-							var progress = item.RemainingCost == 0 ? 100 :
-								(100 * (item.TotalCost - item.RemainingCost) / item.TotalCost);
-							var friendlyName = world.Map.Rules.Actors[item.Item].TraitInfoOrDefault<BuildingInfo>() != null
-								? GetFriendlyBuildingName(item.Item)
-								: GetFriendlyUnitName(item.Item);
-							activeProduction.Add($"{friendlyName} ({progress}% complete)");
+							if (!hasProduction)
+							{
+								sb.AppendLine();
+								sb.AppendLine("Production Queues:");
+								hasProduction = true;
+							}
+							
+							sb.AppendLine($"  {queue.Info.Type} Queue:");
+							foreach (var item in items)
+							{
+								var progress = item.RemainingCost == 0 ? 100 :
+									(100 * (item.TotalCost - item.RemainingCost) / item.TotalCost);
+								var friendlyName = world.Map.Rules.Actors[item.Item].TraitInfoOrDefault<BuildingInfo>() != null
+									? GetFriendlyBuildingName(item.Item)
+									: GetFriendlyUnitName(item.Item);
+								var itemStatus = item.Paused ? " (PAUSED)" : item.Done ? " (READY)" : $" ({progress}% complete)";
+								sb.AppendLine(CultureInfo.InvariantCulture, $"    - {friendlyName}{itemStatus}");
+							}
 						}
-					}
-
-					if (activeProduction.Count > 0)
-					{
-						sb.AppendLine();
-						sb.AppendLine("Active Production:");
-						foreach (var prod in activeProduction)
-							sb.AppendLine(CultureInfo.InvariantCulture, $"  {prod}");
 					}
 
 					// Special units (harvesters, MCVs)
@@ -286,6 +313,72 @@ namespace OpenRA.Mods.Common.Traits
 				"C17" => "C17 Cargo Plane",
 				"A10" => "A10 Warthog",
 				_ => internalName
+			};
+		}
+
+		static string GetFriendlyOptionDescription(string optionId, OpenRA.Network.Session.LobbyOptionState optionState)
+		{
+			var value = optionState.Value ?? (optionState.IsEnabled ? "Enabled" : "Disabled");
+			
+			return optionId switch
+			{
+				"techlevel" => value switch
+				{
+					"unrestricted" => "Tech Level: Unrestricted (all units and superweapons available)",
+					"medium" => "Tech Level: Medium (no superweapons or advanced units)",
+					"low" => "Tech Level: Low (basic units only)",
+					_ => $"Tech Level: {value}"
+				},
+				"startingunits" => value switch
+				{
+					"mcv" => "Starting Units: MCV only",
+					"light" => "Starting Units: MCV + light forces",
+					"heavy" => "Starting Units: MCV + heavy forces",
+					_ => $"Starting Units: {value}"
+				},
+				"startingcash" => $"Starting Cash: ${value}",
+				"superweapons" => optionState.IsEnabled 
+					? "Superweapons: Enabled (Ion Cannon, Nuclear Missile available)"
+					: "Superweapons: Disabled (no Ion Cannon or Nuclear Missile)",
+				"allybuildradius" => optionState.IsEnabled
+					? "Ally Build Radius: Can build near allied structures"
+					: "Ally Build Radius: Cannot build near allied structures",
+				"buildradius" => optionState.IsEnabled
+					? "Build Radius: Limited (must build near existing structures)"
+					: "Build Radius: Unlimited (can build anywhere)",
+				"shortgame" => optionState.IsEnabled
+					? "Short Game: Enabled (destroy all enemy structures to win)"
+					: "Short Game: Disabled (must destroy all enemy units and structures)",
+				"fogofwar" => optionState.IsEnabled
+					? "Fog of War: Enabled (unexplored areas hidden)"
+					: "Fog of War: Disabled (entire map visible)",
+				"explore_map" => optionState.IsEnabled
+					? "Map Explored: Yes (terrain visible, units still hidden)"
+					: "Map Explored: No (must scout to see terrain)",
+				"difficulty" => value switch
+				{
+					"easy" => "AI Difficulty: Easy",
+					"normal" => "AI Difficulty: Normal",
+					"hard" => "AI Difficulty: Hard",
+					_ => $"AI Difficulty: {value}"
+				},
+				"kill_bounty" => optionState.IsEnabled
+					? "Kill Bounties: Enabled (earn money for destroying enemies)"
+					: "Kill Bounties: Disabled",
+				_ => $"{optionId.Replace('_', ' ').Replace('-', ' ')}: {value}"
+			};
+		}
+
+		static string GetGameSpeedDescription(int netFrameInterval)
+		{
+			return netFrameInterval switch
+			{
+				1 => "Fastest",
+				2 => "Faster",
+				3 => "Normal",
+				4 => "Slower",
+				5 => "Slowest",
+				_ => $"Custom ({netFrameInterval})"
 			};
 		}
 	}
