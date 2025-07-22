@@ -9,7 +9,7 @@
 
   <ItemGroup>
     <None Update="CnC_Strategy_Guide.txt">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>
 
