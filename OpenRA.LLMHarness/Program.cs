@@ -251,15 +251,39 @@ namespace OpenRA.LLMHarness
         private static string BuildPrompt(string gameState)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("You are a helpful OpenRA strategy game coach. Analyze the current game state and give advice to help the player win.");
+            
+            // Load strategy guide if available
+            string strategyGuide = "";
+            string strategyGuidePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "CnC_Strategy_Guide.txt");
+            if (File.Exists(strategyGuidePath))
+            {
+                try
+                {
+                    strategyGuide = File.ReadAllText(strategyGuidePath);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Warning: Could not load strategy guide: {ex.Message}");
+                }
+            }
+            
+            sb.AppendLine("You are a helpful OpenRA Command & Conquer strategy game coach. Analyze the current game state and give advice to help the player win.");
             sb.AppendLine("Consider the economy, military strength, map control, and immediate threats.");
             sb.AppendLine("Give specific, actionable advice about what to do next.");
             sb.AppendLine("Keep your response concise and focused on the most important next steps.");
             sb.AppendLine();
-            sb.AppendLine("Current game state:");
+            
+            if (!string.IsNullOrEmpty(strategyGuide))
+            {
+                sb.AppendLine("=== GAME KNOWLEDGE ===");
+                sb.AppendLine(strategyGuide);
+                sb.AppendLine();
+            }
+            
+            sb.AppendLine("=== CURRENT GAME STATE ===");
             sb.AppendLine(gameState);
             sb.AppendLine();
-            sb.AppendLine("What should the player do next?");
+            sb.AppendLine("Based on the game knowledge and current state, what should the player do next? Be specific about unit names and build orders.");
 
             return sb.ToString();
         }

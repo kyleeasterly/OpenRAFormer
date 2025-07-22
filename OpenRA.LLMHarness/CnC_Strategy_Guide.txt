@@ -1,0 +1,108 @@
+=== Command & Conquer Strategy Guide for OpenRA ===
+
+This guide explains the basic mechanics and units for the C&C mod in OpenRA. 
+GDI and Nod share most basic units with faction-specific advanced units.
+
+== BUILD ORDER REQUIREMENTS ==
+
+You MUST follow this exact order at game start:
+1. Deploy your MCV (Mobile Construction Vehicle) to create your Construction Yard
+2. Build a Power Plant (NUKE) - Cost: $500, Provides: 100 power
+3. Build a Refinery (PROC) - Cost: $1500, Requires: Power, Includes: 1 free Harvester
+4. Build Barracks (PYLE/HAND) - Cost: $500, Requires: Power
+5. Build War Factory/Airfield - Cost: $2000, Requires: Refinery
+
+YOU CANNOT BUILD A REFINERY WITHOUT POWER!
+YOU CANNOT BUILD HARVESTERS WITHOUT A WAR FACTORY OR AIRFIELD!
+
+== ECONOMY ==
+
+- Tiberium is your only resource, appearing as green or blue crystals on the map
+- Harvesters automatically collect Tiberium and deliver to Refineries
+- Each Refinery comes with 1 free Harvester when built
+- Additional Harvesters cost $1100 and require War Factory/Airfield
+- Build multiple Refineries on different Tiberium fields for faster income
+- Tiberium Storage Silos ($100) increase storage capacity
+
+== KEY STRUCTURES ==
+
+=== Basic Buildings ===
+- Construction Yard (FACT): Your command center, build from deployed MCV
+- Power Plant (NUKE): $500, provides 100 power
+- Advanced Power Plant (NUK2): $800, provides 200 power (requires tech center)
+- Refinery (PROC): $1500, processes Tiberium, includes 1 Harvester
+- Barracks (GDI: PYLE, Nod: HAND): $500, trains infantry
+- War Factory (GDI: WEAP): $2000, builds vehicles
+- Airfield (Nod: AFLD): $2000, builds vehicles via airdrop
+
+=== Defensive Structures ===
+- Guard Tower (GDI): Anti-infantry defense
+- Turret (Nod): Anti-vehicle defense
+- SAM Site: Anti-air defense
+- Obelisk of Light (Nod): Advanced laser defense
+
+=== Advanced Buildings ===
+- Communications Center: Provides radar minimap
+- Temple of Nod (TMPL): $2000, Nod tech center, enables Nuclear Missile
+- Advanced Communications Center (EYE): GDI tech center, enables Ion Cannon
+- Helipad (HPAD): Builds and rearms aircraft
+
+== INFANTRY UNITS ==
+
+- Minigunner (E1): $100, basic anti-infantry
+- Grenadier (E2): $160, anti-infantry/building (GDI)
+- Rocket Soldier (E3): $300, anti-tank/air
+- Flamethrower (E4): $200, anti-infantry/building (Nod)
+- Chem Warrior (E5): $300, advanced anti-infantry (Nod)
+- Engineer (E6): $500, captures buildings, repairs bridges
+- Commando (RMBO): $1500, sniper + C4 demolitions (GDI)
+
+== VEHICLES ==
+
+=== Support ===
+- Harvester (HARV): $1100, collects Tiberium (first one free with Refinery)
+- Mobile Construction Vehicle (MCV): $3000, deploys into Construction Yard
+- APC: $600, transports 5 infantry (GDI)
+- Transport Helicopter (TRAN): $750, air transport
+
+=== Combat Vehicles ===
+- Nod Buggy (BGGY): $300, fast scout with machine gun
+- Recon Bike (BIKE): $500, fast rocket scout
+- Humvee (JEEP): $400, light vehicle (GDI)
+- Light Tank (LTNK): $750, basic tank (Nod)
+- Medium Tank (MTNK): $900, main battle tank (GDI)
+- Flame Tank (FTNK): $600, anti-infantry (Nod)
+- Artillery (ARTY): $600, long-range support (Nod)
+- Mammoth Tank (HTNK): $1800, heavy dual-cannon tank (GDI)
+- Stealth Tank (STNK): $900, cloaked missile tank (Nod)
+- Rocket Launcher (MSAM): $900, mobile SAM (GDI)
+- Mobile Rocket Launch System (MLRS): $600, anti-air (Nod)
+
+== AIRCRAFT ==
+
+- Orca (GDI): $1200, VTOL gunship with missiles
+- Apache (HELI): $1200, attack helicopter (Nod)
+- Chinook (TRAN): $750, transport helicopter
+- A-10 Warthog: Support power aircraft
+- C-17: Transport plane for vehicle delivery (NOT FOR SCOUTING!)
+
+== STRATEGY TIPS ==
+
+1. Economy First: Build order is critical - Power → Refinery → Production
+2. Multiple Refineries: Better than multiple Harvesters early game
+3. Scout with cheap units: Use Minigunners or Buggies, NOT transports
+4. Combined Arms: Mix infantry, vehicles, and air units
+5. Engineers: Can capture enemy buildings for tech stealing
+6. Power Management: Buildings operate slowly without sufficient power
+7. Base Defense: Guard Towers vs infantry, Turrets vs vehicles
+8. Superweapons: Ion Cannon (GDI) and Nuclear Missile (Nod) require tech centers
+
+== COMMON MISTAKES ==
+
+- Trying to build Harvesters before War Factory/Airfield
+- Using C-17 transport planes for scouting (they're for cargo!)
+- Building Harvesters instead of additional Refineries early
+- Forgetting Power Plants before other structures
+- Not spreading Refineries to different Tiberium fields
+
+Remember: The Temple is "Temple of Nod" not "Temple of Ra"!
