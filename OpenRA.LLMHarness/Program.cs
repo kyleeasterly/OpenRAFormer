@@ -20,6 +20,7 @@ namespace OpenRA.LLMHarness
 		{
 			PropertyNamingPolicy = JsonNamingPolicy.CamelCase
 		};
+		static bool VerboseMode = false;
 
 		static async Task Main()
 		{
@@ -47,7 +48,8 @@ namespace OpenRA.LLMHarness
 			watcher.EnableRaisingEvents = true;
 
 			Console.WriteLine($"Monitoring directory: {WatchDirectory}");
-			Console.WriteLine("Press 'q' to quit...");
+			Console.WriteLine("Press 'q' to quit, 'v' to toggle verbose mode");
+			Console.WriteLine($"Verbose mode: {(VerboseMode ? "ON" : "OFF")}");
 
 			// Process any existing files
 			await ProcessExistingFilesAsync();
@@ -59,6 +61,11 @@ namespace OpenRA.LLMHarness
 				if (key.KeyChar == 'q' || key.KeyChar == 'Q')
 				{
 					break;
+				}
+				else if (key.KeyChar == 'v' || key.KeyChar == 'V')
+				{
+					VerboseMode = !VerboseMode;
+					Console.WriteLine($"\nVerbose mode: {(VerboseMode ? "ON" : "OFF")}");
 				}
 			}
 
@@ -179,6 +186,14 @@ namespace OpenRA.LLMHarness
 				var prompt = BuildPrompt(gameState);
 				Console.WriteLine($"Built prompt with {prompt.Length} characters.");
 
+				// Display full prompt in verbose mode
+				if (VerboseMode)
+				{
+					Console.WriteLine("\n=== FULL PROMPT TO LLM ===");
+					Console.WriteLine(prompt);
+					Console.WriteLine("=== END OF PROMPT ===\n");
+				}
+
 				// Send to Ollama API with streaming
 				await StreamOllamaResponse(prompt);
 			}
@@ -260,38 +275,62 @@ namespace OpenRA.LLMHarness
 		{
 			var sb = new StringBuilder();
 
-			// Load strategy guide if available
+			// Load strategy guide - this is REQUIRED
 			var strategyGuide = "";
 			var strategyGuidePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "CnC_Strategy_Guide.txt");
-			if (File.Exists(strategyGuidePath))
+			
+			// First try the local directory
+			if (!File.Exists(strategyGuidePath))
 			{
-				try
-				{
-					strategyGuide = File.ReadAllText(strategyGuidePath);
-				}
-				catch (Exception ex)
-				{
-					Console.WriteLine($"Warning: Could not load strategy guide: {ex.Message}");
-				}
+				// Try the bin directory where the DLL is located
+				strategyGuidePath = Path.Combine(Path.GetDirectoryName(typeof(Program).Assembly.Location) ?? "", "CnC_Strategy_Guide.txt");
+			}
+			
+			// Also try the project source directory
+			if (!File.Exists(strategyGuidePath))
+			{
+				strategyGuidePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "CnC_Strategy_Guide.txt");
+				if (File.Exists(strategyGuidePath))
+					strategyGuidePath = Path.GetFullPath(strategyGuidePath);
+			}
+			
+			if (!File.Exists(strategyGuidePath))
+			{
+				throw new FileNotFoundException($"CRITICAL: CnC_Strategy_Guide.txt not found! Searched in:\n" +
+					$"- {AppDomain.CurrentDomain.BaseDirectory}\n" +
+					$"- {Path.GetDirectoryName(typeof(Program).Assembly.Location)}\n" +
+					$"- Project source directory");
+			}
+			
+			try
+			{
+				strategyGuide = File.ReadAllText(strategyGuidePath);
+				Console.WriteLine($"Loaded strategy guide from: {strategyGuidePath} ({strategyGuide.Length} characters)");
+			}
+			catch (Exception ex)
+			{
+				throw new InvalidOperationException($"CRITICAL: Failed to load strategy guide from {strategyGuidePath}: {ex.Message}", ex);
 			}
 
 			sb.AppendLine("You are a helpful OpenRA Command & Conquer strategy game coach. Analyze the current game state and give advice to help the player win.");
+			sb.AppendLine("IMPORTANT: You MUST use the exact unit and building names from the GAME KNOWLEDGE section below.");
+			sb.AppendLine("IMPORTANT: The Temple is called 'Temple of Nod' NOT 'Temple of Ra'.");
+			sb.AppendLine("IMPORTANT: Power Plants provide electricity, they are NOT nuclear weapons!");
 			sb.AppendLine("Consider the economy, military strength, map control, and immediate threats.");
 			sb.AppendLine("Give specific, actionable advice about what to do next.");
 			sb.AppendLine("Keep your response concise and focused on the most important next steps.");
 			sb.AppendLine();
 
-			if (!string.IsNullOrEmpty(strategyGuide))
-			{
-				sb.AppendLine("=== GAME KNOWLEDGE ===");
-				sb.AppendLine(strategyGuide);
-				sb.AppendLine();
-			}
+			sb.AppendLine("=== GAME KNOWLEDGE (USE THESE EXACT NAMES!) ===");
+			sb.AppendLine(strategyGuide);
+			sb.AppendLine("=== END OF GAME KNOWLEDGE ===");
+			sb.AppendLine();
 
 			sb.AppendLine("=== CURRENT GAME STATE ===");
 			sb.AppendLine(gameState);
 			sb.AppendLine();
-			sb.AppendLine("Based on the game knowledge and current state, what should the player do next? Be specific about unit names and build orders.");
+			sb.AppendLine("Based on the game knowledge above and current state, what should the player do next?");
+			sb.AppendLine("Remember to use the EXACT unit names from the game knowledge section!");
 
 			return sb.ToString();
 		}
