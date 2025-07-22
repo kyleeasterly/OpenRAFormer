@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Threading;
@@ -9,10 +10,10 @@ namespace OpenRA.LLMHarness
 {
     sealed class Program
     {
-        private static Process? ollamaProcess;
         private const string WatchDirectory = @"C:\OpenRATest";
         private const string OllamaCommand = "ollama";
         private const string OllamaArgs = "run pidrilkin/gemma3_27b_abliterated:Q4_K_M";
+        private static Process? ollamaProcess;
         private static readonly HashSet<string> processedFiles = new HashSet<string>();
         private static readonly StringBuilder responseBuffer = new StringBuilder();
         private static readonly object lockObject = new object();
@@ -89,9 +90,9 @@ namespace OpenRA.LLMHarness
             {
                 if (args.Data != null)
                 {
-                    var timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+                    var timestamp = DateTime.Now.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture);
                     Console.WriteLine($"[{timestamp}] [Ollama Output]: {args.Data}");
-                    
+
                     lock (lockObject)
                     {
                         if (isWaitingForResponse)
@@ -106,7 +107,7 @@ namespace OpenRA.LLMHarness
             {
                 if (args.Data != null && args.Data.Trim() != "")
                 {
-                    var timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+                    var timestamp = DateTime.Now.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture);
                     Console.WriteLine($"[{timestamp}] [Ollama Error]: {args.Data}");
                 }
             };
@@ -152,6 +153,7 @@ namespace OpenRA.LLMHarness
                             ollamaProcess.Kill();
                         }
                     }
+
                     Console.WriteLine($"Ollama process exited with code: {ollamaProcess.ExitCode}");
                 }
                 catch (Exception ex)
@@ -211,9 +213,9 @@ namespace OpenRA.LLMHarness
 
             try
             {
-                Console.WriteLine($"\n{'='.PadRight(80, '=')}");
+                Console.WriteLine($"\n{new string('=', 80)}");
                 Console.WriteLine($"Processing file: {Path.GetFileName(filePath)}");
-                Console.WriteLine($"{'='.PadRight(80, '=')}");
+                Console.WriteLine(new string('=', 80));
 
                 // Read the game state with retry logic for file access
                 string gameState = "";
@@ -252,13 +254,13 @@ namespace OpenRA.LLMHarness
                 }
 
                 // Send prompt to Ollama
-                var timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+                var timestamp = DateTime.Now.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture);
                 Console.WriteLine($"[{timestamp}] Sending prompt to Ollama stdin...");
                 Console.WriteLine($"First 200 chars of prompt: {prompt.Substring(0, Math.Min(200, prompt.Length))}...");
-                
+
                 await ollamaProcess.StandardInput.WriteLineAsync(prompt);
                 await ollamaProcess.StandardInput.FlushAsync();
-                
+
                 Console.WriteLine($"[{timestamp}] Prompt sent successfully.");
 
                 // Wait for response
