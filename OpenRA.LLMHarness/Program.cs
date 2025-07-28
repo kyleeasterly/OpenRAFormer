@@ -14,7 +14,8 @@ namespace OpenRA.LLMHarness
 		const string WatchDirectory = @"C:\OpenRATest";
 		const string LogDirectory = @"C:\OpenRATest\LLM_Coach_Logs";
 		const string OllamaApiUrl = "http://localhost:11434/api/generate";
-		const string ModelName = "pidrilkin/gemma3_27b_abliterated:Q4_K_M";
+		const string ModelName = "gemma3:27b";
+
 		static readonly HttpClient HttpClient = new() { Timeout = TimeSpan.FromMinutes(5) };
 		static readonly HashSet<string> ProcessedFiles = new();
 		static readonly JsonSerializerOptions JsonOptions = new()
