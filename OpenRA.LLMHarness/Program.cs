@@ -24,10 +24,17 @@ namespace OpenRA.LLMHarness
 		};
 		static bool VerboseMode = false;
 		static string? CurrentLogFile;
+		
+		// Queue management for LLM processing
+		static bool IsProcessingLLM = false;
+		static string? PendingFile = null;
+		static readonly object ProcessLock = new();
+		static CancellationTokenSource? ShutdownCts;
 
 		static async Task Main()
 		{
 			Console.WriteLine("OpenRA LLM Harness Starting...");
+			ShutdownCts = new CancellationTokenSource();
 
 			// Create directories if they don't exist
 			if (!Directory.Exists(WatchDirectory))
@@ -73,21 +80,41 @@ namespace OpenRA.LLMHarness
 			await ProcessExistingFilesAsync();
 
 			// Keep the application running
-			while (true)
+			while (!ShutdownCts.Token.IsCancellationRequested)
 			{
-				var key = Console.ReadKey(true);
-				if (key.KeyChar == 'q' || key.KeyChar == 'Q')
+				if (Console.KeyAvailable)
 				{
-					break;
+					var key = Console.ReadKey(true);
+					if (key.KeyChar == 'q' || key.KeyChar == 'Q')
+					{
+						ShutdownCts.Cancel();
+						break;
+					}
+					else if (key.KeyChar == 'v' || key.KeyChar == 'V')
+					{
+						VerboseMode = !VerboseMode;
+						Console.WriteLine($"\nVerbose mode: {(VerboseMode ? "ON" : "OFF")}");
+					}
 				}
-				else if (key.KeyChar == 'v' || key.KeyChar == 'V')
-				{
-					VerboseMode = !VerboseMode;
-					Console.WriteLine($"\nVerbose mode: {(VerboseMode ? "ON" : "OFF")}");
-				}
+				await Task.Delay(100); // Prevent tight loop
 			}
 
-			Console.WriteLine("Shutting down...");
+			Console.WriteLine("\nShutting down...");
+			
+			// Wait for any ongoing LLM processing to complete
+			var waitCount = 0;
+			while (IsProcessingLLM && waitCount < 30) // Wait up to 30 seconds
+			{
+				Console.WriteLine("Waiting for LLM processing to complete...");
+				await Task.Delay(1000);
+				waitCount++;
+			}
+			
+			if (IsProcessingLLM)
+			{
+				Console.WriteLine("Warning: Shutting down while LLM is still processing.");
+			}
+			
 			await LogToFileAsync($"\n=== Session Ended at {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
 		}
 
@@ -154,12 +181,29 @@ namespace OpenRA.LLMHarness
 
 		static async Task ProcessFileAsync(string filePath)
 		{
+			// Check if we're shutting down
+			if (ShutdownCts?.Token.IsCancellationRequested ?? true)
+				return;
+			
 			// Skip if already processed
 			lock (ProcessedFiles)
 			{
 				if (ProcessedFiles.Contains(filePath))
 					return;
 				ProcessedFiles.Add(filePath);
+			}
+			
+			// Check if LLM is currently processing
+			lock (ProcessLock)
+			{
+				if (IsProcessingLLM)
+				{
+					// Queue this file as the latest pending
+					PendingFile = filePath;
+					Console.WriteLine($"LLM is busy. Queued file: {Path.GetFileName(filePath)}");
+					return;
+				}
+				IsProcessingLLM = true;
 			}
 
 			try
@@ -193,6 +237,11 @@ namespace OpenRA.LLMHarness
 				if (string.IsNullOrEmpty(gameState))
 				{
 					Console.WriteLine("Failed to read game state file.");
+					lock (ProcessLock)
+					{
+						IsProcessingLLM = false;
+					}
+					await ProcessPendingFileAsync();
 					return;
 				}
 
@@ -201,6 +250,11 @@ namespace OpenRA.LLMHarness
 					!gameState.Contains("Resource Cells:"))
 				{
 					Console.WriteLine("Skipping menu/lobby state.");
+					lock (ProcessLock)
+					{
+						IsProcessingLLM = false;
+					}
+					await ProcessPendingFileAsync();
 					return;
 				}
 
@@ -231,12 +285,45 @@ namespace OpenRA.LLMHarness
 				Console.WriteLine($"Error processing file {filePath}: {ex.Message}");
 				Console.WriteLine($"Stack trace: {ex.StackTrace}");
 			}
+			finally
+			{
+				// Always release the processing lock and check for pending files
+				lock (ProcessLock)
+				{
+					IsProcessingLLM = false;
+				}
+				await ProcessPendingFileAsync();
+			}
+		}
+		
+		static async Task ProcessPendingFileAsync()
+		{
+			string? fileToProcess = null;
+			
+			lock (ProcessLock)
+			{
+				if (PendingFile != null && !IsProcessingLLM)
+				{
+					fileToProcess = PendingFile;
+					PendingFile = null;
+				}
+			}
+			
+			if (fileToProcess != null)
+			{
+				Console.WriteLine($"\nProcessing pending file: {Path.GetFileName(fileToProcess)}");
+				await ProcessFileAsync(fileToProcess);
+			}
 		}
 
 		static async Task StreamOllamaResponse(string prompt)
 		{
 			try
 			{
+				// Check if we're shutting down
+				if (ShutdownCts?.Token.IsCancellationRequested ?? true)
+					return;
+					
 				Console.WriteLine("\nSending prompt to Ollama API (streaming)...");
 				Console.WriteLine("\n=== LLM Response ===");
 				
