@@ -195,11 +195,20 @@ namespace OpenRA.Mods.Common.Traits
 						}
 					}
 
-					// Production queues
-					var queues = player.PlayerActor.TraitsImplementing<ProductionQueue>();
-					var hasProduction = false;
+					// Production queues - check all buildings for production queues
+					var allQueues = new List<ProductionQueue>();
 					
-					foreach (var queue in queues)
+					// First check player actor for queues
+					allQueues.AddRange(player.PlayerActor.TraitsImplementing<ProductionQueue>());
+					
+					// Then check all buildings for queues
+					foreach (var building in buildings)
+					{
+						allQueues.AddRange(building.TraitsImplementing<ProductionQueue>());
+					}
+					
+					var hasProduction = false;
+					foreach (var queue in allQueues)
 					{
 						var items = queue.AllQueued().ToList();
 						if (items.Count > 0)
