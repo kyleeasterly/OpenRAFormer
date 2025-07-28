@@ -95,7 +95,13 @@ namespace OpenRA.Mods.Common.Traits
 				var player1 = players.FirstOrDefault(p => p.PlayerName == "Player1");
 				foreach (var player in players)
 				{
-					var factionName = player.Faction.Name.Replace("faction-", "").Replace(".name", "").ToUpperInvariant();
+					var factionName = player.Faction.Name.Replace("faction-", "").Replace(".name", "");
+					// Proper case for faction names
+					if (factionName.Equals("nod", StringComparison.OrdinalIgnoreCase))
+						factionName = "Nod";
+					else if (factionName.Equals("gdi", StringComparison.OrdinalIgnoreCase))
+						factionName = "GDI";
+					
 					var cleanPlayerName = player.PlayerName.Replace("bot-", "").Replace(".name", "");
 					sb.AppendLine(CultureInfo.InvariantCulture, $"## Player: {cleanPlayerName} ({factionName})");
 
@@ -186,12 +192,29 @@ namespace OpenRA.Mods.Common.Traits
 					{
 						sb.AppendLine();
 						sb.AppendLine("#### Building Positions:");
-						foreach (var building in buildings.OrderBy(b => GetFriendlyBuildingName(b.Info.Name)))
+						
+						// Track unique positions to avoid duplicates (e.g., oil pumps)
+						var buildingPositions = new Dictionary<string, HashSet<(int X, int Y)>>();
+						
+						foreach (var building in buildings)
 						{
 							var pos = building.CenterPosition;
 							var cell = world.Map.CellContaining(pos);
 							var friendlyName = GetFriendlyBuildingName(building.Info.Name);
-							sb.AppendLine(CultureInfo.InvariantCulture, $"{friendlyName} at ({cell.X}, {cell.Y})");
+							
+							if (!buildingPositions.ContainsKey(friendlyName))
+								buildingPositions[friendlyName] = new HashSet<(int, int)>();
+							
+							buildingPositions[friendlyName].Add((cell.X, cell.Y));
+						}
+						
+						// Output unique positions only
+						foreach (var kvp in buildingPositions.OrderBy(kv => kv.Key))
+						{
+							foreach (var position in kvp.Value.OrderBy(p => p.X).ThenBy(p => p.Y))
+							{
+								sb.AppendLine(CultureInfo.InvariantCulture, $"{kvp.Key} at ({position.X}, {position.Y})");
+							}
 						}
 					}
 
@@ -221,15 +244,34 @@ namespace OpenRA.Mods.Common.Traits
 							}
 							
 							sb.AppendLine($"#### {queue.Info.Type} Queue:");
-							foreach (var item in items)
+							
+							// Group items by type and status
+							var itemGroups = items.GroupBy(item => new 
+							{ 
+								Name = item.Item,
+								Status = item.Paused ? "PAUSED" : item.Done ? "READY" : "IN_PROGRESS"
+							});
+							
+							foreach (var group in itemGroups)
 							{
-								var progress = item.RemainingCost == 0 ? 100 :
-									(100 * (item.TotalCost - item.RemainingCost) / item.TotalCost);
-								var friendlyName = world.Map.Rules.Actors[item.Item].TraitInfoOrDefault<BuildingInfo>() != null
-									? GetFriendlyBuildingName(item.Item)
-									: GetFriendlyUnitName(item.Item);
-								var itemStatus = item.Paused ? " (PAUSED)" : item.Done ? " (READY)" : $" ({progress}% complete)";
-								sb.AppendLine(CultureInfo.InvariantCulture, $"{friendlyName}{itemStatus}");
+								var firstItem = group.First();
+								var progress = firstItem.RemainingCost == 0 ? 100 :
+									(100 * (firstItem.TotalCost - firstItem.RemainingCost) / firstItem.TotalCost);
+								var friendlyName = world.Map.Rules.Actors[group.Key.Name].TraitInfoOrDefault<BuildingInfo>() != null
+									? GetFriendlyBuildingName(group.Key.Name)
+									: GetFriendlyUnitName(group.Key.Name);
+								
+								var count = group.Count();
+								var countStr = count > 1 ? $" x{count}" : "";
+								
+								var itemStatus = group.Key.Status switch
+								{
+									"PAUSED" => " (PAUSED)",
+									"READY" => " (READY)",
+									_ => $" ({progress}% complete)"
+								};
+								
+								sb.AppendLine(CultureInfo.InvariantCulture, $"{friendlyName}{countStr}{itemStatus}");
 							}
 						}
 					}
@@ -270,7 +312,13 @@ namespace OpenRA.Mods.Common.Traits
 						var enemyBuildingsByPlayer = enemyBuildings.GroupBy(b => b.Owner);
 						foreach (var playerGroup in enemyBuildingsByPlayer)
 						{
-							var enemyFactionName = playerGroup.Key.Faction.Name.Replace("faction-", "").Replace(".name", "").ToUpperInvariant();
+							var enemyFactionName = playerGroup.Key.Faction.Name.Replace("faction-", "").Replace(".name", "");
+							// Proper case for faction names
+							if (enemyFactionName.Equals("nod", StringComparison.OrdinalIgnoreCase))
+								enemyFactionName = "Nod";
+							else if (enemyFactionName.Equals("gdi", StringComparison.OrdinalIgnoreCase))
+								enemyFactionName = "GDI";
+							
 							var enemyPlayerName = playerGroup.Key.PlayerName.Replace("bot-", "").Replace(".name", "");
 							sb.AppendLine(CultureInfo.InvariantCulture, $"### {enemyPlayerName} ({enemyFactionName})");
 							
@@ -341,6 +389,7 @@ namespace OpenRA.Mods.Common.Traits
 				"HQ" => "Communications Center",
 				"FIX" => "Repair Bay",
 				"HBOX" => "Pillbox",
+				"V19" => "Oil Pump",
 				_ => internalName
 			};
 		}
