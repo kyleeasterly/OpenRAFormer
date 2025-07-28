@@ -60,17 +60,17 @@ namespace OpenRA.Mods.Common.Traits
 				var filename = Path.Combine(info.OutputDirectory, $"gamestate_{timestamp}_tick{world.WorldTick}.txt");
 
 				var sb = new StringBuilder();
-				sb.AppendLine("=== OpenRA Game State Snapshot ===");
-				sb.AppendLine(CultureInfo.InvariantCulture, $"Timestamp: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-				sb.AppendLine(CultureInfo.InvariantCulture, $"Game Tick: {world.WorldTick} (Time: {world.WorldTick / 25}s)");
-				sb.AppendLine(CultureInfo.InvariantCulture, $"Map: {world.Map.Title} ({world.Map.Uid})");
-				sb.AppendLine("Game Type: " + (world.LobbyInfo?.GlobalSettings?.ServerName ?? "Unknown"));
+				sb.AppendLine("# OpenRA Game State Snapshot");
+				sb.AppendLine(CultureInfo.InvariantCulture, $"**Timestamp:** {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+				sb.AppendLine(CultureInfo.InvariantCulture, $"**Game Tick:** {world.WorldTick} (Time: {world.WorldTick / 25}s)");
+				sb.AppendLine(CultureInfo.InvariantCulture, $"**Map:** {world.Map.Title}");
+				sb.AppendLine("**Game Type:** " + (world.LobbyInfo?.GlobalSettings?.ServerName ?? "Unknown"));
 				
 				// Export game settings
 				if (world.LobbyInfo?.GlobalSettings != null)
 				{
 					sb.AppendLine();
-					sb.AppendLine("=== Game Settings ===");
+					sb.AppendLine("## Game Settings");
 					var settings = world.LobbyInfo.GlobalSettings;
 					
 					// Render common lobby options in a meaningful way
@@ -79,12 +79,12 @@ namespace OpenRA.Mods.Common.Traits
 						foreach (var option in settings.LobbyOptions.OrderBy(kv => kv.Key))
 						{
 							var description = GetFriendlyOptionDescription(option.Key, option.Value);
-							sb.AppendLine($"  {description}");
+							sb.AppendLine($"- {description}");
 						}
 					}
 					
-					sb.AppendLine($"  Spectators: {(settings.AllowSpectators ? "Allowed" : "Not allowed")}");
-					sb.AppendLine($"  Game Speed: {GetGameSpeedDescription(settings.NetFrameInterval)}");
+					sb.AppendLine($"- Spectators: {(settings.AllowSpectators ? "Allowed" : "Not allowed")}");
+					sb.AppendLine($"- Game Speed: {GetGameSpeedDescription(settings.NetFrameInterval)}");
 				}
 				
 				sb.AppendLine();
@@ -93,7 +93,9 @@ namespace OpenRA.Mods.Common.Traits
 				var players = world.Players.Where(p => !p.NonCombatant && p.Playable).ToList();
 				foreach (var player in players)
 				{
-					sb.AppendLine(CultureInfo.InvariantCulture, $"=== Player: {player.PlayerName} ({player.Faction.Name}) ===");
+					var factionName = player.Faction.Name.Replace("faction-", "").Replace(".name", "").ToUpperInvariant();
+					var cleanPlayerName = player.PlayerName.Replace("bot-", "").Replace(".name", "");
+					sb.AppendLine(CultureInfo.InvariantCulture, $"## Player: {cleanPlayerName} ({factionName})");
 
 					// Show allies instead of teams
 					var allies = players.Where(p => p != player && player.IsAlliedWith(p)).Select(p => p.PlayerName).ToList();
@@ -108,12 +110,12 @@ namespace OpenRA.Mods.Common.Traits
 					if (resources != null)
 					{
 						sb.AppendLine();
-						sb.AppendLine("Economic Status:");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"  Cash: ${resources.Cash}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"  Stored Resources: {resources.Resources}/{resources.ResourceCapacity}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"  Total Value: ${resources.GetCashAndResources()}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"  Total Earned: ${resources.Earned}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"  Total Spent: ${resources.Spent}");
+						sb.AppendLine("### Economic Status");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"- Cash: ${resources.Cash}");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"- Stored Resources: {resources.Resources}/{resources.ResourceCapacity}");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"- Total Value: ${resources.GetCashAndResources()}");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"- Total Earned: ${resources.Earned}");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"- Total Spent: ${resources.Spent}");
 					}
 
 					// Statistics
@@ -121,15 +123,15 @@ namespace OpenRA.Mods.Common.Traits
 					if (stats != null)
 					{
 						sb.AppendLine();
-						sb.AppendLine("Military Statistics:");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"  Army Value: ${stats.ArmyValue}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"  Total Assets Value: ${stats.AssetsValue}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"  Units Killed: {stats.UnitsKilled} (${stats.KillsCost} value)");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"  Units Lost: {stats.UnitsDead} (${stats.DeathsCost} value)");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"  Buildings Destroyed: {stats.BuildingsKilled}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"  Buildings Lost: {stats.BuildingsDead}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"  Experience Points: {stats.Experience}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"  Income Rate: ${stats.DisplayIncome}/min");
+						sb.AppendLine("### Military Statistics");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"- Army Value: ${stats.ArmyValue}");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"- Total Assets Value: ${stats.AssetsValue}");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"- Units Killed: {stats.UnitsKilled} (${stats.KillsCost} value)");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"- Units Lost: {stats.UnitsDead} (${stats.DeathsCost} value)");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"- Buildings Destroyed: {stats.BuildingsKilled}");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"- Buildings Lost: {stats.BuildingsDead}");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"- Experience Points: {stats.Experience}");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"- Income Rate: ${stats.DisplayIncome}/min");
 					}
 
 					// Power
@@ -137,11 +139,11 @@ namespace OpenRA.Mods.Common.Traits
 					if (power != null)
 					{
 						sb.AppendLine();
-						sb.AppendLine("Power Status:");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"  Power Provided: {power.PowerProvided}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"  Power Consumed: {power.PowerDrained}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"  Power Balance: {power.PowerProvided - power.PowerDrained}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"  Power State: {power.PowerState}");
+						sb.AppendLine("### Power Status");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"- Power Provided: {power.PowerProvided}");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"- Power Consumed: {power.PowerDrained}");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"- Power Balance: {power.PowerProvided - power.PowerDrained}");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"- Power State: {power.PowerState}");
 					}
 
 					// Units and Buildings
@@ -150,31 +152,45 @@ namespace OpenRA.Mods.Common.Traits
 					var units = playerActors.Where(a => !a.Info.HasTraitInfo<BuildingInfo>()).ToList();
 
 					sb.AppendLine();
-					sb.AppendLine(CultureInfo.InvariantCulture, $"Unit Summary: {units.Count} units, {buildings.Count} buildings");
+					sb.AppendLine(CultureInfo.InvariantCulture, $"### Unit Summary: {units.Count} units, {buildings.Count} buildings");
 
 					// Group units by type
 					var unitGroups = units.GroupBy(a => a.Info.Name).OrderByDescending(g => g.Count());
-					sb.AppendLine("Units by Type:");
+					sb.AppendLine("#### Units by Type:");
 					foreach (var group in unitGroups)
 					{
 						var firstUnit = group.First();
 						var valued = firstUnit.Info.TraitInfoOrDefault<ValuedInfo>();
 						var cost = valued?.Cost ?? 0;
 						var friendlyName = GetFriendlyUnitName(group.Key);
-						sb.AppendLine(CultureInfo.InvariantCulture, $"  {friendlyName}: {group.Count()} units (${cost} each, ${cost * group.Count()} total)");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"- {friendlyName}: {group.Count()} units (${cost} each, ${cost * group.Count()} total)");
 					}
 
 					// Group buildings by type
 					var buildingGroups = buildings.GroupBy(a => a.Info.Name).OrderByDescending(g => g.Count());
 					sb.AppendLine();
-					sb.AppendLine("Buildings by Type:");
+					sb.AppendLine("#### Buildings by Type:");
 					foreach (var group in buildingGroups)
 					{
 						var firstBuilding = group.First();
 						var valued = firstBuilding.Info.TraitInfoOrDefault<ValuedInfo>();
 						var cost = valued?.Cost ?? 0;
 						var friendlyName = GetFriendlyBuildingName(group.Key);
-						sb.AppendLine(CultureInfo.InvariantCulture, $"  {friendlyName}: {group.Count()} buildings (${cost} each, ${cost * group.Count()} total)");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"- {friendlyName}: {group.Count()} buildings (${cost} each, ${cost * group.Count()} total)");
+					}
+
+					// Building positions
+					if (buildings.Count > 0)
+					{
+						sb.AppendLine();
+						sb.AppendLine("#### Building Positions:");
+						foreach (var building in buildings.OrderBy(b => GetFriendlyBuildingName(b.Info.Name)))
+						{
+							var pos = building.CenterPosition;
+							var cell = world.Map.CellContaining(pos);
+							var friendlyName = GetFriendlyBuildingName(building.Info.Name);
+							sb.AppendLine(CultureInfo.InvariantCulture, $"- {friendlyName} at ({cell.X}, {cell.Y})");
+						}
 					}
 
 					// Production queues
@@ -189,11 +205,11 @@ namespace OpenRA.Mods.Common.Traits
 							if (!hasProduction)
 							{
 								sb.AppendLine();
-								sb.AppendLine("Production Queues:");
+								sb.AppendLine("### Production Queues");
 								hasProduction = true;
 							}
 							
-							sb.AppendLine($"  {queue.Info.Type} Queue:");
+							sb.AppendLine($"#### {queue.Info.Type} Queue:");
 							foreach (var item in items)
 							{
 								var progress = item.RemainingCost == 0 ? 100 :
@@ -202,7 +218,7 @@ namespace OpenRA.Mods.Common.Traits
 									? GetFriendlyBuildingName(item.Item)
 									: GetFriendlyUnitName(item.Item);
 								var itemStatus = item.Paused ? " (PAUSED)" : item.Done ? " (READY)" : $" ({progress}% complete)";
-								sb.AppendLine(CultureInfo.InvariantCulture, $"    - {friendlyName}{itemStatus}");
+								sb.AppendLine(CultureInfo.InvariantCulture, $"- {friendlyName}{itemStatus}");
 							}
 						}
 					}
@@ -216,15 +232,51 @@ namespace OpenRA.Mods.Common.Traits
 						.ToList();
 
 					sb.AppendLine();
-					sb.AppendLine("Special Units:");
-					sb.AppendLine(CultureInfo.InvariantCulture, $"  Harvesters: {harvesters.Count}");
-					sb.AppendLine(CultureInfo.InvariantCulture, $"  MCVs: {mcvs.Count}");
+					sb.AppendLine("### Special Units");
+					sb.AppendLine(CultureInfo.InvariantCulture, $"- Harvesters: {harvesters.Count}");
+					sb.AppendLine(CultureInfo.InvariantCulture, $"- MCVs: {mcvs.Count}");
 
 					sb.AppendLine();
 				}
 
+				// Visible enemy structures
+				if (world.LocalPlayer != null)
+				{
+					var enemyBuildings = world.Actors
+						.Where(a => a.Owner != world.LocalPlayer && 
+								   !a.Owner.NonCombatant && 
+								   a.Owner.Playable &&
+								   !a.IsDead && 
+								   a.Info.HasTraitInfo<BuildingInfo>() &&
+								   a.CanBeViewedByPlayer(world.LocalPlayer))
+						.ToList();
+
+					if (enemyBuildings.Count > 0)
+					{
+						sb.AppendLine();
+						sb.AppendLine("## Visible Enemy Structures");
+						
+						var enemyBuildingsByPlayer = enemyBuildings.GroupBy(b => b.Owner);
+						foreach (var playerGroup in enemyBuildingsByPlayer)
+						{
+							var enemyFactionName = playerGroup.Key.Faction.Name.Replace("faction-", "").Replace(".name", "").ToUpperInvariant();
+							var enemyPlayerName = playerGroup.Key.PlayerName.Replace("bot-", "").Replace(".name", "");
+							sb.AppendLine(CultureInfo.InvariantCulture, $"### {enemyPlayerName} ({enemyFactionName})");
+							
+							foreach (var building in playerGroup.OrderBy(b => GetFriendlyBuildingName(b.Info.Name)))
+							{
+								var pos = building.CenterPosition;
+								var cell = world.Map.CellContaining(pos);
+								var friendlyName = GetFriendlyBuildingName(building.Info.Name);
+								sb.AppendLine(CultureInfo.InvariantCulture, $"- {friendlyName} at ({cell.X}, {cell.Y})");
+							}
+						}
+					}
+				}
+
 				// Map control analysis
-				sb.AppendLine("=== Map Control Analysis ===");
+				sb.AppendLine();
+				sb.AppendLine("## Map Control Analysis");
 
 				// Count resource cells on the map
 				var resourceLayer = world.WorldActor.TraitOrDefault<IResourceLayer>();
