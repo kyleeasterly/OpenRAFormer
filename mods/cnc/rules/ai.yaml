@@ -267,8 +267,6 @@ Player:
 		MinimumConstructionYardCount: 2
 		RestrictMCVDeploymentFallbackToBase: false
 		PreferResourceExpansion: true
-		MaxResourceCellsToCheck: 10
-		MinResourceExpansionDistance: 30
 	SquadManagerBotModule@watson:
 		RequiresCondition: enable-watson-ai
 		SquadSize: 15

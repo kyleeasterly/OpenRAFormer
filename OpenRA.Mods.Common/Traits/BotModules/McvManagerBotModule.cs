@@ -47,11 +47,6 @@ namespace OpenRA.Mods.Common.Traits
 		[Desc("Prefer deploying MCVs near resource patches outside the base.")]
 		public readonly bool PreferResourceExpansion = false;
 
-		[Desc("Number of resource cells to check when considering expansion locations.")]
-		public readonly int MaxResourceCellsToCheck = 10;
-
-		[Desc("Minimum distance from existing bases when expanding to resources.")]
-		public readonly int MinResourceExpansionDistance = 30;
 
 		public override object Create(ActorInitializer init) { return new McvManagerBotModule(init.Self, this); }
 	}
@@ -188,6 +183,112 @@ namespace OpenRA.Mods.Common.Traits
 			bot.QueueOrder(new Order("DeployTransform", mcv, true));
 		}
 
+		sealed class ResourcePatch
+		{
+			public CPos Center { get; set; }
+			public int ResourceCount { get; set; }
+			public int DistanceFromBase { get; set; }
+			public float Score { get; set; }
+		}
+
+		List<ResourcePatch> FindResourcePatches(IResourceLayer resourceLayer, CPos baseCenter)
+		{
+			var patches = new List<ResourcePatch>();
+			var visited = new HashSet<CPos>();
+			
+			// Find all resource cells and group them into patches
+			foreach (var cell in world.Map.AllCells)
+			{
+				if (visited.Contains(cell))
+					continue;
+
+				var resource = resourceLayer.GetResource(cell);
+				if (resource.Type == null || !resourceLayer.IsVisible(cell))
+					continue;
+
+				// Found a resource cell, flood-fill to find the whole patch
+				var patchCells = new List<CPos>();
+				var queue = new Queue<CPos>();
+				queue.Enqueue(cell);
+				visited.Add(cell);
+
+				while (queue.Count > 0)
+				{
+					var current = queue.Dequeue();
+					patchCells.Add(current);
+
+					// Check all adjacent cells
+					foreach (var direction in CVec.Directions)
+					{
+						var adjacent = current + direction;
+						if (!world.Map.Contains(adjacent) || visited.Contains(adjacent))
+							continue;
+
+						var adjacentResource = resourceLayer.GetResource(adjacent);
+						if (adjacentResource.Type != null && resourceLayer.IsVisible(adjacent))
+						{
+							visited.Add(adjacent);
+							queue.Enqueue(adjacent);
+						}
+					}
+				}
+
+				// Create a patch from the cells we found
+				if (patchCells.Count > 0)
+				{
+					var centerX = patchCells.Sum(c => c.X) / patchCells.Count;
+					var centerY = patchCells.Sum(c => c.Y) / patchCells.Count;
+					var patchCenter = new CPos(centerX, centerY);
+					var distance = (patchCenter - baseCenter).Length;
+
+					patches.Add(new ResourcePatch
+					{
+						Center = patchCenter,
+						ResourceCount = patchCells.Count,
+						DistanceFromBase = distance,
+						Score = 0 // Will be calculated below
+					});
+				}
+			}
+
+			// Check for enemy threats and calculate scores
+			var enemyBuildings = world.ActorsHavingTrait<Building>()
+				.Where(a => !a.IsDead && a.Owner.RelationshipWith(player) == PlayerRelationship.Enemy)
+				.ToList();
+
+			foreach (var patch in patches)
+			{
+				// Base score on resource count
+				var score = patch.ResourceCount * 10f;
+
+				// Prefer closer patches, but not too close (to avoid overlapping build areas)
+				if (patch.DistanceFromBase < 15)
+					score *= 0.7f; // Too close, might overlap
+				else if (patch.DistanceFromBase < 30)
+					score *= 1.0f; // Good distance
+				else if (patch.DistanceFromBase < 50)
+					score *= 0.8f; // Getting far
+				else
+					score *= 0.4f; // Too far
+
+				// Check for nearby enemies
+				var nearestEnemy = enemyBuildings
+					.Select(e => (e.Location - patch.Center).Length)
+					.OrderBy(d => d)
+					.FirstOrDefault();
+
+				if (nearestEnemy < 20)
+					score *= 0.1f; // Very dangerous
+				else if (nearestEnemy < 35)
+					score *= 0.5f; // Risky
+
+				patch.Score = score;
+			}
+
+			// Return patches sorted by score
+			return patches.OrderByDescending(p => p.Score).ToList();
+		}
+
 		CPos? ChooseMcvDeployLocation(string actorType, CVec offset, bool distanceToBaseIsImportant)
 		{
 			var actorInfo = world.Map.Rules.Actors[actorType];
@@ -221,20 +322,13 @@ namespace OpenRA.Mods.Common.Traits
 				var resourceLayer = world.WorldActor.TraitOrDefault<IResourceLayer>();
 				if (resourceLayer != null)
 				{
-					// Find resource cells far from existing bases
-					var minDistanceSquared = Info.MinResourceExpansionDistance * Info.MinResourceExpansionDistance;
-					var resourceCells = world.Map.AllCells
-						.Where(c => resourceLayer.GetResource(c).Type != null
-							&& resourceLayer.IsVisible(c) // Respect fog of war
-							&& (c - baseCenter).LengthSquared > minDistanceSquared)
-						.OrderBy(c => (c - baseCenter).LengthSquared) // Prefer closer resources
-						.Take(Info.MaxResourceCellsToCheck)
-						.ToList();
+					// Find and evaluate resource patches
+					var resourcePatches = FindResourcePatches(resourceLayer, baseCenter);
 
-					foreach (var resourceCell in resourceCells)
+					foreach (var patch in resourcePatches)
 					{
-						// Check if we can build near this resource
-						var location = FindPos(resourceCell, resourceCell, 3, 10);
+						// Check if we can build near this resource patch
+						var location = FindPos(patch.Center, patch.Center, 3, 10);
 						if (location != null)
 							return location;
 					}
