@@ -28,11 +28,14 @@ namespace OpenRA.Mods.Common.Traits
 		[Desc("Actor types that are able to produce MCVs.")]
 		public readonly HashSet<string> McvFactoryTypes = [];
 
+		[Desc("Actor types that are considered refineries.")]
+		public readonly HashSet<string> RefineryTypes = [];
+
 		[Desc("Try to maintain at least this many ConstructionYardTypes, build an MCV if number is below this.")]
 		public readonly int MinimumConstructionYardCount = 1;
 
 		[Desc("Delay (in ticks) between looking for and giving out orders to new MCVs.")]
-		public readonly int ScanForNewMcvInterval = 20;
+		public readonly int ScanForNewMcvInterval = 150;
 
 		[Desc("Minimum distance in cells from center of the base when checking for MCV deployment location.")]
 		public readonly int MinBaseRadius = 2;
@@ -140,8 +143,22 @@ namespace OpenRA.Mods.Common.Traits
 			if (totalBasePotential >= Info.MinimumConstructionYardCount)
 				return false;
 
-			// Build MCV if we have a factory to build it
-			return AIUtils.CountActorByCommonName(mcvFactories) > 0;
+			// Check if we have a factory to build it
+			if (AIUtils.CountActorByCommonName(mcvFactories) == 0)
+				return false;
+
+			// Don't build MCVs too early - need basic infrastructure first
+			var refineries = world.ActorsHavingTrait<Building>()
+				.Count(a => a.Owner == player && Info.RefineryTypes.Contains(a.Info.Name));
+			var barracks = world.ActorsHavingTrait<Building>()
+				.Count(a => a.Owner == player && (a.Info.Name == "pyle" || a.Info.Name == "hand"));
+			
+			// For first expansion: need at least 2 refineries and 1 barracks
+			if (currentBases == 1 && totalBasePotential == 1)
+				return refineries >= 2 && barracks >= 1;
+			
+			// For subsequent expansions: need more infrastructure
+			return refineries >= 3 && barracks >= 2;
 		}
 
 		void DeployMcvs(IBot bot, bool chooseLocation)

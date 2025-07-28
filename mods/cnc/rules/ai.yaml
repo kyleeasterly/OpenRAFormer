@@ -251,18 +251,21 @@ Player:
 		RequiresCondition: enable-cabal-ai
 		McvTypes: mcv
 		ConstructionYardTypes: fact
+		RefineryTypes: proc
 		McvFactoryTypes: weap,afld
 		MinimumConstructionYardCount: 2
 	McvManagerBotModule@watson:
 		RequiresCondition: enable-watson-ai
 		McvTypes: mcv
 		ConstructionYardTypes: fact
+		RefineryTypes: proc
 		McvFactoryTypes: weap,afld
 		MinimumConstructionYardCount: 2
 	McvManagerBotModule@hal9001:
 		RequiresCondition: enable-hal9001-ai
 		McvTypes: mcv
 		ConstructionYardTypes: fact
+		RefineryTypes: proc
 		McvFactoryTypes: weap,afld
 		MinimumConstructionYardCount: 2
 		RestrictMCVDeploymentFallbackToBase: false
