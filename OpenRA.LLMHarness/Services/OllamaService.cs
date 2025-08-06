@@ -8,8 +8,8 @@ namespace OpenRA.LLMHarness.Services
 		private const string WatchDirectory = @"C:\OpenRATest";
 		private const string LogDirectory = @"C:\OpenRATest\LLM_Coach_Logs";
 		private const string OllamaApiUrl = "http://localhost:11434/api/generate";
-		private const string ModelName = "gemma3:27b";
-		private const bool EnableThinking = false; // Set to true for models that support thinking
+		private const string ModelName = "gpt-oss:20b";
+		private const bool EnableThinking = true; // Set to true for models that support thinking
 
 		private readonly HttpClient httpClient;
 		private readonly HashSet<string> processedFiles = [];
