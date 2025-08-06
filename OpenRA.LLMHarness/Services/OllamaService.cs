@@ -9,6 +9,7 @@ namespace OpenRA.LLMHarness.Services
 		private const string LogDirectory = @"C:\OpenRATest\LLM_Coach_Logs";
 		private const string OllamaApiUrl = "http://localhost:11434/api/generate";
 		private const string ModelName = "gemma3:27b";
+		private const bool EnableThinking = false; // Set to true for models that support thinking
 
 		private readonly HttpClient httpClient;
 		private readonly HashSet<string> processedFiles = [];
@@ -60,7 +61,14 @@ namespace OpenRA.LLMHarness.Services
 			await LogToFileAsync($"=== OpenRA LLM Coach Session Started at {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
 			await LogToFileAsync($"Model: {ModelName}");
 			await LogToFileAsync($"Watch Directory: {WatchDirectory}");
+			await LogToFileAsync($"Thinking Mode: {(EnableThinking ? "Enabled" : "Disabled")}");
+			await LogToFileAsync($"Ollama API URL: {OllamaApiUrl}");
 			await LogToFileAsync("");
+			
+			Console.WriteLine($"[INFO] Starting OpenRA LLM Coach");
+			Console.WriteLine($"[INFO] Model: {ModelName}");
+			Console.WriteLine($"[INFO] Thinking Mode: {(EnableThinking ? "Enabled" : "Disabled")}");
+			Console.WriteLine($"[INFO] Ollama API URL: {OllamaApiUrl}");
 
 			// Test Ollama API connectivity
 			return await TestOllamaConnectionAsync();
@@ -124,12 +132,17 @@ namespace OpenRA.LLMHarness.Services
 				}
 				else
 				{
+					var errorBody = await response.Content.ReadAsStringAsync();
+					Console.WriteLine($"[ERROR] Ollama API test failed with status {response.StatusCode}");
+					Console.WriteLine($"[ERROR] Test request: {json}");
+					Console.WriteLine($"[ERROR] Response body: {errorBody}");
 					await NotifyStatusAsync($"Ollama API returned error: {response.StatusCode}");
 					return false;
 				}
 			}
 			catch (Exception ex)
 			{
+				Console.WriteLine($"[ERROR] Exception testing Ollama connection: {ex}");
 				await NotifyStatusAsync($"Failed to connect to Ollama API: {ex.Message}");
 				return false;
 			}
@@ -149,6 +162,7 @@ namespace OpenRA.LLMHarness.Services
 			}
 			catch (Exception ex)
 			{
+				Console.WriteLine($"[ERROR] Error processing existing files: {ex}");
 				await NotifyStatusAsync($"Error processing existing files: {ex.Message}");
 			}
 		}
@@ -264,6 +278,7 @@ namespace OpenRA.LLMHarness.Services
 			}
 			catch (Exception ex)
 			{
+				Console.WriteLine($"[ERROR] Error processing file {filePath}: {ex}");
 				await NotifyStatusAsync($"Error processing file {filePath}: {ex.Message}");
 			}
 			finally
@@ -316,15 +331,30 @@ namespace OpenRA.LLMHarness.Services
 				var startTime = DateTime.Now;
 				var isReceivingThinking = false;
 
-				var request = new
+				// Build request - only include think parameter if enabled
+				object request;
+				if (EnableThinking)
 				{
-					model = ModelName,
-					prompt = prompt,
-					stream = true,
-					think = true // Enable thinking output for models that support it
-				};
+					request = new
+					{
+						model = ModelName,
+						prompt = prompt,
+						stream = true,
+						think = true
+					};
+				}
+				else
+				{
+					request = new
+					{
+						model = ModelName,
+						prompt = prompt,
+						stream = true
+					};
+				}
 
 				var json = JsonSerializer.Serialize(request, jsonOptions);
+				Console.WriteLine($"[DEBUG] Sending request to Ollama: {json}");
 				var content = new StringContent(json, Encoding.UTF8, "application/json");
 
 				using var requestMessage = new HttpRequestMessage(HttpMethod.Post, OllamaApiUrl)
@@ -333,7 +363,17 @@ namespace OpenRA.LLMHarness.Services
 				};
 
 				using var response = await httpClient.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead);
-				response.EnsureSuccessStatusCode();
+				
+				if (!response.IsSuccessStatusCode)
+				{
+					var errorBody = await response.Content.ReadAsStringAsync();
+					Console.WriteLine($"[ERROR] Ollama API request failed with status {response.StatusCode}");
+					Console.WriteLine($"[ERROR] Request URL: {OllamaApiUrl}");
+					Console.WriteLine($"[ERROR] Request body: {json}");
+					Console.WriteLine($"[ERROR] Response headers: {response.Headers}");
+					Console.WriteLine($"[ERROR] Response body: {errorBody}");
+					throw new HttpRequestException($"Ollama API error {response.StatusCode}: {errorBody}");
+				}
 
 				await using var stream = await response.Content.ReadAsStreamAsync();
 				using var reader = new StreamReader(stream);
@@ -423,6 +463,7 @@ namespace OpenRA.LLMHarness.Services
 			}
 			catch (Exception ex)
 			{
+				Console.WriteLine($"[ERROR] Exception in StreamOllamaResponseAsync: {ex}");
 				await NotifyStatusAsync($"Error communicating with Ollama API: {ex.Message}");
 			}
 		}
