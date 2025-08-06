@@ -1,0 +1,188 @@
+@page "/"
+@using OpenRA.LLMHarness.Services
+@inject OllamaService OllamaService
+@implements IDisposable
+
+<PageTitle>OpenRA LLM Coach</PageTitle>
+
+<MudGrid>
+    <!-- Sidebar with session history -->
+    <MudItem xs="3">
+        <MudPaper Elevation="3" Class="pa-4" Style="height: calc(100vh - 80px); overflow-y: auto;">
+            <MudText Typo="Typo.h6" Class="mb-4">Session History</MudText>
+            
+            @if (sessionHistory.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">No responses yet...</MudText>
+            }
+            else
+            {
+                <MudList Clickable="true">
+                    @foreach (var response in sessionHistory.OrderByDescending(r => r.Timestamp))
+                    {
+                        <MudListItem OnClick="@(() => SelectResponse(response.Id))">
+                            <MudCard Outlined="@(selectedResponseId == response.Id)" 
+                                     Class="@(selectedResponseId == response.Id ? "mud-theme-primary" : "")">
+                                <MudCardContent Class="py-2 px-3">
+                                    <MudText Typo="Typo.caption">@response.Timestamp.ToString("HH:mm:ss")</MudText>
+                                    <MudText Typo="Typo.body2" Class="text-truncate">
+                                        @(response.Response.Length > 50 ? response.Response.Substring(0, 50) + "..." : response.Response)
+                                    </MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                        @response.DurationSeconds.ToString("F1")s
+                                    </MudText>
+                                </MudCardContent>
+                            </MudCard>
+                        </MudListItem>
+                    }
+                </MudList>
+            }
+        </MudPaper>
+    </MudItem>
+    
+    <!-- Main content area -->
+    <MudItem xs="9">
+        <MudPaper Elevation="3" Class="pa-4" Style="height: calc(100vh - 80px); overflow-y: auto;">
+            <!-- Status bar -->
+            <MudAlert Severity="@(isConnected ? Severity.Success : Severity.Warning)" Class="mb-4">
+                @statusMessage
+            </MudAlert>
+            
+            <!-- Verbose mode toggle -->
+            <MudSwitch @bind-Value="@verboseMode" Label="Verbose Mode" Color="Color.Primary" Class="mb-4" />
+            
+            <!-- Current response display -->
+            <MudCard>
+                <MudCardContent>
+                    @if (isProcessing)
+                    {
+                        <MudText Typo="Typo.h6" Class="mb-2">LLM is processing...</MudText>
+                        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-3" />
+                    }
+                    else if (!string.IsNullOrEmpty(selectedResponseId) && GetSelectedResponse() != null)
+                    {
+                        var selected = GetSelectedResponse()!;
+                        <MudText Typo="Typo.h6" Class="mb-2">
+                            Response from @selected.Timestamp.ToString("HH:mm:ss")
+                        </MudText>
+                        <MudDivider Class="my-2" />
+                        
+                        @if (verboseMode)
+                        {
+                            <MudExpansionPanels Class="mb-3">
+                                <MudExpansionPanel Text="Game State">
+                                    <MudText Typo="Typo.body2" Style="white-space: pre-wrap; font-family: monospace;">
+                                        @selected.GameState
+                                    </MudText>
+                                </MudExpansionPanel>
+                            </MudExpansionPanels>
+                        }
+                        
+                        <MudText Typo="Typo.body1" Style="white-space: pre-wrap;">
+                            @selected.Response
+                        </MudText>
+                        
+                        <MudDivider Class="my-2" />
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            Generated in @selected.DurationSeconds.ToString("F1") seconds
+                        </MudText>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.h6">Waiting for game state...</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            The LLM will analyze game states as they are detected in the watch directory.
+                        </MudText>
+                    }
+                    
+                    <!-- Streaming response display -->
+                    @if (!string.IsNullOrEmpty(currentStreamingResponse))
+                    {
+                        <MudText Typo="Typo.body1" Style="white-space: pre-wrap;" Class="mt-3">
+                            @currentStreamingResponse
+                        </MudText>
+                    }
+                </MudCardContent>
+            </MudCard>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private bool isConnected = false;
+    private bool isProcessing = false;
+    private bool verboseMode = false;
+    private string statusMessage = "Initializing...";
+    private string selectedResponseId = "";
+    private string currentStreamingResponse = "";
+    
+    private List<LLMResponse> sessionHistory = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Subscribe to events
+        OllamaService.OnResponseChunk += HandleResponseChunk;
+        OllamaService.OnResponseComplete += HandleResponseComplete;
+        OllamaService.OnStatusUpdate += HandleStatusUpdate;
+        
+        // Set verbose mode
+        OllamaService.VerboseMode = verboseMode;
+        
+        await base.OnInitializedAsync();
+    }
+
+    private async Task HandleResponseChunk(string chunk)
+    {
+        currentStreamingResponse += chunk;
+        isProcessing = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleResponseComplete(LLMResponse response)
+    {
+        sessionHistory.Add(response);
+        selectedResponseId = response.Id;
+        currentStreamingResponse = "";
+        isProcessing = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleStatusUpdate(string status)
+    {
+        statusMessage = status;
+        if (status.Contains("API is responding"))
+        {
+            isConnected = true;
+        }
+        else if (status.Contains("Failed to connect"))
+        {
+            isConnected = false;
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void SelectResponse(string responseId)
+    {
+        selectedResponseId = responseId;
+        currentStreamingResponse = "";
+    }
+
+    private LLMResponse? GetSelectedResponse()
+    {
+        return sessionHistory.FirstOrDefault(r => r.Id == selectedResponseId);
+    }
+
+    private void OnVerboseModeChanged(bool newValue)
+    {
+        verboseMode = newValue;
+        OllamaService.VerboseMode = verboseMode;
+    }
+
+    public void Dispose()
+    {
+        // Unsubscribe from events
+        OllamaService.OnResponseChunk -= HandleResponseChunk;
+        OllamaService.OnResponseComplete -= HandleResponseComplete;
+        OllamaService.OnStatusUpdate -= HandleStatusUpdate;
+    }
+}
