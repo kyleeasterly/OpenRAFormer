@@ -48,8 +48,21 @@
                 @statusMessage
             </MudAlert>
             
-            <!-- Verbose mode toggle -->
-            <MudSwitch @bind-Value="@verboseMode" Label="Verbose Mode" Color="Color.Primary" Class="mb-4" />
+            <!-- Controls -->
+            <MudGrid>
+                <MudItem xs="12" sm="6">
+                    <MudSwitch @bind-Value="@verboseMode" Label="Verbose Mode" Color="Color.Primary" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Thinking Level:</MudText>
+                    <MudRadioGroup Value="@thinkingLevel" T="string" ValueChanged="OnThinkingLevelChanged">
+                        <MudRadio Value="@("low")" Color="Color.Primary">Low</MudRadio>
+                        <MudRadio Value="@("medium")" Color="Color.Primary">Medium</MudRadio>
+                        <MudRadio Value="@("high")" Color="Color.Primary">High</MudRadio>
+                    </MudRadioGroup>
+                </MudItem>
+            </MudGrid>
+            <MudDivider Class="my-4" />
             
             <!-- Current response display -->
             <MudCard>
@@ -104,14 +117,29 @@
                     }
                     
                     <!-- Streaming display -->
-                    @if (isProcessing && showThinking && !string.IsNullOrEmpty(currentStreamingThinking))
+                    @if (!string.IsNullOrEmpty(currentStreamingThinking) || (!isProcessing && !string.IsNullOrEmpty(lastThinkingTrace)))
                     {
                         <MudCard Class="mt-3" Outlined="true" Style="background-color: #1e3a5f;">
                             <MudCardContent>
-                                <MudText Typo="Typo.subtitle2" Color="Color.Info">Thinking...</MudText>
-                                <MudText Typo="Typo.body2" Style="white-space: pre-wrap; font-family: monospace; color: #64b5f6;">
-                                    @currentStreamingThinking
-                                </MudText>
+                                @if (isProcessing && showThinking)
+                                {
+                                    <MudText Typo="Typo.subtitle2" Color="Color.Info">Thinking...</MudText>
+                                    <MudText Typo="Typo.body2" Style="white-space: pre-wrap; font-family: monospace; color: #64b5f6;">
+                                        @currentStreamingThinking
+                                    </MudText>
+                                }
+                                else if (!string.IsNullOrEmpty(lastThinkingTrace))
+                                {
+                                    <MudExpansionPanels>
+                                        <MudExpansionPanel Text="@(thinkingExpanded ? "Thinking Process (Click to collapse)" : "Thinking Process (Click to expand)")" 
+                                                         IsExpanded="@thinkingExpanded"
+                                                         ExpandedChanged="@OnThinkingExpandedChanged">
+                                            <MudText Typo="Typo.body2" Style="white-space: pre-wrap; font-family: monospace; color: #64b5f6;">
+                                                @lastThinkingTrace
+                                            </MudText>
+                                        </MudExpansionPanel>
+                                    </MudExpansionPanels>
+                                }
                             </MudCardContent>
                         </MudCard>
                     }
@@ -135,7 +163,10 @@
     private string selectedResponseId = "";
     private string currentStreamingResponse = "";
     private string currentStreamingThinking = "";
+    private string lastThinkingTrace = "";
     private bool showThinking = false;
+    private bool thinkingExpanded = false;
+    private string thinkingLevel = "medium";
     
     private List<LLMResponse> sessionHistory = new();
 
@@ -147,8 +178,9 @@
         OllamaService.OnResponseComplete += HandleResponseComplete;
         OllamaService.OnStatusUpdate += HandleStatusUpdate;
         
-        // Set verbose mode
+        // Set initial settings
         OllamaService.VerboseMode = verboseMode;
+        OllamaService.ThinkingLevel = thinkingLevel;
         
         await base.OnInitializedAsync();
     }
@@ -158,6 +190,14 @@
         currentStreamingResponse += chunk;
         isProcessing = true;
         showThinking = false; // Switch to showing response
+        
+        // Save thinking trace when response starts
+        if (!string.IsNullOrEmpty(currentStreamingThinking) && string.IsNullOrEmpty(lastThinkingTrace))
+        {
+            lastThinkingTrace = currentStreamingThinking;
+            thinkingExpanded = false; // Collapse when response starts
+        }
+        
         await InvokeAsync(StateHasChanged);
     }
     
@@ -175,9 +215,21 @@
         selectedResponseId = response.Id;
         currentStreamingResponse = "";
         currentStreamingThinking = "";
+        lastThinkingTrace = response.Thinking; // Keep the thinking trace
         isProcessing = false;
         showThinking = false;
         await InvokeAsync(StateHasChanged);
+    }
+    
+    private void OnThinkingLevelChanged(string newLevel)
+    {
+        thinkingLevel = newLevel;
+        OllamaService.ThinkingLevel = thinkingLevel;
+    }
+    
+    private void OnThinkingExpandedChanged(bool expanded)
+    {
+        thinkingExpanded = expanded;
     }
 
     private async Task HandleStatusUpdate(string status)
@@ -200,6 +252,11 @@
         currentStreamingResponse = "";
         currentStreamingThinking = "";
         showThinking = false;
+        
+        // Load thinking trace from selected response
+        var selected = GetSelectedResponse();
+        lastThinkingTrace = selected?.Thinking ?? "";
+        thinkingExpanded = false;
     }
 
     private LLMResponse? GetSelectedResponse()

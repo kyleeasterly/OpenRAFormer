@@ -18,6 +18,7 @@ namespace OpenRA.LLMHarness.Services
 			PropertyNamingPolicy = JsonNamingPolicy.CamelCase
 		};
 		private bool verboseMode = false;
+		private string thinkingLevel = "medium";
 		private string? currentLogFile;
 
 		// Queue management for LLM processing
@@ -328,7 +329,11 @@ namespace OpenRA.LLMHarness.Services
 						model = ModelName,
 						prompt = prompt,
 						stream = true,
-						think = true
+						think = true,
+						options = new
+						{
+							thinkLevel = thinkingLevel
+						}
 					};
 				}
 				else
@@ -531,6 +536,12 @@ namespace OpenRA.LLMHarness.Services
 		{
 			get => verboseMode;
 			set => verboseMode = value;
+		}
+
+		public string ThinkingLevel
+		{
+			get => thinkingLevel;
+			set => thinkingLevel = value;
 		}
 	}
 
