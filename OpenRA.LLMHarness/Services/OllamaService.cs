@@ -27,6 +27,7 @@ namespace OpenRA.LLMHarness.Services
 
 		// Events for UI updates
 		public event Func<string, Task>? OnResponseChunk;
+		public event Func<string, Task>? OnThinkingChunk;
 		public event Func<LLMResponse, Task>? OnResponseComplete;
 		public event Func<string, Task>? OnStatusUpdate;
 
@@ -311,13 +312,16 @@ namespace OpenRA.LLMHarness.Services
 				await LogToFileAsync("\n=== LLM RESPONSE ===");
 
 				var responseBuilder = new StringBuilder();
+				var thinkingBuilder = new StringBuilder();
 				var startTime = DateTime.Now;
+				var isReceivingThinking = false;
 
 				var request = new
 				{
 					model = ModelName,
 					prompt = prompt,
-					stream = true
+					stream = true,
+					think = true // Enable thinking output for models that support it
 				};
 
 				var json = JsonSerializer.Serialize(request, jsonOptions);
@@ -341,18 +345,48 @@ namespace OpenRA.LLMHarness.Services
 					{
 						try
 						{
+							// Log raw JSON for debugging
+							Console.WriteLine($"[DEBUG] Raw Ollama response: {line}");
+							
 							var responseObj = JsonSerializer.Deserialize<OllamaResponse>(line, jsonOptions);
-							if (responseObj != null && !string.IsNullOrEmpty(responseObj.Response))
+							if (responseObj != null)
 							{
-								// Stream the response chunk
-								responseBuilder.Append(responseObj.Response);
-								if (OnResponseChunk != null)
-									await OnResponseChunk(responseObj.Response);
+								// Check if we have thinking output
+								if (!string.IsNullOrEmpty(responseObj.Thinking))
+								{
+									isReceivingThinking = true;
+									thinkingBuilder.Append(responseObj.Thinking);
+									if (OnThinkingChunk != null)
+										await OnThinkingChunk(responseObj.Thinking);
+								}
+								
+								// Check if we have regular response output
+								if (!string.IsNullOrEmpty(responseObj.Response))
+								{
+									// If we were receiving thinking and now getting response, we've switched
+									if (isReceivingThinking && OnThinkingChunk != null)
+									{
+										// Signal end of thinking phase
+										await OnThinkingChunk("\n\n=== End of Thinking ===\n\n");
+										isReceivingThinking = false;
+									}
+									
+									// Stream the response chunk
+									responseBuilder.Append(responseObj.Response);
+									if (OnResponseChunk != null)
+										await OnResponseChunk(responseObj.Response);
+								}
 							}
 
 							if (responseObj?.Done == true)
 							{
 								// Log the complete response
+								if (thinkingBuilder.Length > 0)
+								{
+									await LogToFileAsync("\n=== THINKING PROCESS ===");
+									await LogToFileAsync(thinkingBuilder.ToString());
+									await LogToFileAsync("=== END OF THINKING ===\n");
+								}
 								await LogToFileAsync(responseBuilder.ToString());
 								await LogToFileAsync("===================");
 
@@ -371,6 +405,7 @@ namespace OpenRA.LLMHarness.Services
 										Timestamp = startTime,
 										GameState = gameState,
 										Response = responseBuilder.ToString(),
+										Thinking = thinkingBuilder.ToString(),
 										DurationSeconds = seconds
 									};
 									await OnResponseComplete(llmResponse);
@@ -486,6 +521,7 @@ namespace OpenRA.LLMHarness.Services
 		public required DateTime Timestamp { get; init; }
 		public required string GameState { get; init; }
 		public required string Response { get; init; }
+		public required string Thinking { get; init; }
 		public required double DurationSeconds { get; init; }
 	}
 
@@ -493,7 +529,14 @@ namespace OpenRA.LLMHarness.Services
 	{
 		public string? Model { get; set; }
 		public string? Response { get; set; }
+		public string? Thinking { get; set; } // For models that support thinking/reasoning
 		public bool Done { get; set; }
 		public long TotalDuration { get; set; }
+		// Additional fields that might be present
+		public long LoadDuration { get; set; }
+		public int PromptEvalCount { get; set; }
+		public long PromptEvalDuration { get; set; }
+		public int EvalCount { get; set; }
+		public long EvalDuration { get; set; }
 	}
 }
