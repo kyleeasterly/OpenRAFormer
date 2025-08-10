@@ -189,17 +189,19 @@ namespace OpenRA.LLMHarness.Services
 				return;
 			}
 
-			// Skip if already processed
+			// Check if already processed first
+			bool alreadyProcessed = false;
 			lock (processedFiles)
 			{
 				if (processedFiles.Contains(filePath))
 				{
+					alreadyProcessed = true;
 					_ = LogToFileAsync($"[PROCESS_FILE] Skipping {Path.GetFileName(filePath)} - already in processedFiles set (total: {processedFiles.Count})");
-					return;
 				}
-				processedFiles.Add(filePath);
-				_ = LogToFileAsync($"[PROCESS_FILE] Added {Path.GetFileName(filePath)} to processedFiles set (total: {processedFiles.Count})");
 			}
+
+			if (alreadyProcessed)
+				return;
 
 			// Check if LLM is currently processing
 			lock (processLock)
@@ -214,7 +216,13 @@ namespace OpenRA.LLMHarness.Services
 					return;
 				}
 
+				// We got the lock, now mark this file as processed
 				isProcessingLLM = true;
+				lock (processedFiles)
+				{
+					processedFiles.Add(filePath);
+					_ = LogToFileAsync($"[PROCESS_FILE] Added {Path.GetFileName(filePath)} to processedFiles set (total: {processedFiles.Count})");
+				}
 				_ = LogToFileAsync($"[LOCK] Acquired processing lock for: {Path.GetFileName(filePath)}");
 			}
 
