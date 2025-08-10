@@ -26,6 +26,11 @@ namespace OpenRA.LLMHarness.Services
 		private string? pendingFile = null;
 		private readonly object processLock = new();
 		private CancellationTokenSource? shutdownCts;
+		
+		// File watcher management
+		private FileSystemWatcher? fileWatcher;
+		private System.Threading.Timer? fallbackScanTimer;
+		private DateTime lastFileProcessedTime = DateTime.Now;
 
 		// Events for UI updates
 		public event Func<string, Task>? OnResponseChunk;
@@ -72,15 +77,29 @@ namespace OpenRA.LLMHarness.Services
 
 		public void StartWatching()
 		{
-			// Set up file watcher
-			var watcher = new FileSystemWatcher(WatchDirectory);
-			watcher.Filter = "*.txt";
-			watcher.NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite;
-			watcher.Created += OnNewFile;
-			watcher.Changed += OnNewFile;
-			watcher.EnableRaisingEvents = true;
+			// Set up file watcher with increased buffer and error handling
+			fileWatcher = new FileSystemWatcher(WatchDirectory);
+			fileWatcher.Filter = "*.txt";
+			fileWatcher.NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite;
+			fileWatcher.Created += OnNewFile;
+			fileWatcher.Changed += OnNewFile;
+			fileWatcher.Error += OnWatcherError;
+			
+			// Increase internal buffer to prevent overflow (default is 8KB, max is 64KB)
+			fileWatcher.InternalBufferSize = 65536; // 64KB max buffer
+			
+			fileWatcher.EnableRaisingEvents = true;
 
 			_ = NotifyStatusAsync($"Monitoring directory: {WatchDirectory}");
+			_ = LogToFileAsync($"[WATCHER] File watcher started with buffer size: {fileWatcher.InternalBufferSize} bytes");
+
+			// Set up fallback timer to scan for new files every 15 seconds
+			// This ensures we don't miss files even if the watcher fails
+			fallbackScanTimer = new System.Threading.Timer(
+				async _ => await FallbackFileScan(),
+				null,
+				TimeSpan.FromSeconds(15),
+				TimeSpan.FromSeconds(15));
 
 			// Process any existing files
 			_ = ProcessExistingFilesAsync();
@@ -89,6 +108,16 @@ namespace OpenRA.LLMHarness.Services
 		public async Task StopAsync()
 		{
 			shutdownCts?.Cancel();
+			
+			// Stop the fallback timer
+			fallbackScanTimer?.Dispose();
+			
+			// Stop and dispose the file watcher
+			if (fileWatcher != null)
+			{
+				fileWatcher.EnableRaisingEvents = false;
+				fileWatcher.Dispose();
+			}
 
 			// Wait for any ongoing LLM processing to complete
 			for (var waitCount = 0; isProcessingLLM && waitCount < 30; waitCount++)
@@ -178,6 +207,83 @@ namespace OpenRA.LLMHarness.Services
 			}
 		}
 
+		private void OnWatcherError(object sender, ErrorEventArgs e)
+		{
+			var ex = e.GetException();
+			_ = LogToFileAsync($"[WATCHER_ERROR] FileSystemWatcher error: {ex.Message}\n{ex.StackTrace}");
+			_ = NotifyStatusAsync($"File watcher error detected: {ex.Message}");
+			
+			// Try to restart the watcher
+			try
+			{
+				if (fileWatcher != null)
+				{
+					fileWatcher.EnableRaisingEvents = false;
+					fileWatcher.EnableRaisingEvents = true;
+					_ = LogToFileAsync("[WATCHER_ERROR] File watcher restarted after error");
+				}
+			}
+			catch (Exception restartEx)
+			{
+				_ = LogToFileAsync($"[WATCHER_ERROR] Failed to restart watcher: {restartEx.Message}");
+			}
+		}
+
+		private async Task FallbackFileScan()
+		{
+			try
+			{
+				// Don't run if shutting down
+				if (shutdownCts?.Token.IsCancellationRequested ?? true)
+					return;
+
+				// Check if we haven't processed any files in a while
+				var timeSinceLastFile = DateTime.Now - lastFileProcessedTime;
+				if (timeSinceLastFile.TotalSeconds < 20)
+				{
+					// Recent activity, no need for fallback scan
+					return;
+				}
+
+				await LogToFileAsync($"[FALLBACK] Running fallback file scan (no activity for {timeSinceLastFile.TotalSeconds:F0} seconds)");
+
+				// Get all txt files in the directory
+				var files = Directory.GetFiles(WatchDirectory, "*.txt")
+					.OrderByDescending(File.GetLastWriteTime)
+					.ToArray();
+
+				if (files.Length == 0)
+				{
+					await LogToFileAsync("[FALLBACK] No files found in directory");
+					return;
+				}
+
+				// Check if the most recent file needs processing
+				var mostRecentFile = files.First();
+				var fileTime = File.GetLastWriteTime(mostRecentFile);
+				
+				// If the file is newer than our last processed time and not in processedFiles
+				bool shouldProcess = false;
+				lock (processedFiles)
+				{
+					if (!processedFiles.Contains(mostRecentFile) && fileTime > lastFileProcessedTime)
+					{
+						shouldProcess = true;
+					}
+				}
+
+				if (shouldProcess && !isProcessingLLM)
+				{
+					await LogToFileAsync($"[FALLBACK] Found unprocessed file: {Path.GetFileName(mostRecentFile)}");
+					await ProcessFileAsync(mostRecentFile);
+				}
+			}
+			catch (Exception ex)
+			{
+				await LogToFileAsync($"[FALLBACK_ERROR] Error during fallback scan: {ex.Message}");
+			}
+		}
+
 		private async Task ProcessFileAsync(string filePath)
 		{
 			await LogToFileAsync($"[PROCESS_FILE] Starting ProcessFileAsync for: {Path.GetFileName(filePath)}");
@@ -228,6 +334,9 @@ namespace OpenRA.LLMHarness.Services
 
 			try
 			{
+				// Update last processed time
+				lastFileProcessedTime = DateTime.Now;
+				
 				var separator = new string('=', 80);
 				await NotifyStatusAsync($"Processing file: {Path.GetFileName(filePath)}");
 
