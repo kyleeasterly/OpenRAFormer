@@ -144,16 +144,19 @@ namespace OpenRA.LLMHarness.Services
 			try
 			{
 				var files = Directory.GetFiles(WatchDirectory, "*.txt");
+				await LogToFileAsync($"[INIT] Found {files.Length} existing files in watch directory");
 				if (files.Length > 0)
 				{
 					// Process only the most recent file
 					var mostRecent = files.OrderByDescending(File.GetCreationTime).First();
+					await LogToFileAsync($"[INIT] Processing most recent existing file: {Path.GetFileName(mostRecent)}");
 					await ProcessFileAsync(mostRecent);
 				}
 			}
 			catch (Exception ex)
 			{
 				await NotifyStatusAsync($"Error processing existing files: {ex.Message}");
+				await LogToFileAsync($"[ERROR] Error processing existing files: {ex.Message}\n{ex.StackTrace}");
 			}
 		}
 
@@ -161,23 +164,41 @@ namespace OpenRA.LLMHarness.Services
 		{
 			if (e.FullPath != null && (e.ChangeType == WatcherChangeTypes.Created || e.ChangeType == WatcherChangeTypes.Changed))
 			{
+				_ = LogToFileAsync($"[FILE_EVENT] Detected {e.ChangeType} for file: {Path.GetFileName(e.FullPath)}");
 				// Small delay to ensure file is fully written, then process async
-				Task.Delay(500).ContinueWith(async _ => await ProcessFileAsync(e.FullPath));
+				Task.Delay(500).ContinueWith(async _ => 
+				{
+					await LogToFileAsync($"[FILE_EVENT] Starting delayed processing for: {Path.GetFileName(e.FullPath)}");
+					await ProcessFileAsync(e.FullPath);
+				});
+			}
+			else
+			{
+				_ = LogToFileAsync($"[FILE_EVENT] Ignored event {e.ChangeType} for: {e.FullPath ?? "null path"}");
 			}
 		}
 
 		private async Task ProcessFileAsync(string filePath)
 		{
+			await LogToFileAsync($"[PROCESS_FILE] Starting ProcessFileAsync for: {Path.GetFileName(filePath)}");
+			
 			// Check if we're shutting down
 			if (shutdownCts?.Token.IsCancellationRequested ?? true)
+			{
+				await LogToFileAsync($"[PROCESS_FILE] Skipping {Path.GetFileName(filePath)} - shutdown requested");
 				return;
+			}
 
 			// Skip if already processed
 			lock (processedFiles)
 			{
 				if (processedFiles.Contains(filePath))
+				{
+					_ = LogToFileAsync($"[PROCESS_FILE] Skipping {Path.GetFileName(filePath)} - already in processedFiles set (total: {processedFiles.Count})");
 					return;
+				}
 				processedFiles.Add(filePath);
+				_ = LogToFileAsync($"[PROCESS_FILE] Added {Path.GetFileName(filePath)} to processedFiles set (total: {processedFiles.Count})");
 			}
 
 			// Check if LLM is currently processing
@@ -185,13 +206,16 @@ namespace OpenRA.LLMHarness.Services
 			{
 				if (isProcessingLLM)
 				{
+					var oldPending = pendingFile;
 					// Queue this file as the latest pending
 					pendingFile = filePath;
 					_ = NotifyStatusAsync($"LLM is busy. Queued file: {Path.GetFileName(filePath)}");
+					_ = LogToFileAsync($"[LOCK] LLM is busy. Replacing pending file: {(oldPending != null ? Path.GetFileName(oldPending) : "none")} -> {Path.GetFileName(filePath)}");
 					return;
 				}
 
 				isProcessingLLM = true;
+				_ = LogToFileAsync($"[LOCK] Acquired processing lock for: {Path.GetFileName(filePath)}");
 			}
 
 			try
@@ -223,9 +247,11 @@ namespace OpenRA.LLMHarness.Services
 				if (string.IsNullOrEmpty(gameState))
 				{
 					await NotifyStatusAsync("Failed to read game state file.");
+					await LogToFileAsync($"[ERROR] Failed to read game state from: {Path.GetFileName(filePath)}");
 					lock (processLock)
 					{
 						isProcessingLLM = false;
+						_ = LogToFileAsync($"[LOCK] Released processing lock due to read failure");
 					}
 
 					await ProcessPendingFileAsync();
@@ -237,9 +263,11 @@ namespace OpenRA.LLMHarness.Services
 					!gameState.Contains("Resource Cells:"))
 				{
 					await NotifyStatusAsync("Skipping menu/lobby state.");
+					await LogToFileAsync($"[SKIP] Skipping menu/lobby state in: {Path.GetFileName(filePath)}");
 					lock (processLock)
 					{
 						isProcessingLLM = false;
+						_ = LogToFileAsync($"[LOCK] Released processing lock due to menu/lobby state");
 					}
 
 					await ProcessPendingFileAsync();
@@ -264,11 +292,14 @@ namespace OpenRA.LLMHarness.Services
 				}
 
 				// Send to Ollama API with streaming
+				await LogToFileAsync($"[LLM] Starting Ollama API request for: {Path.GetFileName(filePath)}");
 				await StreamOllamaResponseAsync(prompt, gameState);
+				await LogToFileAsync($"[LLM] Completed Ollama API request for: {Path.GetFileName(filePath)}");
 			}
 			catch (Exception ex)
 			{
 				await NotifyStatusAsync($"Error processing file {filePath}: {ex.Message}");
+				await LogToFileAsync($"[ERROR] Exception in ProcessFileAsync for {Path.GetFileName(filePath)}: {ex.Message}\n{ex.StackTrace}");
 			}
 			finally
 			{
@@ -276,8 +307,10 @@ namespace OpenRA.LLMHarness.Services
 				lock (processLock)
 				{
 					isProcessingLLM = false;
+					_ = LogToFileAsync($"[LOCK] Released processing lock in finally block for: {Path.GetFileName(filePath)}");
 				}
 
+				await LogToFileAsync($"[PROCESS_FILE] Checking for pending files after completing: {Path.GetFileName(filePath)}");
 				await ProcessPendingFileAsync();
 			}
 		}
@@ -292,12 +325,18 @@ namespace OpenRA.LLMHarness.Services
 				{
 					fileToProcess = pendingFile;
 					pendingFile = null;
+					_ = LogToFileAsync($"[PENDING] Retrieved pending file: {Path.GetFileName(fileToProcess)} (isProcessingLLM={isProcessingLLM})");
+				}
+				else
+				{
+					_ = LogToFileAsync($"[PENDING] No pending file to process (pendingFile={(pendingFile != null ? Path.GetFileName(pendingFile) : "null")}, isProcessingLLM={isProcessingLLM})");
 				}
 			}
 
 			if (fileToProcess != null)
 			{
 				await NotifyStatusAsync($"Processing pending file: {Path.GetFileName(fileToProcess)}");
+				await LogToFileAsync($"[PENDING] Starting processing of pending file: {Path.GetFileName(fileToProcess)}");
 				await ProcessFileAsync(fileToProcess);
 			}
 		}
@@ -354,11 +393,14 @@ namespace OpenRA.LLMHarness.Services
 					Content = content
 				};
 
+				await LogToFileAsync($"[HTTP] Sending request to Ollama API at {DateTime.Now:HH:mm:ss.fff}");
 				using var response = await httpClient.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead);
+				await LogToFileAsync($"[HTTP] Received response headers at {DateTime.Now:HH:mm:ss.fff} - Status: {response.StatusCode}");
 				
 				if (!response.IsSuccessStatusCode)
 				{
 					var errorBody = await response.Content.ReadAsStringAsync();
+					await LogToFileAsync($"[HTTP] Ollama API error: {response.StatusCode} - {errorBody}");
 					throw new HttpRequestException($"Ollama API error {response.StatusCode}: {errorBody}");
 				}
 
@@ -404,6 +446,7 @@ namespace OpenRA.LLMHarness.Services
 
 							if (responseObj?.Done == true)
 							{
+								await LogToFileAsync($"[HTTP] Stream completed at {DateTime.Now:HH:mm:ss.fff}");
 								// Log the complete response
 								if (thinkingBuilder.Length > 0)
 								{
@@ -448,6 +491,7 @@ namespace OpenRA.LLMHarness.Services
 			catch (Exception ex)
 			{
 				await NotifyStatusAsync($"Error communicating with Ollama API: {ex.Message}");
+				await LogToFileAsync($"[ERROR] Ollama API communication error: {ex.Message}\n{ex.StackTrace}");
 			}
 		}
 
