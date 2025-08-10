@@ -163,7 +163,9 @@ namespace OpenRA.LLMHarness.Services
 			}
 			catch (Exception ex)
 			{
+				Console.WriteLine($"[ERROR] Failed to connect to Ollama API: {ex.Message}\n{ex.StackTrace}");
 				await NotifyStatusAsync($"Failed to connect to Ollama API: {ex.Message}");
+				await LogToFileAsync($"[ERROR] Failed to connect to Ollama API: {ex.Message}\n{ex.StackTrace}");
 				return false;
 			}
 		}
@@ -184,6 +186,7 @@ namespace OpenRA.LLMHarness.Services
 			}
 			catch (Exception ex)
 			{
+				Console.WriteLine($"[ERROR] Error processing existing files: {ex.Message}\n{ex.StackTrace}");
 				await NotifyStatusAsync($"Error processing existing files: {ex.Message}");
 				await LogToFileAsync($"[ERROR] Error processing existing files: {ex.Message}\n{ex.StackTrace}");
 			}
@@ -197,9 +200,17 @@ namespace OpenRA.LLMHarness.Services
 				// Small delay to ensure file is fully written, then process async
 				Task.Delay(500).ContinueWith(async _ => 
 				{
-					await LogToFileAsync($"[FILE_EVENT] Starting delayed processing for: {Path.GetFileName(e.FullPath)}");
-					await ProcessFileAsync(e.FullPath);
-				});
+					try
+					{
+						await LogToFileAsync($"[FILE_EVENT] Starting delayed processing for: {Path.GetFileName(e.FullPath)}");
+						await ProcessFileAsync(e.FullPath);
+					}
+					catch (Exception ex)
+					{
+						Console.WriteLine($"[ERROR] Exception in file processing task: {ex.Message}\n{ex.StackTrace}");
+						await LogToFileAsync($"[ERROR] Exception in file processing task: {ex.Message}\n{ex.StackTrace}");
+					}
+				}, TaskContinuationOptions.None);
 			}
 			else
 			{
@@ -225,6 +236,7 @@ namespace OpenRA.LLMHarness.Services
 			}
 			catch (Exception restartEx)
 			{
+				Console.WriteLine($"[WATCHER_ERROR] Failed to restart watcher: {restartEx.Message}");
 				_ = LogToFileAsync($"[WATCHER_ERROR] Failed to restart watcher: {restartEx.Message}");
 			}
 		}
@@ -280,7 +292,8 @@ namespace OpenRA.LLMHarness.Services
 			}
 			catch (Exception ex)
 			{
-				await LogToFileAsync($"[FALLBACK_ERROR] Error during fallback scan: {ex.Message}");
+				Console.WriteLine($"[FALLBACK_ERROR] Error during fallback scan: {ex.Message}\n{ex.StackTrace}");
+				await LogToFileAsync($"[FALLBACK_ERROR] Error during fallback scan: {ex.Message}\n{ex.StackTrace}");
 			}
 		}
 
@@ -415,6 +428,7 @@ namespace OpenRA.LLMHarness.Services
 			}
 			catch (Exception ex)
 			{
+				Console.WriteLine($"[ERROR] Exception in ProcessFileAsync for {Path.GetFileName(filePath)}: {ex.Message}\n{ex.StackTrace}");
 				await NotifyStatusAsync($"Error processing file {filePath}: {ex.Message}");
 				await LogToFileAsync($"[ERROR] Exception in ProcessFileAsync for {Path.GetFileName(filePath)}: {ex.Message}\n{ex.StackTrace}");
 			}
@@ -600,13 +614,16 @@ namespace OpenRA.LLMHarness.Services
 						}
 						catch (JsonException ex)
 						{
+							Console.WriteLine($"[JSON_ERROR] Error parsing Ollama response: {ex.Message}");
 							await NotifyStatusAsync($"Error parsing response: {ex.Message}");
+							await LogToFileAsync($"[JSON_ERROR] Error parsing response: {ex.Message}");
 						}
 					}
 				}
 			}
 			catch (Exception ex)
 			{
+				Console.WriteLine($"[ERROR] Ollama API communication error: {ex.Message}\n{ex.StackTrace}");
 				await NotifyStatusAsync($"Error communicating with Ollama API: {ex.Message}");
 				await LogToFileAsync($"[ERROR] Ollama API communication error: {ex.Message}\n{ex.StackTrace}");
 			}
@@ -649,6 +666,7 @@ namespace OpenRA.LLMHarness.Services
 			}
 			catch (Exception ex)
 			{
+				Console.WriteLine($"[CRITICAL] Failed to load strategy guide from {strategyGuidePath}: {ex.Message}\n{ex.StackTrace}");
 				throw new InvalidOperationException($"CRITICAL: Failed to load strategy guide from {strategyGuidePath}: {ex.Message}", ex);
 			}
 
@@ -681,9 +699,10 @@ namespace OpenRA.LLMHarness.Services
 			{
 				await File.AppendAllTextAsync(currentLogFile, message + Environment.NewLine);
 			}
-			catch (Exception)
+			catch (Exception ex)
 			{
-				// Silently fail log writes
+				// Log write failed - output to console at least
+				Console.WriteLine($"[LOG_ERROR] Failed to write to log file: {ex.Message}");
 			}
 		}
 
