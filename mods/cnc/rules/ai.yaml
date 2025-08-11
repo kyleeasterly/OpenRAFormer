@@ -254,6 +254,8 @@ Player:
 		RefineryTypes: proc
 		McvFactoryTypes: weap,afld
 		MinimumConstructionYardCount: 2
+		RestrictMCVDeploymentFallbackToBase: false
+		PreferResourceExpansion: true
 	McvManagerBotModule@watson:
 		RequiresCondition: enable-watson-ai
 		McvTypes: mcv

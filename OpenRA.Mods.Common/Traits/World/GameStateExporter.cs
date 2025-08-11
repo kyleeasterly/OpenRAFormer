@@ -61,6 +61,8 @@ namespace OpenRA.Mods.Common.Traits
 
 				var sb = new StringBuilder();
 				sb.AppendLine("# OpenRA Game State Snapshot");
+				sb.AppendLine("## IMPORTANT: This report is for advising Player 1 (the human player)");
+				sb.AppendLine();
 				sb.AppendLine(CultureInfo.InvariantCulture, $"**Timestamp:** {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
 				sb.AppendLine(CultureInfo.InvariantCulture, $"**Game Tick:** {world.WorldTick} (Time: {world.WorldTick / 25}s)");
 				sb.AppendLine(CultureInfo.InvariantCulture, $"**Map:** {world.Map.Title}");
@@ -83,8 +85,8 @@ namespace OpenRA.Mods.Common.Traits
 						}
 					}
 					
-					sb.AppendLine($"Spectators: {(settings.AllowSpectators ? "Allowed" : "Not allowed")}");
-					sb.AppendLine($"Game Speed: {GetGameSpeedDescription(settings.NetFrameInterval)}");
+					sb.AppendLine(CultureInfo.InvariantCulture, $"Spectators: {(settings.AllowSpectators ? "Allowed" : "Not allowed")}");
+					sb.AppendLine(CultureInfo.InvariantCulture, $"Game Speed: {GetGameSpeedDescription(settings.NetFrameInterval)}");
 				}
 				
 				sb.AppendLine();
@@ -93,8 +95,25 @@ namespace OpenRA.Mods.Common.Traits
 				var players = world.Players.Where(p => !p.NonCombatant && p.Playable).ToList();
 				// Find Player 1 for visibility checks
 				var player1 = players.FirstOrDefault(p => p.PlayerName == "Player1");
+				
+				// Start with Player 1's state prominently
+				if (player1 != null)
+				{
+					sb.AppendLine();
+					sb.AppendLine("# YOUR PLAYER STATE (Player 1 - The Human Player You Are Advising)");
+					sb.AppendLine("*This is the player you should provide strategy advice for*");
+				}
+				
+				var isFirstOtherPlayer = true;
 				foreach (var player in players)
 				{
+					// Add section header for other players
+					if (player != player1 && isFirstOtherPlayer)
+					{
+						sb.AppendLine();
+						sb.AppendLine("# OTHER PLAYERS (Opponents and Allies)");
+						isFirstOtherPlayer = false;
+					}
 					var factionName = player.Faction.Name.Replace("faction-", "").Replace(".name", "");
 					// Proper case for faction names
 					if (factionName.Equals("nod", StringComparison.OrdinalIgnoreCase))
@@ -219,10 +238,7 @@ namespace OpenRA.Mods.Common.Traits
 					}
 
 					// Production queues - check all buildings for production queues
-					var allQueues = new List<ProductionQueue>();
-					
-					// First check player actor for queues
-					allQueues.AddRange(player.PlayerActor.TraitsImplementing<ProductionQueue>());
+					var allQueues = new List<ProductionQueue>(player.PlayerActor.TraitsImplementing<ProductionQueue>());
 					
 					// Then check all buildings for queues
 					foreach (var building in buildings)
@@ -243,7 +259,7 @@ namespace OpenRA.Mods.Common.Traits
 								hasProduction = true;
 							}
 							
-							sb.AppendLine($"#### {queue.Info.Type} Queue:");
+							sb.AppendLine(CultureInfo.InvariantCulture, $"#### {queue.Info.Type} Queue:");
 							
 							// Group items by type and status
 							var itemGroups = items.GroupBy(item => new 
@@ -307,7 +323,8 @@ namespace OpenRA.Mods.Common.Traits
 					if (enemyBuildings.Count > 0)
 					{
 						sb.AppendLine();
-						sb.AppendLine("## Visible Enemy Structures");
+						sb.AppendLine("## Enemy Structures Visible to Player 1");
+						sb.AppendLine("*These are enemy buildings that Player 1 can currently see on the map*");
 						
 						var enemyBuildingsByPlayer = enemyBuildings.GroupBy(b => b.Owner);
 						foreach (var playerGroup in enemyBuildingsByPlayer)
