@@ -130,15 +130,10 @@
                                 }
                                 else if (!string.IsNullOrEmpty(lastThinkingTrace))
                                 {
-                                    <MudExpansionPanels>
-                                        <MudExpansionPanel Text="@(thinkingExpanded ? "Thinking Process (Click to collapse)" : "Thinking Process (Click to expand)")" 
-                                                         IsExpanded="@thinkingExpanded"
-                                                         ExpandedChanged="@((bool expanded) => OnThinkingExpandedChanged(expanded))">
-                                            <MudText Typo="Typo.body2" Style="white-space: pre-wrap; font-family: monospace; color: #64b5f6;">
-                                                @lastThinkingTrace
-                                            </MudText>
-                                        </MudExpansionPanel>
-                                    </MudExpansionPanels>
+                                    <MudText Typo="Typo.subtitle2" Color="Color.Info">Thinking Process</MudText>
+                                    <MudText Typo="Typo.body2" Style="white-space: pre-wrap; font-family: monospace; color: #64b5f6;">
+                                        @lastThinkingTrace
+                                    </MudText>
                                 }
                             </MudCardContent>
                         </MudCard>
@@ -165,7 +160,6 @@
     private string currentStreamingThinking = "";
     private string lastThinkingTrace = "";
     private bool showThinking = false;
-    private bool thinkingExpanded = false;
     private string thinkingLevel = "medium";
     
     private List<LLMResponse> sessionHistory = new();
@@ -225,11 +219,6 @@
     {
         thinkingLevel = newLevel;
         OllamaService.ThinkingLevel = thinkingLevel;
-    }
-    
-    private void OnThinkingExpandedChanged(bool expanded)
-    {
-        thinkingExpanded = expanded;
     }
 
     private async Task HandleStatusUpdate(string status)
