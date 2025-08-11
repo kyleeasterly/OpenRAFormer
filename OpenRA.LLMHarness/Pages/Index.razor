@@ -133,7 +133,7 @@
                                     <MudExpansionPanels>
                                         <MudExpansionPanel Text="@(thinkingExpanded ? "Thinking Process (Click to collapse)" : "Thinking Process (Click to expand)")" 
                                                          IsExpanded="@thinkingExpanded"
-                                                         ExpandedChanged="@OnThinkingExpandedChanged">
+                                                         ExpandedChanged="@((bool expanded) => OnThinkingExpandedChanged(expanded))">
                                             <MudText Typo="Typo.body2" Style="white-space: pre-wrap; font-family: monospace; color: #64b5f6;">
                                                 @lastThinkingTrace
                                             </MudText>
@@ -195,7 +195,7 @@
         if (!string.IsNullOrEmpty(currentStreamingThinking) && string.IsNullOrEmpty(lastThinkingTrace))
         {
             lastThinkingTrace = currentStreamingThinking;
-            thinkingExpanded = false; // Collapse when response starts
+            // Don't collapse - let user control the expansion state
         }
         
         await InvokeAsync(StateHasChanged);
@@ -256,7 +256,7 @@
         // Load thinking trace from selected response
         var selected = GetSelectedResponse();
         lastThinkingTrace = selected?.Thinking ?? "";
-        thinkingExpanded = false;
+        // Keep the current expansion state when switching responses
     }
 
     private LLMResponse? GetSelectedResponse()
