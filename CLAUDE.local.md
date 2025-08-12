@@ -1,0 +1,1 @@
+- remember how this project works in case i ask related questions later so you dont have to look through the code.

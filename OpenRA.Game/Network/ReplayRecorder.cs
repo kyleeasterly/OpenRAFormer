@@ -25,6 +25,7 @@ namespace OpenRA.Network
 		BinaryWriter writer;
 		readonly Func<string> chooseFilename;
 		MemoryStream preStartBuffer = new();
+		HumanReadableOrderLogger humanReadableLogger;
 
 		static bool IsGameStart(byte[] data)
 		{
@@ -39,6 +40,7 @@ namespace OpenRA.Network
 			this.chooseFilename = chooseFilename;
 
 			writer = new BinaryWriter(preStartBuffer);
+			humanReadableLogger = new HumanReadableOrderLogger();
 		}
 
 		void StartSavingReplay(byte[] initialContent)
@@ -84,6 +86,12 @@ namespace OpenRA.Network
 				StartSavingReplay(preStartData);
 			}
 
+			// Log human-readable orders if we can parse them
+			if (OrderIO.TryParseOrderPacket(data, out var orders))
+			{
+				LogHumanReadableOrders(clientID, orders.Frame, orders.Orders);
+			}
+
 			writer.Write(clientID);
 			writer.Write(data.Length);
 			writer.Write(data);
@@ -95,6 +103,26 @@ namespace OpenRA.Network
 			ms.Write(frame);
 			ms.Write(data);
 			Receive(clientID, ms.GetBuffer());
+		}
+
+		void LogHumanReadableOrders(int clientId, int frame, OrderPacket orders)
+		{
+			if (humanReadableLogger == null)
+				return;
+
+			try
+			{
+				// Get the current world for order parsing
+				var world = Game.OrderManager?.World;
+				foreach (var order in orders.GetOrders(world))
+				{
+					humanReadableLogger.LogOrder(frame, clientId, order, world);
+				}
+			}
+			catch (Exception ex)
+			{
+				Log.Write("debug", $"Failed to log human readable order: {ex}");
+			}
 		}
 
 		bool disposed;
@@ -114,6 +142,7 @@ namespace OpenRA.Network
 
 			preStartBuffer?.Dispose();
 			writer.Close();
+			humanReadableLogger?.Dispose();
 		}
 	}
 }

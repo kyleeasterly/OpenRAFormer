@@ -289,6 +289,12 @@ namespace OpenRA.Traits
 		// Expose internal state for serialization by the orders code *only*
 		internal static Target FromSerializedActor(Actor a, int generation) { return a != null ? new Target(a, generation) : Invalid; }
 		internal static Target FromSerializedTerrainPosition(WPos centerPosition, WPos[] terrainPositions) { return new Target(centerPosition, terrainPositions); }
+
+		internal bool IsEmpty()
+		{
+			return this == Invalid;
+		}
+
 		internal (TargetType Type, Actor Actor, int Generation, CPos? Cell, SubCell? SubCell, WPos Pos, WPos[] TerrainPositions) SerializableState =>
 			(type, Actor, generation, cell, subCell, terrainCenterPosition, terrainPositions);
 	}
