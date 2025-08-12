@@ -1,9 +1,27 @@
 @page "/"
 @using OpenRA.LLMHarness.Services
 @inject OllamaService OllamaService
+@inject IJSRuntime JSRuntime
 @implements IDisposable
 
 <PageTitle>OpenRA LLM Coach</PageTitle>
+
+<style>
+    @@keyframes blink {
+        0% { opacity: 1; }
+        50% { opacity: 0; }
+        100% { opacity: 1; }
+    }
+</style>
+
+<script>
+    window.scrollToStreamingCaret = function() {
+        var caret = document.querySelector('.streaming-caret');
+        if (caret) {
+            caret.scrollIntoView({ behavior: 'smooth', block: 'end', inline: 'nearest' });
+        }
+    };
+</script>
 
 <MudGrid>
     <!-- Sidebar with session history -->
@@ -54,11 +72,11 @@
                     <MudSwitch @bind-Value="@verboseMode" Label="Verbose Mode" Color="Color.Primary" />
                 </MudItem>
                 <MudItem xs="12" sm="6">
-                    <MudText Typo="Typo.subtitle2" Class="mb-2">Thinking Level:</MudText>
+                    <MudText Typo="Typo.subtitle2">Thinking Level:</MudText>
                     <MudRadioGroup Value="@thinkingLevel" T="string" ValueChanged="OnThinkingLevelChanged">
-                        <MudRadio Value="@("low")" Color="Color.Primary">Low</MudRadio>
-                        <MudRadio Value="@("medium")" Color="Color.Primary">Medium</MudRadio>
-                        <MudRadio Value="@("high")" Color="Color.Primary">High</MudRadio>
+                        <MudRadio Value="@("low")" Color="Color.Primary" Size="Size.Small">Low</MudRadio>
+                        <MudRadio Value="@("medium")" Color="Color.Primary" Size="Size.Small">Medium</MudRadio>
+                        <MudRadio Value="@("high")" Color="Color.Primary" Size="Size.Small">High</MudRadio>
                     </MudRadioGroup>
                 </MudItem>
             </MudGrid>
@@ -116,7 +134,18 @@
                         </MudText>
                     }
                     
-                    <!-- Streaming display -->
+                    <!-- Streaming display: Response first, then thinking below -->
+                    @if (!string.IsNullOrEmpty(currentStreamingResponse))
+                    {
+                        <MudText Typo="Typo.body1" Style="white-space: pre-wrap;" Class="mt-3">
+                            @currentStreamingResponse
+                            @if (isProcessing)
+                            {
+                                <span class="streaming-caret" style="display: inline-block; width: 8px; height: 20px; background-color: #2196f3; animation: blink 1s infinite;">|</span>
+                            }
+                        </MudText>
+                    }
+                    
                     @if (!string.IsNullOrEmpty(currentStreamingThinking) || (!isProcessing && !string.IsNullOrEmpty(lastThinkingTrace)))
                     {
                         <MudCard Class="mt-3" Outlined="true" Style="background-color: #1e3a5f;">
@@ -130,24 +159,13 @@
                                 }
                                 else if (!string.IsNullOrEmpty(lastThinkingTrace))
                                 {
-                                    <MudExpansionPanels>
-                                        <MudExpansionPanel Text="@(thinkingExpanded ? "Thinking Process (Click to collapse)" : "Thinking Process (Click to expand)")" 
-                                                         IsExpanded="@thinkingExpanded"
-                                                         ExpandedChanged="@OnThinkingExpandedChanged">
-                                            <MudText Typo="Typo.body2" Style="white-space: pre-wrap; font-family: monospace; color: #64b5f6;">
-                                                @lastThinkingTrace
-                                            </MudText>
-                                        </MudExpansionPanel>
-                                    </MudExpansionPanels>
+                                    <MudText Typo="Typo.subtitle2" Color="Color.Info">Thinking Process</MudText>
+                                    <MudText Typo="Typo.body2" Style="white-space: pre-wrap; font-family: monospace; color: #64b5f6;">
+                                        @lastThinkingTrace
+                                    </MudText>
                                 }
                             </MudCardContent>
                         </MudCard>
-                    }
-                    @if (!string.IsNullOrEmpty(currentStreamingResponse))
-                    {
-                        <MudText Typo="Typo.body1" Style="white-space: pre-wrap;" Class="mt-3">
-                            @currentStreamingResponse
-                        </MudText>
                     }
                 </MudCardContent>
             </MudCard>
@@ -165,7 +183,6 @@
     private string currentStreamingThinking = "";
     private string lastThinkingTrace = "";
     private bool showThinking = false;
-    private bool thinkingExpanded = false;
     private string thinkingLevel = "medium";
     
     private List<LLMResponse> sessionHistory = new();
@@ -195,10 +212,13 @@
         if (!string.IsNullOrEmpty(currentStreamingThinking) && string.IsNullOrEmpty(lastThinkingTrace))
         {
             lastThinkingTrace = currentStreamingThinking;
-            thinkingExpanded = false; // Collapse when response starts
+            // Don't collapse - let user control the expansion state
         }
         
         await InvokeAsync(StateHasChanged);
+        
+        // Auto-scroll to keep the streaming caret in view
+        await JSRuntime.InvokeVoidAsync("scrollToStreamingCaret");
     }
     
     private async Task HandleThinkingChunk(string chunk)
@@ -226,11 +246,6 @@
         thinkingLevel = newLevel;
         OllamaService.ThinkingLevel = thinkingLevel;
     }
-    
-    private void OnThinkingExpandedChanged(bool expanded)
-    {
-        thinkingExpanded = expanded;
-    }
 
     private async Task HandleStatusUpdate(string status)
     {
@@ -256,7 +271,7 @@
         // Load thinking trace from selected response
         var selected = GetSelectedResponse();
         lastThinkingTrace = selected?.Thinking ?? "";
-        thinkingExpanded = false;
+        // Keep the current expansion state when switching responses
     }
 
     private LLMResponse? GetSelectedResponse()
