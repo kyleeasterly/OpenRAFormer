@@ -176,7 +176,8 @@ namespace OpenRA.Mods.Common.Traits
 					// Units and Buildings
 					var playerActors = world.Actors.Where(a => a.Owner == player && !a.IsDead).ToList();
 					var buildings = playerActors.Where(a => a.Info.HasTraitInfo<BuildingInfo>()).ToList();
-					var units = playerActors.Where(a => !a.Info.HasTraitInfo<BuildingInfo>()).ToList();
+					// Filter out C17 cargo planes as they're not player-controllable units
+					var units = playerActors.Where(a => !a.Info.HasTraitInfo<BuildingInfo>() && a.Info.Name != "C17").ToList();
 
 					sb.AppendLine();
 					sb.AppendLine(CultureInfo.InvariantCulture, $"### Unit Summary: {units.Count} units, {buildings.Count} buildings");
@@ -439,7 +440,6 @@ namespace OpenRA.Mods.Common.Traits
 				"E5" => "Chemical Warrior",
 				"E6" => "Engineer",
 				"RMBO" => "Commando",
-				"C17" => "C17 Cargo Plane",
 				"A10" => "A10 Warthog",
 				_ => internalName
 			};
