@@ -72,11 +72,11 @@
                     <MudSwitch @bind-Value="@verboseMode" Label="Verbose Mode" Color="Color.Primary" />
                 </MudItem>
                 <MudItem xs="12" sm="6">
-                    <MudText Typo="Typo.subtitle2" Class="mb-2">Thinking Level:</MudText>
+                    <MudText Typo="Typo.subtitle2">Thinking Level:</MudText>
                     <MudRadioGroup Value="@thinkingLevel" T="string" ValueChanged="OnThinkingLevelChanged">
-                        <MudRadio Value="@("low")" Color="Color.Primary">Low</MudRadio>
-                        <MudRadio Value="@("medium")" Color="Color.Primary">Medium</MudRadio>
-                        <MudRadio Value="@("high")" Color="Color.Primary">High</MudRadio>
+                        <MudRadio Value="@("low")" Color="Color.Primary" Size="Size.Small">Low</MudRadio>
+                        <MudRadio Value="@("medium")" Color="Color.Primary" Size="Size.Small">Medium</MudRadio>
+                        <MudRadio Value="@("high")" Color="Color.Primary" Size="Size.Small">High</MudRadio>
                     </MudRadioGroup>
                 </MudItem>
             </MudGrid>
