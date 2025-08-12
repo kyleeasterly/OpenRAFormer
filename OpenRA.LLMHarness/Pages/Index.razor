@@ -1,9 +1,27 @@
 @page "/"
 @using OpenRA.LLMHarness.Services
 @inject OllamaService OllamaService
+@inject IJSRuntime JSRuntime
 @implements IDisposable
 
 <PageTitle>OpenRA LLM Coach</PageTitle>
+
+<style>
+    @@keyframes blink {
+        0% { opacity: 1; }
+        50% { opacity: 0; }
+        100% { opacity: 1; }
+    }
+</style>
+
+<script>
+    window.scrollToStreamingCaret = function() {
+        var caret = document.querySelector('.streaming-caret');
+        if (caret) {
+            caret.scrollIntoView({ behavior: 'smooth', block: 'end', inline: 'nearest' });
+        }
+    };
+</script>
 
 <MudGrid>
     <!-- Sidebar with session history -->
@@ -116,7 +134,18 @@
                         </MudText>
                     }
                     
-                    <!-- Streaming display -->
+                    <!-- Streaming display: Response first, then thinking below -->
+                    @if (!string.IsNullOrEmpty(currentStreamingResponse))
+                    {
+                        <MudText Typo="Typo.body1" Style="white-space: pre-wrap;" Class="mt-3">
+                            @currentStreamingResponse
+                            @if (isProcessing)
+                            {
+                                <span class="streaming-caret" style="display: inline-block; width: 8px; height: 20px; background-color: #2196f3; animation: blink 1s infinite;">|</span>
+                            }
+                        </MudText>
+                    }
+                    
                     @if (!string.IsNullOrEmpty(currentStreamingThinking) || (!isProcessing && !string.IsNullOrEmpty(lastThinkingTrace)))
                     {
                         <MudCard Class="mt-3" Outlined="true" Style="background-color: #1e3a5f;">
@@ -137,12 +166,6 @@
                                 }
                             </MudCardContent>
                         </MudCard>
-                    }
-                    @if (!string.IsNullOrEmpty(currentStreamingResponse))
-                    {
-                        <MudText Typo="Typo.body1" Style="white-space: pre-wrap;" Class="mt-3">
-                            @currentStreamingResponse
-                        </MudText>
                     }
                 </MudCardContent>
             </MudCard>
@@ -193,6 +216,9 @@
         }
         
         await InvokeAsync(StateHasChanged);
+        
+        // Auto-scroll to keep the streaming caret in view
+        await JSRuntime.InvokeVoidAsync("scrollToStreamingCaret");
     }
     
     private async Task HandleThinkingChunk(string chunk)
