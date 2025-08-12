@@ -177,7 +177,8 @@ namespace OpenRA.Mods.Common.Traits
 					var playerActors = world.Actors.Where(a => a.Owner == player && !a.IsDead).ToList();
 					var buildings = playerActors.Where(a => a.Info.HasTraitInfo<BuildingInfo>()).ToList();
 					// Filter out C17 cargo planes as they're not player-controllable units
-					var units = playerActors.Where(a => !a.Info.HasTraitInfo<BuildingInfo>() && a.Info.Name != "C17").ToList();
+					var units = playerActors.Where(a => !a.Info.HasTraitInfo<BuildingInfo>() && 
+						!string.Equals(a.Info.Name, "C17", StringComparison.OrdinalIgnoreCase)).ToList();
 
 					sb.AppendLine();
 					sb.AppendLine(CultureInfo.InvariantCulture, $"### Unit Summary: {units.Count} units, {buildings.Count} buildings");
@@ -471,7 +472,10 @@ namespace OpenRA.Mods.Common.Traits
 					: "Superweapons: Disabled (no Ion Cannon or Nuclear Missile)",
 				"allybuildradius" => optionState.IsEnabled
 					? "Ally Build Radius: Can build near allied structures"
-					: "Ally Build Radius: Cannot build near allied structures",
+					: "Ally Build Radius: Cannot build near allied structures)",
+				"allybuild" => optionState.IsEnabled
+					? "Build Off Allies: Enabled (can build near allied structures)"
+					: "Build Off Allies: Disabled",
 				"buildradius" => optionState.IsEnabled
 					? "Build Radius: Limited (must build near existing structures)"
 					: "Build Radius: Unlimited (can build anywhere)",
@@ -481,9 +485,15 @@ namespace OpenRA.Mods.Common.Traits
 				"fogofwar" => optionState.IsEnabled
 					? "Fog of War: Enabled (unexplored areas hidden)"
 					: "Fog of War: Disabled (entire map visible)",
+				"fog" => optionState.IsEnabled
+					? "Fog of War: Enabled (unexplored areas hidden)"
+					: "Fog of War: Disabled (entire map visible)",
 				"explore_map" => optionState.IsEnabled
 					? "Map Explored: Yes (terrain visible, units still hidden)"
 					: "Map Explored: No (must scout to see terrain)",
+				"explored" => optionState.IsEnabled
+					? "Explored Map: Yes (terrain visible, units still hidden)"
+					: "Explored Map: No (must scout to see terrain)",
 				"difficulty" => value switch
 				{
 					"easy" => "AI Difficulty: Easy",
@@ -494,6 +504,20 @@ namespace OpenRA.Mods.Common.Traits
 				"kill_bounty" => optionState.IsEnabled
 					? "Kill Bounties: Enabled (earn money for destroying enemies)"
 					: "Kill Bounties: Disabled",
+				"crates" => optionState.IsEnabled
+					? "Crates: Enabled (bonus crates appear on map)"
+					: "Crates: Disabled",
+				"factundeploy" => optionState.IsEnabled
+					? "Redeployable MCVs: Enabled (can pack/unpack Construction Yard)"
+					: "Redeployable MCVs: Disabled",
+				"C17-Stealth" => optionState.IsEnabled
+					? "Stealth Deliveries: Enabled (airfield deliveries are cloaked)"
+					: "Stealth Deliveries: Disabled",
+				"gamespeed" => $"Game Speed: {value}",
+				"separateteamspawns" => optionState.IsEnabled
+					? "Separate Team Spawns: Enabled (teammates spawn together)"
+					: "Separate Team Spawns: Disabled",
+				"timelimit" => value == "0" ? "Time Limit: None" : $"Time Limit: {value} minutes",
 				_ => $"{optionId.Replace('_', ' ').Replace('-', ' ')}: {value}"
 			};
 		}
