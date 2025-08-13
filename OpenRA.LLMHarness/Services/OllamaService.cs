@@ -1,5 +1,7 @@
+using System.ClientModel;
 using System.Text;
-using System.Text.Json;
+using OpenAI;
+using OpenAI.Chat;
 
 namespace OpenRA.LLMHarness.Services
 {
@@ -7,16 +9,12 @@ namespace OpenRA.LLMHarness.Services
 	{
 		const string WatchDirectory = @"C:\OpenRATest";
 		const string LogDirectory = @"C:\OpenRATest\LLM_Coach_Logs";
-		const string OllamaApiUrl = "http://localhost:11434/api/generate";
+		const string OllamaApiUrl = "http://localhost:11434/v1";
 		const string ModelName = "gpt-oss:20b";
-		const bool EnableThinking = true; // Set to true for models that support thinking
+		const string ApiKey = "ollama"; // Dummy key for Ollama
 
-		readonly HttpClient httpClient;
+		readonly ChatClient chatClient;
 		readonly HashSet<string> processedFiles = [];
-		readonly JsonSerializerOptions jsonOptions = new()
-		{
-			PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-		};
 
 		public bool VerboseMode { get; set; } = false;
 		public string ThinkingLevel { get; set; } = "medium";
@@ -42,8 +40,16 @@ namespace OpenRA.LLMHarness.Services
 
 		public OllamaService(HttpClient httpClient)
 		{
-			this.httpClient = httpClient;
-			this.httpClient.Timeout = TimeSpan.FromMinutes(5);
+			// Create OpenAI client with custom endpoint for Ollama
+			var openAiClient = new OpenAIClient(
+				new ApiKeyCredential(ApiKey),
+				new OpenAIClientOptions
+				{
+					Endpoint = new Uri(OllamaApiUrl),
+					NetworkTimeout = TimeSpan.FromMinutes(5)
+				});
+
+			chatClient = openAiClient.GetChatClient(ModelName);
 		}
 
 		public async Task<bool> InitializeAsync()
@@ -69,7 +75,7 @@ namespace OpenRA.LLMHarness.Services
 			await LogToFileAsync($"=== OpenRA LLM Coach Session Started at {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
 			await LogToFileAsync($"Model: {ModelName}");
 			await LogToFileAsync($"Watch Directory: {WatchDirectory}");
-			await LogToFileAsync($"Thinking Mode: {(EnableThinking ? "Enabled" : "Disabled")}");
+			await LogToFileAsync($"Thinking Level: {ThinkingLevel}");
 			await LogToFileAsync($"Ollama API URL: {OllamaApiUrl}");
 			await LogToFileAsync("");
 
@@ -141,25 +147,26 @@ namespace OpenRA.LLMHarness.Services
 			try
 			{
 				await NotifyStatusAsync("Testing Ollama API connection...");
-				var testRequest = new
+
+				// Create a simple test message
+				var testMessages = new List<ChatMessage>
 				{
-					model = ModelName,
-					prompt = "Say 'OK' if you're working.",
-					stream = false
+					new SystemChatMessage("You are a helpful assistant."),
+					new UserChatMessage("Say 'OK' if you're working.")
 				};
 
-				var json = JsonSerializer.Serialize(testRequest, jsonOptions);
-				var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-				var response = await httpClient.PostAsync(OllamaApiUrl, content);
-				if (response.IsSuccessStatusCode)
+				// Try to get a response (non-streaming for test)
+				var response = await chatClient.CompleteChatAsync(testMessages);
+				
+				if (response?.Value?.Content != null && response.Value.Content.Count > 0)
 				{
 					await NotifyStatusAsync("Ollama API is responding!");
+					await LogToFileAsync($"[TEST] Ollama API test successful. Response: {response.Value.Content[0].Text}");
 					return true;
 				}
 				else
 				{
-					await NotifyStatusAsync($"Ollama API returned error: {response.StatusCode}");
+					await NotifyStatusAsync("Ollama API returned empty response");
 					return false;
 				}
 			}
@@ -427,10 +434,10 @@ namespace OpenRA.LLMHarness.Services
 					await NotifyStatusAsync("Full prompts logged to file.");
 				}
 
-				// Send to Ollama API with streaming
-				await LogToFileAsync($"[LLM] Starting Ollama API request for: {Path.GetFileName(filePath)}");
-				await StreamOllamaResponseAsync(systemPrompt, userPrompt, gameState);
-				await LogToFileAsync($"[LLM] Completed Ollama API request for: {Path.GetFileName(filePath)}");
+				// Send to OpenAI-compatible API with streaming
+				await LogToFileAsync($"[LLM] Starting OpenAI API request for: {Path.GetFileName(filePath)}");
+				await StreamOpenAIResponseAsync(systemPrompt, userPrompt, gameState);
+				await LogToFileAsync($"[LLM] Completed OpenAI API request for: {Path.GetFileName(filePath)}");
 			}
 			catch (Exception ex)
 			{
@@ -478,7 +485,7 @@ namespace OpenRA.LLMHarness.Services
 			}
 		}
 
-		private async Task StreamOllamaResponseAsync(string systemPrompt, string userPrompt, string gameState)
+		private async Task StreamOpenAIResponseAsync(string systemPrompt, string userPrompt, string gameState)
 		{
 			try
 			{
@@ -486,150 +493,89 @@ namespace OpenRA.LLMHarness.Services
 				if (shutdownCts?.Token.IsCancellationRequested ?? true)
 					return;
 
-				await NotifyStatusAsync("Sending prompt to Ollama API (streaming)...");
+				await NotifyStatusAsync("Sending prompt to OpenAI-compatible API (streaming)...");
 
-				await LogToFileAsync("Sending prompt to Ollama API...");
+				await LogToFileAsync("Sending prompt to OpenAI-compatible API...");
 				await LogToFileAsync("\n=== LLM RESPONSE ===");
 
 				var responseBuilder = new StringBuilder();
-				var thinkingBuilder = new StringBuilder();
 				var startTime = DateTime.Now;
-				var isReceivingThinking = false;
 
-				// Build request - now with system prompt separated
-				object request;
-				if (EnableThinking)
+				// Build chat messages
+				var messages = new List<ChatMessage>
 				{
-					request = new
-					{
-						model = ModelName,
-						system = systemPrompt,
-						prompt = userPrompt,
-						stream = true,
-						think = true
-					};
-				}
-				else
-				{
-					request = new
-					{
-						model = ModelName,
-						system = systemPrompt,
-						prompt = userPrompt,
-						stream = true
-					};
-				}
-
-				var json = JsonSerializer.Serialize(request, jsonOptions);
-				var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-				using var requestMessage = new HttpRequestMessage(HttpMethod.Post, OllamaApiUrl)
-				{
-					Content = content
+					new SystemChatMessage(systemPrompt),
+					new UserChatMessage(userPrompt)
 				};
 
-				await LogToFileAsync($"[HTTP] Sending request to Ollama API at {DateTime.Now:HH:mm:ss.fff}");
-				using var response = await httpClient.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead);
-				await LogToFileAsync($"[HTTP] Received response headers at {DateTime.Now:HH:mm:ss.fff} - Status: {response.StatusCode}");
+				await LogToFileAsync($"[HTTP] Sending request to OpenAI-compatible API at {DateTime.Now:HH:mm:ss.fff}");
+
+				// Stream the response
+				var streamingResponse = chatClient.CompleteChatStreamingAsync(messages);
 				
-				if (!response.IsSuccessStatusCode)
-				{
-					var errorBody = await response.Content.ReadAsStringAsync();
-					await LogToFileAsync($"[HTTP] Ollama API error: {response.StatusCode} - {errorBody}");
-					throw new HttpRequestException($"Ollama API error {response.StatusCode}: {errorBody}");
-				}
+				await LogToFileAsync($"[HTTP] Starting to receive streaming response at {DateTime.Now:HH:mm:ss.fff}");
 
-				await using var stream = await response.Content.ReadAsStreamAsync();
-				using var reader = new StreamReader(stream);
-
-				while (!reader.EndOfStream)
+				await foreach (var chunk in streamingResponse)
 				{
-					var line = await reader.ReadLineAsync();
-					if (!string.IsNullOrWhiteSpace(line))
+					// Check for shutdown
+					if (shutdownCts?.Token.IsCancellationRequested ?? true)
+						break;
+
+					// Process content updates
+					foreach (var contentPart in chunk.ContentUpdate)
 					{
-						try
+						if (!string.IsNullOrEmpty(contentPart.Text))
 						{
-							var responseObj = JsonSerializer.Deserialize<OllamaResponse>(line, jsonOptions);
-							if (responseObj != null)
-							{
-								// Check if we have thinking output
-								if (!string.IsNullOrEmpty(responseObj.Thinking))
-								{
-									isReceivingThinking = true;
-									thinkingBuilder.Append(responseObj.Thinking);
-									if (OnThinkingChunk != null)
-										await OnThinkingChunk(responseObj.Thinking);
-								}
-								
-								// Check if we have regular response output
-								if (!string.IsNullOrEmpty(responseObj.Response))
-								{
-									// If we were receiving thinking and now getting response, we've switched
-									if (isReceivingThinking && OnThinkingChunk != null)
-									{
-										// Signal end of thinking phase
-										await OnThinkingChunk("\n\n=== End of Thinking ===\n\n");
-										isReceivingThinking = false;
-									}
-									
-									// Stream the response chunk
-									responseBuilder.Append(responseObj.Response);
-									if (OnResponseChunk != null)
-										await OnResponseChunk(responseObj.Response);
-								}
-							}
-
-							if (responseObj?.Done == true)
-							{
-								await LogToFileAsync($"[HTTP] Stream completed at {DateTime.Now:HH:mm:ss.fff}");
-								// Log the complete response
-								if (thinkingBuilder.Length > 0)
-								{
-									await LogToFileAsync("\n=== THINKING PROCESS ===");
-									await LogToFileAsync(thinkingBuilder.ToString());
-									await LogToFileAsync("=== END OF THINKING ===\n");
-								}
-								await LogToFileAsync(responseBuilder.ToString());
-								await LogToFileAsync("===================");
-
-								var seconds = responseObj.TotalDuration > 0
-									? responseObj.TotalDuration / 1_000_000_000.0
-									: (DateTime.Now - startTime).TotalSeconds;
-
-								await LogToFileAsync($"Generation completed in {seconds:F2} seconds");
-
-								// Notify completion
-								if (OnResponseComplete != null)
-								{
-									var llmResponse = new LLMResponse
-									{
-										Id = Guid.NewGuid().ToString(),
-										Timestamp = startTime,
-										GameState = gameState,
-										Response = responseBuilder.ToString(),
-										Thinking = thinkingBuilder.ToString(),
-										DurationSeconds = seconds
-									};
-									await OnResponseComplete(llmResponse);
-								}
-
-								break;
-							}
-						}
-						catch (JsonException ex)
-						{
-							Console.WriteLine($"[JSON_ERROR] Error parsing Ollama response: {ex.Message}");
-							await NotifyStatusAsync($"Error parsing response: {ex.Message}");
-							await LogToFileAsync($"[JSON_ERROR] Error parsing response: {ex.Message}");
+							responseBuilder.Append(contentPart.Text);
+							
+							// Stream the response chunk to UI
+							if (OnResponseChunk != null)
+								await OnResponseChunk(contentPart.Text);
 						}
 					}
+
+					// Check if we're done
+					if (chunk.FinishReason != null)
+					{
+						await LogToFileAsync($"[HTTP] Stream completed at {DateTime.Now:HH:mm:ss.fff} with reason: {chunk.FinishReason}");
+						break;
+					}
 				}
+
+				// Log the complete response
+				var fullResponse = responseBuilder.ToString();
+				await LogToFileAsync(fullResponse);
+				await LogToFileAsync("===================");
+
+				var seconds = (DateTime.Now - startTime).TotalSeconds;
+				await LogToFileAsync($"Generation completed in {seconds:F2} seconds");
+
+				// Notify completion
+				if (OnResponseComplete != null)
+				{
+					var llmResponse = new LLMResponse
+					{
+						Id = Guid.NewGuid().ToString(),
+						Timestamp = startTime,
+						GameState = gameState,
+						Response = fullResponse,
+						Thinking = "", // No separate thinking with standard OpenAI API
+						DurationSeconds = seconds
+					};
+					await OnResponseComplete(llmResponse);
+				}
+			}
+			catch (ClientResultException ex)
+			{
+				Console.WriteLine($"[ERROR] OpenAI API client error: {ex.Message}\n{ex.StackTrace}");
+				await NotifyStatusAsync($"Error communicating with OpenAI API: {ex.Message}");
+				await LogToFileAsync($"[ERROR] OpenAI API client error: {ex.Message}\n{ex.StackTrace}");
 			}
 			catch (Exception ex)
 			{
-				Console.WriteLine($"[ERROR] Ollama API communication error: {ex.Message}\n{ex.StackTrace}");
-				await NotifyStatusAsync($"Error communicating with Ollama API: {ex.Message}");
-				await LogToFileAsync($"[ERROR] Ollama API communication error: {ex.Message}\n{ex.StackTrace}");
+				Console.WriteLine($"[ERROR] OpenAI API communication error: {ex.Message}\n{ex.StackTrace}");
+				await NotifyStatusAsync($"Error communicating with OpenAI API: {ex.Message}");
+				await LogToFileAsync($"[ERROR] OpenAI API communication error: {ex.Message}\n{ex.StackTrace}");
 			}
 		}
 
@@ -674,7 +620,7 @@ namespace OpenRA.LLMHarness.Services
 				throw new InvalidOperationException($"CRITICAL: Failed to load strategy guide from {strategyGuidePath}: {ex.Message}", ex);
 			}
 
-			// Add thinking/reasoning level as the first line of the system prompt
+			// Add thinking/reasoning level as the first line of the system prompt (for gpt-oss models)
 			sb.AppendLine($"Reasoning: {ThinkingLevel}");
 			sb.AppendLine();
 			sb.AppendLine("You are a helpful OpenRA Command & Conquer strategy game coach. Analyze the current game state and give advice to help the player win.");
@@ -733,20 +679,5 @@ namespace OpenRA.LLMHarness.Services
 		public required string Response { get; init; }
 		public required string Thinking { get; init; }
 		public required double DurationSeconds { get; init; }
-	}
-
-	sealed class OllamaResponse
-	{
-		public string? Model { get; set; }
-		public string? Response { get; set; }
-		public string? Thinking { get; set; } // For models that support thinking/reasoning
-		public bool Done { get; set; }
-		public long TotalDuration { get; set; }
-		// Additional fields that might be present
-		public long LoadDuration { get; set; }
-		public int PromptEvalCount { get; set; }
-		public long PromptEvalDuration { get; set; }
-		public int EvalCount { get; set; }
-		public long EvalDuration { get; set; }
 	}
 }
