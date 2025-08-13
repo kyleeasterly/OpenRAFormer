@@ -522,6 +522,8 @@ namespace OpenRA.LLMHarness.Services
 						break;
 
 					// Process content updates
+					// Note: The gpt-oss model includes reasoning in its output when configured via system prompt
+					// We could potentially detect reasoning sections by looking for patterns in the text
 					foreach (var contentPart in chunk.ContentUpdate)
 					{
 						if (!string.IsNullOrEmpty(contentPart.Text))
@@ -559,7 +561,7 @@ namespace OpenRA.LLMHarness.Services
 						Timestamp = startTime,
 						GameState = gameState,
 						Response = fullResponse,
-						Thinking = "", // No separate thinking with standard OpenAI API
+						Thinking = "", // gpt-oss includes reasoning in the main output when configured
 						DurationSeconds = seconds
 					};
 					await OnResponseComplete(llmResponse);
