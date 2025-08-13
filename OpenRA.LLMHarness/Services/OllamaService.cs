@@ -406,24 +406,28 @@ namespace OpenRA.LLMHarness.Services
 
 				await NotifyStatusAsync($"Read {gameState.Length} characters from file.");
 
-				// Construct the prompt
-				var prompt = BuildPrompt(gameState);
-				await NotifyStatusAsync($"Built prompt with {prompt.Length} characters.");
+				// Construct the system and user prompts
+				var systemPrompt = BuildSystemPrompt();
+				var userPrompt = BuildUserPrompt(gameState);
+				await NotifyStatusAsync($"Built system prompt: {systemPrompt.Length} chars, user prompt: {userPrompt.Length} chars.");
 
-				// Always log the full prompt to file
-				await LogToFileAsync("\n=== FULL PROMPT TO LLM ===");
-				await LogToFileAsync(prompt);
-				await LogToFileAsync("=== END OF PROMPT ===\n");
+				// Always log the full prompts to file
+				await LogToFileAsync("\n=== SYSTEM PROMPT TO LLM ===");
+				await LogToFileAsync(systemPrompt);
+				await LogToFileAsync("=== END OF SYSTEM PROMPT ===\n");
+				await LogToFileAsync("\n=== USER PROMPT TO LLM ===");
+				await LogToFileAsync(userPrompt);
+				await LogToFileAsync("=== END OF USER PROMPT ===\n");
 
 				// Display full prompt in verbose mode
 				if (verboseMode)
 				{
-					await NotifyStatusAsync("Full prompt logged to file.");
+					await NotifyStatusAsync("Full prompts logged to file.");
 				}
 
 				// Send to Ollama API with streaming
 				await LogToFileAsync($"[LLM] Starting Ollama API request for: {Path.GetFileName(filePath)}");
-				await StreamOllamaResponseAsync(prompt, gameState);
+				await StreamOllamaResponseAsync(systemPrompt, userPrompt, gameState);
 				await LogToFileAsync($"[LLM] Completed Ollama API request for: {Path.GetFileName(filePath)}");
 			}
 			catch (Exception ex)
@@ -472,7 +476,7 @@ namespace OpenRA.LLMHarness.Services
 			}
 		}
 
-		private async Task StreamOllamaResponseAsync(string prompt, string gameState)
+		private async Task StreamOllamaResponseAsync(string systemPrompt, string userPrompt, string gameState)
 		{
 			try
 			{
@@ -490,14 +494,15 @@ namespace OpenRA.LLMHarness.Services
 				var startTime = DateTime.Now;
 				var isReceivingThinking = false;
 
-				// Build request - only include think parameter if enabled
+				// Build request - now with system prompt separated
 				object request;
 				if (EnableThinking)
 				{
 					request = new
 					{
 						model = ModelName,
-						prompt = prompt,
+						system = systemPrompt,
+						prompt = userPrompt,
 						stream = true,
 						think = true
 					};
@@ -507,7 +512,8 @@ namespace OpenRA.LLMHarness.Services
 					request = new
 					{
 						model = ModelName,
-						prompt = prompt,
+						system = systemPrompt,
+						prompt = userPrompt,
 						stream = true
 					};
 				}
@@ -625,7 +631,7 @@ namespace OpenRA.LLMHarness.Services
 			}
 		}
 
-		private string BuildPrompt(string gameState)
+		private string BuildSystemPrompt()
 		{
 			var sb = new StringBuilder();
 			var strategyGuidePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "CnC_Strategy_Guide.txt");
@@ -678,8 +684,13 @@ namespace OpenRA.LLMHarness.Services
 			sb.AppendLine("<game_knowledge>");
 			sb.AppendLine(strategyGuide);
 			sb.AppendLine("</game_knowledge>");
-			sb.AppendLine();
 
+			return sb.ToString();
+		}
+
+		private string BuildUserPrompt(string gameState)
+		{
+			var sb = new StringBuilder();
 			sb.AppendLine("<game_state>");
 			sb.AppendLine(gameState);
 			sb.AppendLine("</game_state>");
