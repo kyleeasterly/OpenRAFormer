@@ -499,11 +499,7 @@ namespace OpenRA.LLMHarness.Services
 						model = ModelName,
 						prompt = prompt,
 						stream = true,
-						think = true,
-						options = new
-						{
-							thinkLevel = thinkingLevel
-						}
+						think = true
 					};
 				}
 				else
@@ -670,7 +666,10 @@ namespace OpenRA.LLMHarness.Services
 				throw new InvalidOperationException($"CRITICAL: Failed to load strategy guide from {strategyGuidePath}: {ex.Message}", ex);
 			}
 
-			sb.AppendLine("You are a helpful OpenRA Command & Conquer strategy game coach. Analyze the current game state and give advice to help the player win.");
+			// Add thinking/reasoning level as the first line of the system prompt
+		sb.AppendLine($"Reasoning: {thinkingLevel}");
+		sb.AppendLine();
+		sb.AppendLine("You are a helpful OpenRA Command & Conquer strategy game coach. Analyze the current game state and give advice to help the player win.");
 			sb.AppendLine("Consider the economy, military strength, map control, and immediate threats.");
 			sb.AppendLine("Give specific, actionable advice about what to do next.");
 			sb.AppendLine("Keep your response concise and focused on the most important next steps.");
