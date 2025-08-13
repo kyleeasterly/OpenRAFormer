@@ -176,9 +176,10 @@ namespace OpenRA.Mods.Common.Traits
 					// Units and Buildings
 					var playerActors = world.Actors.Where(a => a.Owner == player && !a.IsDead).ToList();
 					var buildings = playerActors.Where(a => a.Info.HasTraitInfo<BuildingInfo>()).ToList();
-					// Filter out C17 cargo planes as they're not player-controllable units
+					// Filter out C17 cargo planes and player actors as they're not player-controllable units
 					var units = playerActors.Where(a => !a.Info.HasTraitInfo<BuildingInfo>() && 
-						!string.Equals(a.Info.Name, "C17", StringComparison.OrdinalIgnoreCase)).ToList();
+						!string.Equals(a.Info.Name, "C17", StringComparison.OrdinalIgnoreCase) &&
+						!string.Equals(a.Info.Name, "player", StringComparison.OrdinalIgnoreCase)).ToList();
 
 					sb.AppendLine();
 					sb.AppendLine(CultureInfo.InvariantCulture, $"### Unit Summary: {units.Count} units, {buildings.Count} buildings");
