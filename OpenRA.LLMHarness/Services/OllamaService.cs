@@ -5,32 +5,34 @@ namespace OpenRA.LLMHarness.Services
 {
 	public sealed class OllamaService
 	{
-		private const string WatchDirectory = @"C:\OpenRATest";
-		private const string LogDirectory = @"C:\OpenRATest\LLM_Coach_Logs";
-		private const string OllamaApiUrl = "http://localhost:11434/api/generate";
-		private const string ModelName = "gpt-oss:20b";
-		private const bool EnableThinking = true; // Set to true for models that support thinking
+		const string WatchDirectory = @"C:\OpenRATest";
+		const string LogDirectory = @"C:\OpenRATest\LLM_Coach_Logs";
+		const string OllamaApiUrl = "http://localhost:11434/api/generate";
+		const string ModelName = "gpt-oss:20b";
+		const bool EnableThinking = true; // Set to true for models that support thinking
 
-		private readonly HttpClient httpClient;
-		private readonly HashSet<string> processedFiles = [];
-		private readonly JsonSerializerOptions jsonOptions = new()
+		readonly HttpClient httpClient;
+		readonly HashSet<string> processedFiles = [];
+		readonly JsonSerializerOptions jsonOptions = new()
 		{
 			PropertyNamingPolicy = JsonNamingPolicy.CamelCase
 		};
-		private bool verboseMode = false;
-		private string thinkingLevel = "medium";
-		private string? currentLogFile;
+
+		public bool VerboseMode { get; set; } = false;
+		public string ThinkingLevel { get; set; } = "medium";
+
+		string? currentLogFile;
 
 		// Queue management for LLM processing
-		private bool isProcessingLLM = false;
-		private string? pendingFile = null;
-		private readonly object processLock = new();
-		private CancellationTokenSource? shutdownCts;
-		
+		bool isProcessingLLM = false;
+		string? pendingFile = null;
+		readonly object processLock = new();
+		CancellationTokenSource? shutdownCts;
+
 		// File watcher management
-		private FileSystemWatcher? fileWatcher;
-		private System.Threading.Timer? fallbackScanTimer;
-		private DateTime lastFileProcessedTime = DateTime.Now;
+		FileSystemWatcher? fileWatcher;
+		Timer? fallbackScanTimer;
+		DateTime lastFileProcessedTime = DateTime.Now;
 
 		// Events for UI updates
 		public event Func<string, Task>? OnResponseChunk;
@@ -420,7 +422,7 @@ namespace OpenRA.LLMHarness.Services
 				await LogToFileAsync("=== END OF USER PROMPT ===\n");
 
 				// Display full prompt in verbose mode
-				if (verboseMode)
+				if (VerboseMode)
 				{
 					await NotifyStatusAsync("Full prompts logged to file.");
 				}
@@ -673,9 +675,9 @@ namespace OpenRA.LLMHarness.Services
 			}
 
 			// Add thinking/reasoning level as the first line of the system prompt
-		sb.AppendLine($"Reasoning: {thinkingLevel}");
-		sb.AppendLine();
-		sb.AppendLine("You are a helpful OpenRA Command & Conquer strategy game coach. Analyze the current game state and give advice to help the player win.");
+			sb.AppendLine($"Reasoning: {ThinkingLevel}");
+			sb.AppendLine();
+			sb.AppendLine("You are a helpful OpenRA Command & Conquer strategy game coach. Analyze the current game state and give advice to help the player win.");
 			sb.AppendLine("Consider the economy, military strength, map control, and immediate threats.");
 			sb.AppendLine("Give specific, actionable advice about what to do next.");
 			sb.AppendLine("Keep your response concise and focused on the most important next steps.");
@@ -720,18 +722,6 @@ namespace OpenRA.LLMHarness.Services
 		{
 			if (OnStatusUpdate != null)
 				await OnStatusUpdate(message);
-		}
-
-		public bool VerboseMode
-		{
-			get => verboseMode;
-			set => verboseMode = value;
-		}
-
-		public string ThinkingLevel
-		{
-			get => thinkingLevel;
-			set => thinkingLevel = value;
 		}
 	}
 
