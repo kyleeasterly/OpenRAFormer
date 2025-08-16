@@ -270,6 +270,27 @@ namespace OpenRA.Mods.Common.Traits
 			foreach (var building in myBuildings.Take(5))
 				Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}]   - {building.Info.Name} at {building.Location}");
 			
+			// Debug: Check what the bot can see around its starting position
+			var debugRadius = 10;
+			var exploredCount = 0;
+			var resourceCount = 0;
+			for (var dx = -debugRadius; dx <= debugRadius; dx++)
+			{
+				for (var dy = -debugRadius; dy <= debugRadius; dy++)
+				{
+					var checkPos = baseCenter + new CVec(dx, dy);
+					if (world.Map.Contains(checkPos))
+					{
+						if (player.Shroud.IsExplored(checkPos))
+							exploredCount++;
+						var res = resourceLayer.GetResource(checkPos);
+						if (res.Type != null)
+							resourceCount++;
+					}
+				}
+			}
+			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Debug: Within {debugRadius} cells of base - {exploredCount} cells explored, {resourceCount} cells have resources");
+			
 			var patches = new List<ResourcePatch>();
 			var visited = new HashSet<CPos>();
 			
@@ -281,7 +302,10 @@ namespace OpenRA.Mods.Common.Traits
 
 				var resource = resourceLayer.GetResource(cell);
 				// Check if the bot player can see this cell (not the human player!)
-				if (resource.Type == null || !player.Shroud.IsExplored(cell))
+				// For now, let's check both IsExplored and IsVisible to debug
+				var isExplored = player.Shroud.IsExplored(cell);
+				var isVisible = player.Shroud.IsVisible(cell);
+				if (resource.Type == null || (!isExplored && !isVisible))
 					continue;
 
 				// Found a resource cell, flood-fill to find the whole patch
@@ -304,7 +328,7 @@ namespace OpenRA.Mods.Common.Traits
 
 						var adjacentResource = resourceLayer.GetResource(adjacent);
 						// Check if the bot player can see this cell (not the human player!)
-						if (adjacentResource.Type != null && player.Shroud.IsExplored(adjacent))
+						if (adjacentResource.Type != null && (player.Shroud.IsExplored(adjacent) || player.Shroud.IsVisible(adjacent)))
 						{
 							visited.Add(adjacent);
 							queue.Enqueue(adjacent);
