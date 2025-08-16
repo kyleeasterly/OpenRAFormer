@@ -268,36 +268,35 @@ namespace OpenRA.Mods.Common.Traits
 				}
 			}
 
-			// Check for enemy threats and calculate scores
-			var enemyBuildings = world.ActorsHavingTrait<Building>()
-				.Where(a => !a.IsDead && a.Owner.RelationshipWith(player) == PlayerRelationship.Enemy)
+			// Calculate min and max distances for relative scoring
+			var distances = patches.Select(p => p.DistanceFromBase).ToList();
+			var minDistance = distances.Count > 0 ? distances.Min() : 0;
+			var maxDistance = distances.Count > 0 ? distances.Max() : 1;
+			var distanceRange = maxDistance - minDistance;
+			if (distanceRange == 0)
+				distanceRange = 1; // Avoid division by zero
+
+			// Get all friendly construction yards and refineries for checking harvesting status
+			var friendlyHarvestingBuildings = world.ActorsHavingTrait<Building>()
+				.Where(a => a.Owner == player && 
+					(Info.ConstructionYardTypes.Contains(a.Info.Name) || 
+					Info.RefineryTypes.Contains(a.Info.Name)))
 				.ToList();
 
 			foreach (var patch in patches)
 			{
-				// Base score on resource count
-				var score = patch.ResourceCount * 10f;
+				// Base score heavily on distance - closest patches get highest score
+				var distanceScore = (maxDistance - patch.DistanceFromBase) / (float)distanceRange;
+				
+				// Use resource count as a secondary factor
+				var score = distanceScore * 100f + patch.ResourceCount;
 
-				// Prefer closer patches, but not too close (to avoid overlapping build areas)
-				if (patch.DistanceFromBase < 15)
-					score *= 0.7f; // Too close, might overlap
-				else if (patch.DistanceFromBase < 30)
-					score *= 1.0f; // Good distance
-				else if (patch.DistanceFromBase < 50)
-					score *= 0.8f; // Getting far
-				else
-					score *= 0.4f; // Too far
+				// Check if this patch is already being harvested (has a construction yard or refinery nearby)
+				var alreadyHarvesting = friendlyHarvestingBuildings
+					.Any(building => (building.Location - patch.Center).Length < 15);
 
-				// Check for nearby enemies
-				var nearestEnemy = enemyBuildings
-					.Select(e => (e.Location - patch.Center).Length)
-					.OrderBy(d => d)
-					.FirstOrDefault();
-
-				if (nearestEnemy < 20)
-					score *= 0.1f; // Very dangerous
-				else if (nearestEnemy < 35)
-					score *= 0.5f; // Risky
+				if (alreadyHarvesting)
+					score *= 0.1f; // Heavily penalize patches we're already harvesting
 
 				patch.Score = score;
 			}
