@@ -211,7 +211,7 @@ namespace OpenRA.Mods.Common.Traits
 
 		List<ResourcePatch> FindResourcePatches(IResourceLayer resourceLayer, CPos baseCenter)
 		{
-			Console.WriteLine($"[{player.PlayerName}] Finding resource patches from base at {baseCenter}");
+			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Finding resource patches from base at {baseCenter}");
 			var patches = new List<ResourcePatch>();
 			var visited = new HashSet<CPos>();
 			
@@ -285,9 +285,9 @@ namespace OpenRA.Mods.Common.Traits
 					Info.RefineryTypes.Contains(a.Info.Name)))
 				.ToList();
 
-			Console.WriteLine($"[{player.PlayerName}] Found {patches.Count} resource patches");
-			Console.WriteLine($"[{player.PlayerName}] Distance range: {minDistance} to {maxDistance}");
-			Console.WriteLine($"[{player.PlayerName}] Friendly harvesting buildings: {friendlyHarvestingBuildings.Count}");
+			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Found {patches.Count} resource patches");
+			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Distance range: {minDistance} to {maxDistance}");
+			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Friendly harvesting buildings: {friendlyHarvestingBuildings.Count}");
 
 			foreach (var patch in patches)
 			{
@@ -303,12 +303,12 @@ namespace OpenRA.Mods.Common.Traits
 
 				if (alreadyHarvesting)
 				{
-					Console.WriteLine($"[{player.PlayerName}] Patch at {patch.Center} (dist={patch.DistanceFromBase}, res={patch.ResourceCount}): Already harvesting, penalizing score from {score:F1} to {score * 0.1f:F1}");
+					Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Patch at {patch.Center} (dist={patch.DistanceFromBase}, res={patch.ResourceCount}): Already harvesting, penalizing score from {score:F1} to {score * 0.1f:F1}");
 					score *= 0.1f; // Heavily penalize patches we're already harvesting
 				}
 				else
 				{
-					Console.WriteLine($"[{player.PlayerName}] Patch at {patch.Center} (dist={patch.DistanceFromBase}, res={patch.ResourceCount}): Score = {score:F1}");
+					Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Patch at {patch.Center} (dist={patch.DistanceFromBase}, res={patch.ResourceCount}): Score = {score:F1}");
 				}
 
 				patch.Score = score;
@@ -317,10 +317,10 @@ namespace OpenRA.Mods.Common.Traits
 			// Return patches sorted by score
 			var sortedPatches = patches.OrderByDescending(p => p.Score).ToList();
 			
-			Console.WriteLine($"[{player.PlayerName}] Top 3 patches by score:");
+			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Top 3 patches by score:");
 			foreach (var patch in sortedPatches.Take(3))
 			{
-				Console.WriteLine($"[{player.PlayerName}]   - {patch.Center}: score={patch.Score:F1}, dist={patch.DistanceFromBase}, res={patch.ResourceCount}");
+				Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}]   - {patch.Center}: score={patch.Score:F1}, dist={patch.DistanceFromBase}, res={patch.ResourceCount}");
 			}
 			
 			return sortedPatches;
@@ -356,40 +356,40 @@ namespace OpenRA.Mods.Common.Traits
 			// Try to find resource patches for expansion
 			if (Info.PreferResourceExpansion && !distanceToBaseIsImportant)
 			{
-				Console.WriteLine($"[{player.PlayerName}] Choosing MCV deploy location (PreferResourceExpansion=true, distanceToBaseIsImportant={distanceToBaseIsImportant})");
+				Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Choosing MCV deploy location (PreferResourceExpansion=true, distanceToBaseIsImportant={distanceToBaseIsImportant})");
 				var resourceLayer = world.WorldActor.TraitOrDefault<IResourceLayer>();
 				if (resourceLayer != null)
 				{
 					// Find and evaluate resource patches
 					var resourcePatches = FindResourcePatches(resourceLayer, baseCenter);
 
-					Console.WriteLine($"[{player.PlayerName}] Checking {resourcePatches.Count} resource patches for buildable locations...");
+					Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Checking {resourcePatches.Count} resource patches for buildable locations...");
 					foreach (var patch in resourcePatches)
 					{
 						// Check if we can build near this resource patch
 						var location = FindPos(patch.Center, patch.Center, 3, 10);
 						if (location != null)
 						{
-							Console.WriteLine($"[{player.PlayerName}] Selected MCV location near patch at {patch.Center} -> deploying at {location}");
+							Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Selected MCV location near patch at {patch.Center} -> deploying at {location}");
 							return location;
 						}
 						else
 						{
-							Console.WriteLine($"[{player.PlayerName}] No buildable location near patch at {patch.Center}");
+							Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] No buildable location near patch at {patch.Center}");
 						}
 					}
-					Console.WriteLine($"[{player.PlayerName}] No suitable resource patches found, falling back to base expansion");
+					Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] No suitable resource patches found, falling back to base expansion");
 				}
 			}
 			else
 			{
-				Console.WriteLine($"[{player.PlayerName}] Choosing MCV deploy location (PreferResourceExpansion={Info.PreferResourceExpansion}, distanceToBaseIsImportant={distanceToBaseIsImportant})");
+				Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Choosing MCV deploy location (PreferResourceExpansion={Info.PreferResourceExpansion}, distanceToBaseIsImportant={distanceToBaseIsImportant})");
 			}
 
 			// Fallback to current logic
 			var fallbackLocation = FindPos(baseCenter, baseCenter, Info.MinBaseRadius,
 				distanceToBaseIsImportant ? Info.MaxBaseRadius : world.Map.Grid.MaximumTileSearchRange);
-			Console.WriteLine($"[{player.PlayerName}] Using fallback location: {fallbackLocation}");
+			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Using fallback location: {fallbackLocation}");
 			return fallbackLocation;
 		}
 
