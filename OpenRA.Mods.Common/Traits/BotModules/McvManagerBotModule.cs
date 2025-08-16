@@ -58,6 +58,8 @@ namespace OpenRA.Mods.Common.Traits
 	public class McvManagerBotModule : ConditionalTrait<McvManagerBotModuleInfo>,
 		IBotTick, IBotPositionsUpdated, IGameSaveTraitData, INotifyActorDisposing
 	{
+		static bool hasLoggedPatches = false; // Static flag to ensure we only dump patches once
+		
 		public CPos GetRandomBaseCenter()
 		{
 			var randomConstructionYard = constructionYards.Actors
@@ -114,6 +116,32 @@ namespace OpenRA.Mods.Common.Traits
 			{
 				DeployMcvs(bot, false);
 				firstTick = false;
+				
+				// Dump all resource patches at game start (only do this once, for the first bot that runs)
+				if (player.IsBot && !hasLoggedPatches)
+				{
+					hasLoggedPatches = true;
+					var resourceLayer = world.WorldActor.TraitOrDefault<IResourceLayer>();
+					if (resourceLayer != null)
+					{
+						Console.WriteLine($"[DEBUG] ===========================================");
+						Console.WriteLine($"[DEBUG] DUMPING ALL RESOURCE PATCHES AT GAME START");
+						Console.WriteLine($"[DEBUG] ===========================================");
+						
+						var baseCenter = GetRandomBaseCenter();
+						var patches = FindResourcePatches(resourceLayer, baseCenter);
+						
+						Console.WriteLine($"[DEBUG] Found {patches.Count} total resource patches on map");
+						Console.WriteLine($"[DEBUG] Bot P{player.ClientIndex} starting base at: {baseCenter}");
+						Console.WriteLine($"[DEBUG] All patches (sorted by X then Y):");
+						
+						foreach (var patch in patches.OrderBy(p => p.Center.X).ThenBy(p => p.Center.Y))
+						{
+							Console.WriteLine($"[DEBUG]   Patch at ({patch.Center.X},{patch.Center.Y}): {patch.ResourceCount} resources, dist from P{player.ClientIndex} base = {patch.DistanceFromBase}");
+						}
+						Console.WriteLine($"[DEBUG] ===========================================");
+					}
+				}
 			}
 
 			if (--scanInterval <= 0)
@@ -340,15 +368,6 @@ namespace OpenRA.Mods.Common.Traits
 				Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}]   - {patch.Center}: score={patch.Score:F1}, dist={patch.DistanceFromBase}, res={patch.ResourceCount}");
 			}
 			
-			// One-time dump of ALL patches for debugging (only for first bot to help verify locations)
-			if (player.ClientIndex == 1 && patches.Count > 0)
-			{
-				Console.WriteLine($"[DEBUG] Complete list of all {patches.Count} resource patches on map:");
-				foreach (var patch in patches.OrderBy(p => p.Center.X).ThenBy(p => p.Center.Y))
-				{
-					Console.WriteLine($"[DEBUG]   Patch at {patch.Center}: {patch.ResourceCount} resources, distance from P1 base: {patch.DistanceFromBase}");
-				}
-			}
 			
 			return sortedPatches;
 		}
