@@ -125,15 +125,36 @@ namespace OpenRA.Mods.Common.Traits
 					if (resourceLayer != null)
 					{
 						Console.WriteLine($"[DEBUG] ===========================================");
-						Console.WriteLine($"[DEBUG] DUMPING ALL RESOURCE PATCHES AT GAME START");
+						Console.WriteLine($"[DEBUG] DUMPING GAME STATE AT START");
 						Console.WriteLine($"[DEBUG] ===========================================");
 						
+						// Find all MCVs on the map
+						Console.WriteLine($"[DEBUG] ALL MCVs on map:");
+						var allMcvs = world.Actors
+							.Where(a => !a.IsDead && Info.McvTypes.Contains(a.Info.Name))
+							.ToList();
+						foreach (var mcv in allMcvs)
+						{
+							Console.WriteLine($"[DEBUG]   MCV owned by P{mcv.Owner.ClientIndex}:{mcv.Owner.PlayerName} at position {mcv.Location}");
+						}
+						
+						// Find all construction yards on the map  
+						Console.WriteLine($"[DEBUG] ALL Construction Yards on map:");
+						var allCYs = world.Actors
+							.Where(a => !a.IsDead && Info.ConstructionYardTypes.Contains(a.Info.Name))
+							.ToList();
+						foreach (var cy in allCYs)
+						{
+							Console.WriteLine($"[DEBUG]   CY owned by P{cy.Owner.ClientIndex}:{cy.Owner.PlayerName} at position {cy.Location}");
+						}
+						
 						var baseCenter = GetRandomBaseCenter();
+						Console.WriteLine($"[DEBUG] Bot P{player.ClientIndex} calculated base center: {baseCenter}");
+						
 						var patches = FindResourcePatches(resourceLayer, baseCenter);
 						
-						Console.WriteLine($"[DEBUG] Found {patches.Count} total resource patches on map");
-						Console.WriteLine($"[DEBUG] Bot P{player.ClientIndex} starting base at: {baseCenter}");
-						Console.WriteLine($"[DEBUG] All patches (sorted by X then Y):");
+						Console.WriteLine($"[DEBUG] Found {patches.Count} total resource patches visible to P{player.ClientIndex}");
+						Console.WriteLine($"[DEBUG] All visible patches (sorted by X then Y):");
 						
 						foreach (var patch in patches.OrderBy(p => p.Center.X).ThenBy(p => p.Center.Y))
 						{
