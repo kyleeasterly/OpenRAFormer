@@ -212,6 +212,15 @@ namespace OpenRA.Mods.Common.Traits
 		List<ResourcePatch> FindResourcePatches(IResourceLayer resourceLayer, CPos baseCenter)
 		{
 			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Finding resource patches from base at {baseCenter}");
+			
+			// Log current buildings
+			var myBuildings = world.ActorsHavingTrait<Building>()
+				.Where(a => a.Owner == player && !a.IsDead)
+				.ToList();
+			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Current buildings: {myBuildings.Count}");
+			foreach (var building in myBuildings.Take(5))
+				Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}]   - {building.Info.Name} at {building.Location}");
+			
 			var patches = new List<ResourcePatch>();
 			var visited = new HashSet<CPos>();
 			
@@ -259,6 +268,14 @@ namespace OpenRA.Mods.Common.Traits
 					var centerY = patchCells.Sum(c => c.Y) / patchCells.Count;
 					var patchCenter = new CPos(centerX, centerY);
 					var distance = (patchCenter - baseCenter).Length;
+					
+					// Debug: Show distance calculation for first few patches
+					if (patches.Count < 3)
+					{
+						var dx = Math.Abs(patchCenter.X - baseCenter.X);
+						var dy = Math.Abs(patchCenter.Y - baseCenter.Y);
+						Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Patch center {patchCenter}: dx={dx}, dy={dy}, distance={distance} (Euclidean)");
+					}
 
 					patches.Add(new ResourcePatch
 					{
@@ -321,6 +338,16 @@ namespace OpenRA.Mods.Common.Traits
 			foreach (var patch in sortedPatches.Take(3))
 			{
 				Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}]   - {patch.Center}: score={patch.Score:F1}, dist={patch.DistanceFromBase}, res={patch.ResourceCount}");
+			}
+			
+			// One-time dump of ALL patches for debugging (only for first bot to help verify locations)
+			if (player.ClientIndex == 1 && patches.Count > 0)
+			{
+				Console.WriteLine($"[DEBUG] Complete list of all {patches.Count} resource patches on map:");
+				foreach (var patch in patches.OrderBy(p => p.Center.X).ThenBy(p => p.Center.Y))
+				{
+					Console.WriteLine($"[DEBUG]   Patch at {patch.Center}: {patch.ResourceCount} resources, distance from P1 base: {patch.DistanceFromBase}");
+				}
 			}
 			
 			return sortedPatches;
