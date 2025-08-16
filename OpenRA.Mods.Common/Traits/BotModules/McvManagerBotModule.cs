@@ -280,7 +280,8 @@ namespace OpenRA.Mods.Common.Traits
 					continue;
 
 				var resource = resourceLayer.GetResource(cell);
-				if (resource.Type == null || !resourceLayer.IsVisible(cell))
+				// Check if the bot player can see this cell (not the human player!)
+				if (resource.Type == null || !player.Shroud.IsExplored(cell))
 					continue;
 
 				// Found a resource cell, flood-fill to find the whole patch
@@ -302,7 +303,8 @@ namespace OpenRA.Mods.Common.Traits
 							continue;
 
 						var adjacentResource = resourceLayer.GetResource(adjacent);
-						if (adjacentResource.Type != null && resourceLayer.IsVisible(adjacent))
+						// Check if the bot player can see this cell (not the human player!)
+						if (adjacentResource.Type != null && player.Shroud.IsExplored(adjacent))
 						{
 							visited.Add(adjacent);
 							queue.Enqueue(adjacent);
