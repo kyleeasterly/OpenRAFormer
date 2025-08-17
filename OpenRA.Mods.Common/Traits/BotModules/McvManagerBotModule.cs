@@ -345,6 +345,7 @@ namespace OpenRA.Mods.Common.Traits
 			// Debug: Check what the bot can see around its starting position
 			var debugRadius = 10;
 			var exploredCount = 0;
+			var visibleCount = 0;
 			var resourceCount = 0;
 			for (var dx = -debugRadius; dx <= debugRadius; dx++)
 			{
@@ -355,13 +356,16 @@ namespace OpenRA.Mods.Common.Traits
 					{
 						if (player.Shroud.IsExplored(checkPos))
 							exploredCount++;
+						if (player.Shroud.IsVisible(checkPos))
+							visibleCount++;
 						var res = resourceLayer.GetResource(checkPos);
 						if (res.Type != null)
 							resourceCount++;
 					}
 				}
 			}
-			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Debug: Within {debugRadius} cells of base - {exploredCount} cells explored, {resourceCount} cells have resources");
+			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Debug: Within {debugRadius} cells of base - {exploredCount} explored, {visibleCount} visible, {resourceCount} have resources");
+			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Shroud status: Disabled={player.Shroud.Disabled}, FogEnabled={player.Shroud.FogEnabled}, ExploreMapEnabled={player.Shroud.ExploreMapEnabled}");
 			
 			var patches = new List<ResourcePatch>();
 			var visited = new HashSet<CPos>();
@@ -374,10 +378,12 @@ namespace OpenRA.Mods.Common.Traits
 
 				var resource = resourceLayer.GetResource(cell);
 				// Check if the bot player can see this cell (not the human player!)
-				// For now, let's check both IsExplored and IsVisible to debug
-				var isExplored = player.Shroud.IsExplored(cell);
-				var isVisible = player.Shroud.IsVisible(cell);
-				if (resource.Type == null || (!isExplored && !isVisible))
+				// With ExploreMapEnabled, we should be able to see all resources on the map
+				// Otherwise check if the cell is explored or visible
+				var canSeeCell = player.Shroud.ExploreMapEnabled || 
+				                 player.Shroud.IsExplored(cell) || 
+				                 player.Shroud.IsVisible(cell);
+				if (resource.Type == null || !canSeeCell)
 					continue;
 
 				// Found a resource cell, flood-fill to find the whole patch
@@ -400,7 +406,10 @@ namespace OpenRA.Mods.Common.Traits
 
 						var adjacentResource = resourceLayer.GetResource(adjacent);
 						// Check if the bot player can see this cell (not the human player!)
-						if (adjacentResource.Type != null && (player.Shroud.IsExplored(adjacent) || player.Shroud.IsVisible(adjacent)))
+						var canSeeAdjacent = player.Shroud.ExploreMapEnabled || 
+						                     player.Shroud.IsExplored(adjacent) || 
+						                     player.Shroud.IsVisible(adjacent);
+						if (adjacentResource.Type != null && canSeeAdjacent)
 						{
 							visited.Add(adjacent);
 							queue.Enqueue(adjacent);
