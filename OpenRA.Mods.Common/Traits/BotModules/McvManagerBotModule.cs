@@ -151,12 +151,21 @@ namespace OpenRA.Mods.Common.Traits
 						var baseCenter = GetRandomBaseCenter();
 						Console.WriteLine($"[DEBUG] Bot P{player.ClientIndex} calculated base center: {baseCenter}");
 						
-						var patches = FindResourcePatches(resourceLayer, baseCenter);
+						// First, find ALL patches ignoring visibility
+						Console.WriteLine($"[DEBUG] ===========================================");
+						Console.WriteLine($"[DEBUG] ALL RESOURCE PATCHES ON MAP (ignoring visibility):");
+						var allPatches = FindAllResourcePatchesIgnoringVisibility(resourceLayer, baseCenter);
+						Console.WriteLine($"[DEBUG] Found {allPatches.Count} total patches on entire map");
+						foreach (var patch in allPatches.OrderBy(p => p.Center.X).ThenBy(p => p.Center.Y))
+						{
+							Console.WriteLine($"[DEBUG]   Patch at ({patch.Center.X},{patch.Center.Y}): {patch.ResourceCount} resources, dist from P{player.ClientIndex} base = {patch.DistanceFromBase}");
+						}
 						
-						Console.WriteLine($"[DEBUG] Found {patches.Count} total resource patches visible to P{player.ClientIndex}");
-						Console.WriteLine($"[DEBUG] All visible patches (sorted by X then Y):");
-						
-						foreach (var patch in patches.OrderBy(p => p.Center.X).ThenBy(p => p.Center.Y))
+						Console.WriteLine($"[DEBUG] ===========================================");
+						Console.WriteLine($"[DEBUG] PATCHES VISIBLE TO BOT P{player.ClientIndex}:");
+						var visiblePatches = FindResourcePatches(resourceLayer, baseCenter);
+						Console.WriteLine($"[DEBUG] Found {visiblePatches.Count} patches visible to P{player.ClientIndex}");
+						foreach (var patch in visiblePatches.OrderBy(p => p.Center.X).ThenBy(p => p.Center.Y))
 						{
 							Console.WriteLine($"[DEBUG]   Patch at ({patch.Center.X},{patch.Center.Y}): {patch.ResourceCount} resources, dist from P{player.ClientIndex} base = {patch.DistanceFromBase}");
 						}
@@ -256,6 +265,69 @@ namespace OpenRA.Mods.Common.Traits
 			public int ResourceCount { get; set; }
 			public int DistanceFromBase { get; set; }
 			public float Score { get; set; }
+		}
+
+		List<ResourcePatch> FindAllResourcePatchesIgnoringVisibility(IResourceLayer resourceLayer, CPos baseCenter)
+		{
+			var patches = new List<ResourcePatch>();
+			var visited = new HashSet<CPos>();
+			
+			// Find all resource cells and group them into patches - NO VISIBILITY CHECK
+			foreach (var cell in world.Map.AllCells)
+			{
+				if (visited.Contains(cell))
+					continue;
+
+				var resource = resourceLayer.GetResource(cell);
+				if (resource.Type == null)
+					continue;
+
+				// Found a resource cell, flood-fill to find the whole patch
+				var patchCells = new List<CPos>();
+				var queue = new Queue<CPos>();
+				queue.Enqueue(cell);
+				visited.Add(cell);
+
+				while (queue.Count > 0)
+				{
+					var current = queue.Dequeue();
+					patchCells.Add(current);
+
+					// Check all adjacent cells
+					foreach (var direction in CVec.Directions)
+					{
+						var adjacent = current + direction;
+						if (!world.Map.Contains(adjacent) || visited.Contains(adjacent))
+							continue;
+
+						var adjacentResource = resourceLayer.GetResource(adjacent);
+						if (adjacentResource.Type != null)
+						{
+							visited.Add(adjacent);
+							queue.Enqueue(adjacent);
+						}
+					}
+				}
+
+				// Create a patch from the cells we found
+				if (patchCells.Count > 0)
+				{
+					var centerX = patchCells.Sum(c => c.X) / patchCells.Count;
+					var centerY = patchCells.Sum(c => c.Y) / patchCells.Count;
+					var patchCenter = new CPos(centerX, centerY);
+					var distance = (patchCenter - baseCenter).Length;
+
+					patches.Add(new ResourcePatch
+					{
+						Center = patchCenter,
+						ResourceCount = patchCells.Count,
+						DistanceFromBase = distance,
+						Score = 0
+					});
+				}
+			}
+			
+			return patches;
 		}
 
 		List<ResourcePatch> FindResourcePatches(IResourceLayer resourceLayer, CPos baseCenter)
