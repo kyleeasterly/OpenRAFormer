@@ -9,6 +9,7 @@
  */
 #endregion
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using OpenRA.Traits;
@@ -57,6 +58,8 @@ namespace OpenRA.Mods.Common.Traits
 	public class McvManagerBotModule : ConditionalTrait<McvManagerBotModuleInfo>,
 		IBotTick, IBotPositionsUpdated, IGameSaveTraitData, INotifyActorDisposing
 	{
+		static bool hasLoggedPatches = false; // Static flag to ensure we only dump patches once
+		
 		public CPos GetRandomBaseCenter()
 		{
 			var randomConstructionYard = constructionYards.Actors
@@ -113,6 +116,62 @@ namespace OpenRA.Mods.Common.Traits
 			{
 				DeployMcvs(bot, false);
 				firstTick = false;
+				
+				// Dump all resource patches at game start (only do this once, for the first bot that runs)
+				if (player.IsBot && !hasLoggedPatches)
+				{
+					hasLoggedPatches = true;
+					var resourceLayer = world.WorldActor.TraitOrDefault<IResourceLayer>();
+					if (resourceLayer != null)
+					{
+						Console.WriteLine($"[DEBUG] ===========================================");
+						Console.WriteLine($"[DEBUG] DUMPING GAME STATE AT START");
+						Console.WriteLine($"[DEBUG] ===========================================");
+						
+						// Find all MCVs on the map
+						Console.WriteLine($"[DEBUG] ALL MCVs on map:");
+						var allMcvs = world.Actors
+							.Where(a => !a.IsDead && Info.McvTypes.Contains(a.Info.Name))
+							.ToList();
+						foreach (var mcv in allMcvs)
+						{
+							Console.WriteLine($"[DEBUG]   MCV owned by P{mcv.Owner.ClientIndex}:{mcv.Owner.PlayerName} at position {mcv.Location}");
+						}
+						
+						// Find all construction yards on the map  
+						Console.WriteLine($"[DEBUG] ALL Construction Yards on map:");
+						var allCYs = world.Actors
+							.Where(a => !a.IsDead && Info.ConstructionYardTypes.Contains(a.Info.Name))
+							.ToList();
+						foreach (var cy in allCYs)
+						{
+							Console.WriteLine($"[DEBUG]   CY owned by P{cy.Owner.ClientIndex}:{cy.Owner.PlayerName} at position {cy.Location}");
+						}
+						
+						var baseCenter = GetRandomBaseCenter();
+						Console.WriteLine($"[DEBUG] Bot P{player.ClientIndex} calculated base center: {baseCenter}");
+						
+						// First, find ALL patches ignoring visibility
+						Console.WriteLine($"[DEBUG] ===========================================");
+						Console.WriteLine($"[DEBUG] ALL RESOURCE PATCHES ON MAP (ignoring visibility):");
+						var allPatches = FindAllResourcePatchesIgnoringVisibility(resourceLayer, baseCenter);
+						Console.WriteLine($"[DEBUG] Found {allPatches.Count} total patches on entire map");
+						foreach (var patch in allPatches.OrderBy(p => p.Center.X).ThenBy(p => p.Center.Y))
+						{
+							Console.WriteLine($"[DEBUG]   Patch at ({patch.Center.X},{patch.Center.Y}): {patch.ResourceCount} resources, dist from P{player.ClientIndex} base = {patch.DistanceFromBase}");
+						}
+						
+						Console.WriteLine($"[DEBUG] ===========================================");
+						Console.WriteLine($"[DEBUG] PATCHES VISIBLE TO BOT P{player.ClientIndex}:");
+						var visiblePatches = FindResourcePatches(resourceLayer, baseCenter);
+						Console.WriteLine($"[DEBUG] Found {visiblePatches.Count} patches visible to P{player.ClientIndex}");
+						foreach (var patch in visiblePatches.OrderBy(p => p.Center.X).ThenBy(p => p.Center.Y))
+						{
+							Console.WriteLine($"[DEBUG]   Patch at ({patch.Center.X},{patch.Center.Y}): {patch.ResourceCount} resources, dist from P{player.ClientIndex} base = {patch.DistanceFromBase}");
+						}
+						Console.WriteLine($"[DEBUG] ===========================================");
+					}
+				}
 			}
 
 			if (--scanInterval <= 0)
@@ -208,19 +267,19 @@ namespace OpenRA.Mods.Common.Traits
 			public float Score { get; set; }
 		}
 
-		List<ResourcePatch> FindResourcePatches(IResourceLayer resourceLayer, CPos baseCenter)
+		List<ResourcePatch> FindAllResourcePatchesIgnoringVisibility(IResourceLayer resourceLayer, CPos baseCenter)
 		{
 			var patches = new List<ResourcePatch>();
 			var visited = new HashSet<CPos>();
 			
-			// Find all resource cells and group them into patches
+			// Find all resource cells and group them into patches - NO VISIBILITY CHECK
 			foreach (var cell in world.Map.AllCells)
 			{
 				if (visited.Contains(cell))
 					continue;
 
 				var resource = resourceLayer.GetResource(cell);
-				if (resource.Type == null || !resourceLayer.IsVisible(cell))
+				if (resource.Type == null)
 					continue;
 
 				// Found a resource cell, flood-fill to find the whole patch
@@ -242,7 +301,7 @@ namespace OpenRA.Mods.Common.Traits
 							continue;
 
 						var adjacentResource = resourceLayer.GetResource(adjacent);
-						if (adjacentResource.Type != null && resourceLayer.IsVisible(adjacent))
+						if (adjacentResource.Type != null)
 						{
 							visited.Add(adjacent);
 							queue.Enqueue(adjacent);
@@ -263,47 +322,182 @@ namespace OpenRA.Mods.Common.Traits
 						Center = patchCenter,
 						ResourceCount = patchCells.Count,
 						DistanceFromBase = distance,
+						Score = 0
+					});
+				}
+			}
+			
+			return patches;
+		}
+
+		List<ResourcePatch> FindResourcePatches(IResourceLayer resourceLayer, CPos baseCenter)
+		{
+			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Finding resource patches from base at {baseCenter}");
+			
+			// Log current buildings
+			var myBuildings = world.ActorsHavingTrait<Building>()
+				.Where(a => a.Owner == player && !a.IsDead)
+				.ToList();
+			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Current buildings: {myBuildings.Count}");
+			foreach (var building in myBuildings.Take(5))
+				Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}]   - {building.Info.Name} at {building.Location}");
+			
+			// Debug: Check what the bot can see around its starting position
+			var debugRadius = 10;
+			var exploredCount = 0;
+			var visibleCount = 0;
+			var resourceCount = 0;
+			for (var dx = -debugRadius; dx <= debugRadius; dx++)
+			{
+				for (var dy = -debugRadius; dy <= debugRadius; dy++)
+				{
+					var checkPos = baseCenter + new CVec(dx, dy);
+					if (world.Map.Contains(checkPos))
+					{
+						if (player.Shroud.IsExplored(checkPos))
+							exploredCount++;
+						if (player.Shroud.IsVisible(checkPos))
+							visibleCount++;
+						var res = resourceLayer.GetResource(checkPos);
+						if (res.Type != null)
+							resourceCount++;
+					}
+				}
+			}
+			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Debug: Within {debugRadius} cells of base - {exploredCount} explored, {visibleCount} visible, {resourceCount} have resources");
+			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Shroud status: Disabled={player.Shroud.Disabled}, FogEnabled={player.Shroud.FogEnabled}, ExploreMapEnabled={player.Shroud.ExploreMapEnabled}");
+			
+			var patches = new List<ResourcePatch>();
+			var visited = new HashSet<CPos>();
+			
+			// Find all resource cells and group them into patches
+			foreach (var cell in world.Map.AllCells)
+			{
+				if (visited.Contains(cell))
+					continue;
+
+				var resource = resourceLayer.GetResource(cell);
+				// Check if the bot player can see this cell (not the human player!)
+				// With ExploreMapEnabled, we should be able to see all resources on the map
+				// Otherwise check if the cell is explored or visible
+				var canSeeCell = player.Shroud.ExploreMapEnabled || 
+				                 player.Shroud.IsExplored(cell) || 
+				                 player.Shroud.IsVisible(cell);
+				if (resource.Type == null || !canSeeCell)
+					continue;
+
+				// Found a resource cell, flood-fill to find the whole patch
+				var patchCells = new List<CPos>();
+				var queue = new Queue<CPos>();
+				queue.Enqueue(cell);
+				visited.Add(cell);
+
+				while (queue.Count > 0)
+				{
+					var current = queue.Dequeue();
+					patchCells.Add(current);
+
+					// Check all adjacent cells
+					foreach (var direction in CVec.Directions)
+					{
+						var adjacent = current + direction;
+						if (!world.Map.Contains(adjacent) || visited.Contains(adjacent))
+							continue;
+
+						var adjacentResource = resourceLayer.GetResource(adjacent);
+						// Check if the bot player can see this cell (not the human player!)
+						var canSeeAdjacent = player.Shroud.ExploreMapEnabled || 
+						                     player.Shroud.IsExplored(adjacent) || 
+						                     player.Shroud.IsVisible(adjacent);
+						if (adjacentResource.Type != null && canSeeAdjacent)
+						{
+							visited.Add(adjacent);
+							queue.Enqueue(adjacent);
+						}
+					}
+				}
+
+				// Create a patch from the cells we found
+				if (patchCells.Count > 0)
+				{
+					var centerX = patchCells.Sum(c => c.X) / patchCells.Count;
+					var centerY = patchCells.Sum(c => c.Y) / patchCells.Count;
+					var patchCenter = new CPos(centerX, centerY);
+					var distance = (patchCenter - baseCenter).Length;
+					
+					// Debug: Show distance calculation for first few patches
+					if (patches.Count < 3)
+					{
+						var dx = Math.Abs(patchCenter.X - baseCenter.X);
+						var dy = Math.Abs(patchCenter.Y - baseCenter.Y);
+						Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Patch center {patchCenter}: dx={dx}, dy={dy}, distance={distance} (Euclidean)");
+					}
+
+					patches.Add(new ResourcePatch
+					{
+						Center = patchCenter,
+						ResourceCount = patchCells.Count,
+						DistanceFromBase = distance,
 						Score = 0 // Will be calculated below
 					});
 				}
 			}
 
-			// Check for enemy threats and calculate scores
-			var enemyBuildings = world.ActorsHavingTrait<Building>()
-				.Where(a => !a.IsDead && a.Owner.RelationshipWith(player) == PlayerRelationship.Enemy)
+			// Calculate min and max distances for relative scoring
+			var distances = patches.Select(p => p.DistanceFromBase).ToList();
+			var minDistance = distances.Count > 0 ? distances.Min() : 0;
+			var maxDistance = distances.Count > 0 ? distances.Max() : 1;
+			var distanceRange = maxDistance - minDistance;
+			if (distanceRange == 0)
+				distanceRange = 1; // Avoid division by zero
+
+			// Get all friendly construction yards and refineries for checking harvesting status
+			var friendlyHarvestingBuildings = world.ActorsHavingTrait<Building>()
+				.Where(a => a.Owner == player && 
+					(Info.ConstructionYardTypes.Contains(a.Info.Name) || 
+					Info.RefineryTypes.Contains(a.Info.Name)))
 				.ToList();
+
+			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Found {patches.Count} resource patches");
+			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Distance range: {minDistance} to {maxDistance}");
+			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Friendly harvesting buildings: {friendlyHarvestingBuildings.Count}");
 
 			foreach (var patch in patches)
 			{
-				// Base score on resource count
-				var score = patch.ResourceCount * 10f;
+				// Base score heavily on distance - closest patches get highest score
+				var distanceScore = (maxDistance - patch.DistanceFromBase) / (float)distanceRange;
+				
+				// Use resource count as a secondary factor
+				var score = distanceScore * 100f + patch.ResourceCount;
 
-				// Prefer closer patches, but not too close (to avoid overlapping build areas)
-				if (patch.DistanceFromBase < 15)
-					score *= 0.7f; // Too close, might overlap
-				else if (patch.DistanceFromBase < 30)
-					score *= 1.0f; // Good distance
-				else if (patch.DistanceFromBase < 50)
-					score *= 0.8f; // Getting far
+				// Check if this patch is already being harvested (has a construction yard or refinery nearby)
+				var alreadyHarvesting = friendlyHarvestingBuildings
+					.Any(building => (building.Location - patch.Center).Length < 15);
+
+				if (alreadyHarvesting)
+				{
+					Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Patch at {patch.Center} (dist={patch.DistanceFromBase}, res={patch.ResourceCount}): Already harvesting, penalizing score from {score:F1} to {score * 0.1f:F1}");
+					score *= 0.1f; // Heavily penalize patches we're already harvesting
+				}
 				else
-					score *= 0.4f; // Too far
-
-				// Check for nearby enemies
-				var nearestEnemy = enemyBuildings
-					.Select(e => (e.Location - patch.Center).Length)
-					.OrderBy(d => d)
-					.FirstOrDefault();
-
-				if (nearestEnemy < 20)
-					score *= 0.1f; // Very dangerous
-				else if (nearestEnemy < 35)
-					score *= 0.5f; // Risky
+				{
+					Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Patch at {patch.Center} (dist={patch.DistanceFromBase}, res={patch.ResourceCount}): Score = {score:F1}");
+				}
 
 				patch.Score = score;
 			}
 
 			// Return patches sorted by score
-			return patches.OrderByDescending(p => p.Score).ToList();
+			var sortedPatches = patches.OrderByDescending(p => p.Score).ToList();
+			
+			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Top 3 patches by score:");
+			foreach (var patch in sortedPatches.Take(3))
+			{
+				Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}]   - {patch.Center}: score={patch.Score:F1}, dist={patch.DistanceFromBase}, res={patch.ResourceCount}");
+			}
+			
+			
+			return sortedPatches;
 		}
 
 		CPos? ChooseMcvDeployLocation(string actorType, CVec offset, bool distanceToBaseIsImportant)
@@ -336,25 +530,41 @@ namespace OpenRA.Mods.Common.Traits
 			// Try to find resource patches for expansion
 			if (Info.PreferResourceExpansion && !distanceToBaseIsImportant)
 			{
+				Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Choosing MCV deploy location (PreferResourceExpansion=true, distanceToBaseIsImportant={distanceToBaseIsImportant})");
 				var resourceLayer = world.WorldActor.TraitOrDefault<IResourceLayer>();
 				if (resourceLayer != null)
 				{
 					// Find and evaluate resource patches
 					var resourcePatches = FindResourcePatches(resourceLayer, baseCenter);
 
+					Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Checking {resourcePatches.Count} resource patches for buildable locations...");
 					foreach (var patch in resourcePatches)
 					{
 						// Check if we can build near this resource patch
 						var location = FindPos(patch.Center, patch.Center, 3, 10);
 						if (location != null)
+						{
+							Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Selected MCV location near patch at {patch.Center} -> deploying at {location}");
 							return location;
+						}
+						else
+						{
+							Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] No buildable location near patch at {patch.Center}");
+						}
 					}
+					Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] No suitable resource patches found, falling back to base expansion");
 				}
+			}
+			else
+			{
+				Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Choosing MCV deploy location (PreferResourceExpansion={Info.PreferResourceExpansion}, distanceToBaseIsImportant={distanceToBaseIsImportant})");
 			}
 
 			// Fallback to current logic
-			return FindPos(baseCenter, baseCenter, Info.MinBaseRadius,
+			var fallbackLocation = FindPos(baseCenter, baseCenter, Info.MinBaseRadius,
 				distanceToBaseIsImportant ? Info.MaxBaseRadius : world.Map.Grid.MaximumTileSearchRange);
+			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Using fallback location: {fallbackLocation}");
+			return fallbackLocation;
 		}
 
 		List<MiniYamlNode> IGameSaveTraitData.IssueTraitData(Actor self)
