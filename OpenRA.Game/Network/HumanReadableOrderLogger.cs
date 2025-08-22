@@ -129,7 +129,7 @@ namespace OpenRA.Network
 			var details = new StringBuilder();
 
 			// Add unit starting position
-			if (order.Subject != null)
+			if (order.Subject != null && order.Subject.OccupiesSpace != null)
 			{
 				var startPos = order.Subject.CenterPosition;
 				details.Append($"From:{startPos}");
