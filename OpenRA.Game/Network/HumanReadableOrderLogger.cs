@@ -52,6 +52,14 @@ namespace OpenRA.Network
 			if (writer == null || isDisposed || fileSizeLimitReached)
 				return;
 
+			// Skip pregame activities - only log orders with frame > 0
+			if (frame <= 0)
+				return;
+
+			// Skip handshake and other pregame protocol messages
+			if (IsPreGameOrder(order))
+				return;
+
 			try
 			{
 				// Check file size limit
@@ -74,6 +82,19 @@ namespace OpenRA.Network
 			{
 				Log.Write("debug", $"Failed to log order: {ex}");
 			}
+		}
+
+		bool IsPreGameOrder(Order order)
+		{
+			// Filter out handshake, lobby, and other pregame protocol messages
+			var orderString = order.OrderString;
+			return orderString == "HandshakeRequest" ||
+				   orderString == "HandshakeResponse" ||
+				   orderString == "FluentMessage" ||
+				   orderString == "Message" ||
+				   orderString == "PauseGame" ||
+				   orderString == "StartGame" ||
+				   orderString.StartsWith("Sync");
 		}
 
 		string FormatGameTime(int frame)
@@ -107,26 +128,48 @@ namespace OpenRA.Network
 		{
 			var details = new StringBuilder();
 
-			if (!order.Target.IsEmpty())
+			// Add unit starting position
+			if (order.Subject != null)
 			{
-				if (order.Target.Type == Traits.TargetType.Actor && order.Target.Actor != null)
-					details.Append($"Target:{order.Target.Actor.Info.Name}");
-				else if (order.Target.Type == Traits.TargetType.Terrain)
-					details.Append($"Target:{order.Target.CenterPosition}");
-				else if (order.Target.Type == Traits.TargetType.FrozenActor)
-					details.Append($"Target:FrozenActor");
+				var startPos = order.Subject.CenterPosition;
+				details.Append($"From:{startPos}");
 			}
 
+			// Add target information with position
+			if (order.Target.Type != Traits.TargetType.Invalid)
+			{
+				if (details.Length > 0) details.Append(" ");
+				
+				if (order.Target.Type == Traits.TargetType.Actor && order.Target.Actor != null)
+				{
+					var targetPos = order.Target.Actor.CenterPosition;
+					details.Append($"Target:{order.Target.Actor.Info.Name}@{targetPos}");
+				}
+				else if (order.Target.Type == Traits.TargetType.Terrain)
+				{
+					details.Append($"Target:{order.Target.CenterPosition}");
+				}
+				else if (order.Target.Type == Traits.TargetType.FrozenActor)
+				{
+					var targetPos = order.Target.CenterPosition;
+					details.Append($"Target:FrozenActor@{targetPos}");
+				}
+			}
+
+			// Add extra location (sometimes used for waypoints or secondary targets)
+			if (order.ExtraLocation != CPos.Zero)
+			{
+				if (details.Length > 0) details.Append(" ");
+				// Convert cell position to world position for consistency
+				var worldPos = order.Subject?.World?.Map?.CenterOfCell(order.ExtraLocation);
+				details.Append($"ExtraLocation:{worldPos ?? new WPos(order.ExtraLocation.X, order.ExtraLocation.Y, 0)}");
+			}
+
+			// Include other relevant order details
 			if (!string.IsNullOrEmpty(order.TargetString))
 			{
 				if (details.Length > 0) details.Append(" ");
 				details.Append($"TargetString:\"{order.TargetString}\"");
-			}
-
-			if (order.ExtraLocation != CPos.Zero)
-			{
-				if (details.Length > 0) details.Append(" ");
-				details.Append($"ExtraLocation:{order.ExtraLocation}");
 			}
 
 			if (order.ExtraData != 0)
