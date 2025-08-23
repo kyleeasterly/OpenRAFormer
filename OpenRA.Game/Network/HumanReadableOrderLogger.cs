@@ -129,10 +129,18 @@ namespace OpenRA.Network
 			var details = new StringBuilder();
 
 			// Add unit starting position
-			if (order.Subject != null && order.Subject.OccupiesSpace != null)
+			if (order.Subject != null && !order.Subject.Disposed && order.Subject.OccupiesSpace != null)
 			{
-				var startPos = order.Subject.CenterPosition;
-				details.Append($"From:{startPos}");
+				try
+				{
+					var startPos = order.Subject.CenterPosition;
+					details.Append($"From:{startPos}");
+				}
+				catch
+				{
+					// Actor might not have valid position (system actors, disposed, etc.)
+					details.Append($"From:Unknown");
+				}
 			}
 
 			// Add target information with position
@@ -140,10 +148,17 @@ namespace OpenRA.Network
 			{
 				if (details.Length > 0) details.Append(" ");
 				
-				if (order.Target.Type == Traits.TargetType.Actor && order.Target.Actor != null)
+				if (order.Target.Type == Traits.TargetType.Actor && order.Target.Actor != null && !order.Target.Actor.Disposed)
 				{
-					var targetPos = order.Target.Actor.CenterPosition;
-					details.Append($"Target:{order.Target.Actor.Info.Name}@{targetPos}");
+					try
+					{
+						var targetPos = order.Target.Actor.CenterPosition;
+						details.Append($"Target:{order.Target.Actor.Info.Name}@{targetPos}");
+					}
+					catch
+					{
+						details.Append($"Target:{order.Target.Actor.Info.Name}@Unknown");
+					}
 				}
 				else if (order.Target.Type == Traits.TargetType.Terrain)
 				{
