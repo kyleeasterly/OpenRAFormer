@@ -344,12 +344,12 @@ public class SimpleMapLoaderService
 		}
 	}
 
-	public Dictionary<string, string>? FindMapInMod(string mapUid, string modId)
+	public Dictionary<string, string>? FindMapByTitle(string mapTitle, string modId)
 	{
 		try
 		{
-			logger.LogInformation("=== Starting map search ===");
-			logger.LogInformation("Looking for map UID: {MapUid} in mod: {ModId}", mapUid, modId);
+			logger.LogInformation("=== Starting map search by title ===");
+			logger.LogInformation("Looking for map title: {MapTitle} in mod: {ModId}", mapTitle, modId);
 			
 			var gameRoot = Path.Combine(environment.ContentRootPath, "..");
 			logger.LogInformation("Game root: {GameRoot}", gameRoot);
@@ -389,6 +389,9 @@ public class SimpleMapLoaderService
 					return null;
 			}
 
+			// Normalize the title for comparison
+			var normalizedSearchTitle = mapTitle.Trim().ToLowerInvariant();
+			
 			// Search directories
 			var directories = Directory.GetDirectories(mapsPath);
 			logger.LogInformation("Found {Count} directories to search", directories.Length);
@@ -403,35 +406,23 @@ public class SimpleMapLoaderService
 				if (File.Exists(mapYamlPath))
 				{
 					var yaml = File.ReadAllText(mapYamlPath);
+					var mapFileTitle = ExtractMapTitle(yaml);
 					
-					// Look for UID in different formats
-					var uidPatterns = new[]
+					if (!string.IsNullOrEmpty(mapFileTitle))
 					{
-						$"Uid: {mapUid}",
-						$"MapUid: {mapUid}",
-						$"Uid:{mapUid}",
-						$"MapUid:{mapUid}"
-					};
-					
-					foreach (var pattern in uidPatterns)
-					{
-						if (yaml.Contains(pattern))
+						var normalizedFileTitle = mapFileTitle.Trim().ToLowerInvariant();
+						logger.LogDebug("Comparing '{SearchTitle}' with '{FileTitle}'", normalizedSearchTitle, normalizedFileTitle);
+						
+						if (normalizedFileTitle == normalizedSearchTitle)
 						{
-							logger.LogInformation("FOUND MAP! Directory: {Path}, Pattern matched: {Pattern}", mapDir, pattern);
+							logger.LogInformation("FOUND MAP by title! Directory: {Path}", mapDir);
 							return new Dictionary<string, string>
 							{
 								["Path"] = mapDir,
-								["Name"] = Path.GetFileName(mapDir)
+								["Name"] = Path.GetFileName(mapDir),
+								["Title"] = mapFileTitle
 							};
 						}
-					}
-					
-					// Log the first few characters of UID found in this map for debugging
-					var uidIndex = yaml.IndexOf("Uid:");
-					if (uidIndex >= 0 && uidIndex + 50 < yaml.Length)
-					{
-						var snippet = yaml.Substring(uidIndex, Math.Min(50, yaml.Length - uidIndex));
-						logger.LogDebug("Map {Name} has UID snippet: {Snippet}", Path.GetFileName(mapDir), snippet.Replace("\n", " ").Replace("\r", ""));
 					}
 				}
 			}
@@ -457,35 +448,23 @@ public class SimpleMapLoaderService
 							using (var reader = new StreamReader(stream))
 							{
 								var yaml = reader.ReadToEnd();
+								var mapFileTitle = ExtractMapTitle(yaml);
 								
-								// Look for UID in different formats
-								var uidPatterns = new[]
+								if (!string.IsNullOrEmpty(mapFileTitle))
 								{
-									$"Uid: {mapUid}",
-									$"MapUid: {mapUid}",
-									$"Uid:{mapUid}",
-									$"MapUid:{mapUid}"
-								};
-								
-								foreach (var pattern in uidPatterns)
-								{
-									if (yaml.Contains(pattern))
+									var normalizedFileTitle = mapFileTitle.Trim().ToLowerInvariant();
+									logger.LogDebug("Comparing '{SearchTitle}' with '{FileTitle}'", normalizedSearchTitle, normalizedFileTitle);
+									
+									if (normalizedFileTitle == normalizedSearchTitle)
 									{
-										logger.LogInformation("FOUND MAP! File: {Path}, Pattern matched: {Pattern}", mapFile, pattern);
+										logger.LogInformation("FOUND MAP by title! File: {Path}", mapFile);
 										return new Dictionary<string, string>
 										{
 											["Path"] = mapFile,
-											["Name"] = Path.GetFileNameWithoutExtension(mapFile)
+											["Name"] = Path.GetFileNameWithoutExtension(mapFile),
+											["Title"] = mapFileTitle
 										};
 									}
-								}
-								
-								// Log the first few characters of UID found in this map for debugging
-								var uidIndex = yaml.IndexOf("Uid:");
-								if (uidIndex >= 0 && uidIndex + 50 < yaml.Length)
-								{
-									var snippet = yaml.Substring(uidIndex, Math.Min(50, yaml.Length - uidIndex));
-									logger.LogDebug("Map {Name} has UID snippet: {Snippet}", Path.GetFileName(mapFile), snippet.Replace("\n", " ").Replace("\r", ""));
 								}
 							}
 						}
@@ -502,8 +481,31 @@ public class SimpleMapLoaderService
 		}
 		catch (Exception ex)
 		{
-			logger.LogError(ex, "Failed to find map {MapUid} in mod {ModId}", mapUid, modId);
+			logger.LogError(ex, "Failed to find map {MapTitle} in mod {ModId}", mapTitle, modId);
 			return null;
 		}
+	}
+	
+	private string ExtractMapTitle(string yaml)
+	{
+		var lines = yaml.Split('\n');
+		foreach (var line in lines)
+		{
+			var trimmed = line.Trim();
+			
+			if (trimmed.StartsWith("Title:"))
+			{
+				return trimmed.Substring(6).Trim();
+			}
+		}
+		return string.Empty;
+	}
+
+	// Keep the old method for backward compatibility - just log a warning
+	public Dictionary<string, string>? FindMapInMod(string mapUid, string modId)
+	{
+		logger.LogWarning("FindMapInMod called with UID {MapUid} - this method is deprecated, use FindMapByTitle instead", mapUid);
+		// Can't search by UID since maps don't store UIDs, return null
+		return null;
 	}
 }

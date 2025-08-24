@@ -92,12 +92,12 @@ public class ReplayServiceV2
 					logger.LogInformation("  Map size: {Width}x{Height}", result.Map.Bounds.Width, result.Map.Bounds.Height);
 					logger.LogInformation("  Tileset: {Tileset}", result.Map.Tileset ?? "unknown");
 				}
-				else if (!string.IsNullOrEmpty(metadata.GameInfo.MapUid))
+				else if (!string.IsNullOrEmpty(metadata.GameInfo.MapTitle))
 				{
-					logger.LogInformation("No embedded map data, searching for local map with UID: {MapUid}", metadata.GameInfo.MapUid);
+					logger.LogInformation("No embedded map data, searching for local map with title: {MapTitle}", metadata.GameInfo.MapTitle);
 					
-					// Try to find the map locally
-					var mapInfo = mapLoader.FindMapInMod(metadata.GameInfo.MapUid, modId);
+					// Try to find the map locally by title
+					var mapInfo = mapLoader.FindMapByTitle(metadata.GameInfo.MapTitle, modId);
 					if (mapInfo != null)
 					{
 						result.MapPath = mapInfo["Path"];
@@ -118,8 +118,8 @@ public class ReplayServiceV2
 					}
 					else
 					{
-						result.Error = $"Map not found locally: {metadata.GameInfo.MapUid}";
-						logger.LogError("Map not found locally: {MapUid}", metadata.GameInfo.MapUid);
+						result.Error = $"Map not found locally: {metadata.GameInfo.MapTitle}";
+						logger.LogError("Map not found locally: {MapTitle}", metadata.GameInfo.MapTitle);
 						return;
 					}
 				}
