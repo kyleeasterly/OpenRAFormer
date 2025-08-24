@@ -8,6 +8,12 @@ builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
 builder.Services.AddMudServices();
 
+// Add core asset services
+builder.Services.AddSingleton<FileSystemService>();
+builder.Services.AddSingleton<SpriteLoaderService>();
+builder.Services.AddSingleton<PaletteService>();
+builder.Services.AddSingleton<FrameCacheService>();
+
 // Add replay services
 builder.Services.AddScoped<SimpleMapLoaderService>();
 builder.Services.AddScoped<AssetLoaderService>();

@@ -2,15 +2,9 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using OpenRA;
 using OpenRA.FileFormats;
-using OpenRA.FileSystem;
 using OpenRA.Graphics;
-using OpenRA.Mods.Common.FileFormats;
-using OpenRA.Mods.Common.Graphics;
-using OpenRA.Mods.Common.SpriteLoaders;
-using OpenRA.Mods.Common.Terrain;
 using OpenRA.Primitives;
 using Bitmap = System.Drawing.Bitmap;
-using Color = System.Drawing.Color;
 using Image = System.Drawing.Image;
 
 namespace OpenRA.ReplayViewer.Services;
@@ -19,6 +13,9 @@ public class AssetLoaderService
 {
 	private readonly ILogger<AssetLoaderService> logger;
 	private readonly IWebHostEnvironment environment;
+	private readonly FileSystemService fileSystemService;
+	private readonly FrameCacheService frameCacheService;
+	private readonly PaletteService paletteService;
 	private readonly Dictionary<string, TilesetAssets> tilesetCache = new();
 
 	public class TilesetAssets
@@ -40,14 +37,22 @@ public class AssetLoaderService
 	public class TerrainTypeInfo
 	{
 		public string Type { get; set; } = "";
-		public Color Color { get; set; }
+		public System.Drawing.Color Color { get; set; }
 		public bool IsWater { get; set; }
 	}
 
-	public AssetLoaderService(ILogger<AssetLoaderService> logger, IWebHostEnvironment environment)
+	public AssetLoaderService(
+		ILogger<AssetLoaderService> logger,
+		IWebHostEnvironment environment,
+		FileSystemService fileSystemService,
+		FrameCacheService frameCacheService,
+		PaletteService paletteService)
 	{
 		this.logger = logger;
 		this.environment = environment;
+		this.fileSystemService = fileSystemService;
+		this.frameCacheService = frameCacheService;
+		this.paletteService = paletteService;
 	}
 
 	public async Task<TilesetAssets> LoadTilesetAsync(string modId, string tilesetName)
@@ -87,13 +92,17 @@ public class AssetLoaderService
 					}
 				}
 
+				// Get the terrain palette for this tileset
+				var palette = paletteService.GetTerrainPalette(modId);
+				var paletteColors = palette != null ? paletteService.GetPaletteColors(palette) : null;
+
 				// Load templates
 				var templatesNode = yaml.FirstOrDefault(n => n.Key == "Templates");
 				if (templatesNode != null)
 				{
 					foreach (var template in templatesNode.Value.Nodes)
 					{
-						var tmpl = ParseTemplate(template, modPath);
+						var tmpl = ParseTemplate(template, modId, paletteColors);
 						if (tmpl != null)
 							assets.Templates[tmpl.Id] = tmpl;
 					}
@@ -158,7 +167,7 @@ public class AssetLoaderService
 								int.TryParse(parts[1], out var g) &&
 								int.TryParse(parts[2], out var b))
 							{
-								info.Color = Color.FromArgb(r, g, b);
+								info.Color = System.Drawing.Color.FromArgb(r, g, b);
 							}
 						}
 					}
@@ -170,15 +179,15 @@ public class AssetLoaderService
 		}
 
 		// Default color if not specified
-		if (info.Color == Color.Empty)
+		if (info.Color == System.Drawing.Color.Empty)
 		{
-			info.Color = info.IsWater ? Color.Blue : Color.Green;
+			info.Color = info.IsWater ? System.Drawing.Color.Blue : System.Drawing.Color.Green;
 		}
 
 		return info;
 	}
 
-	private TerrainTemplate? ParseTemplate(MiniYamlNode node, string modPath)
+	private TerrainTemplate? ParseTemplate(MiniYamlNode node, string modId, OpenRA.Primitives.Color[]? paletteColors)
 	{
 		try
 		{
@@ -229,7 +238,7 @@ public class AssetLoaderService
 			// Try to load the image file
 			if (!string.IsNullOrEmpty(imageFile))
 			{
-				LoadTemplateImages(template, imageFile, modPath, tileMapping);
+				LoadTemplateImages(template, imageFile, modId, tileMapping, paletteColors);
 			}
 			else
 			{
@@ -247,22 +256,82 @@ public class AssetLoaderService
 		}
 	}
 
-	private void LoadTemplateImages(TerrainTemplate template, string imageFile, string modPath, Dictionary<int, string> tileMapping)
+	private void LoadTemplateImages(TerrainTemplate template, string imageFile, string modId, Dictionary<int, string> tileMapping, OpenRA.Primitives.Color[]? paletteColors)
 	{
 		try
 		{
-			// Look for the image file
-			var imagePath = FindImageFile(modPath, imageFile);
-			if (imagePath == null)
+			// Load the frames from the image file
+			var frameCount = frameCacheService.GetFrameCount(modId, imageFile);
+			if (frameCount == 0)
 			{
-				logger.LogWarning("Image file not found: {ImageFile}", imageFile);
+				logger.LogWarning("No frames found in image file: {ImageFile}", imageFile);
 				CreatePlaceholderImages(template, tileMapping);
 				return;
 			}
 
-			// For now, create placeholder images
-			// In a full implementation, we'd use OpenRA's sprite loaders
-			CreatePlaceholderImages(template, tileMapping);
+			logger.LogInformation("Loading {Count} frames from {ImageFile} for template {Id}", frameCount, imageFile, template.Id);
+
+			// Load each frame as a tile image
+			for (int i = 0; i < frameCount; i++)
+			{
+				var sprite = frameCacheService.GetRgbaSprite(modId, imageFile, i, paletteColors);
+				if (sprite != null)
+				{
+					// Convert RGBA data to PNG for web display
+					using (var bitmap = new Bitmap(sprite.Width, sprite.Height))
+					{
+						var rect = new System.Drawing.Rectangle(0, 0, sprite.Width, sprite.Height);
+						var bitmapData = bitmap.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+						
+						try
+						{
+							unsafe
+							{
+								var ptr = (byte*)bitmapData.Scan0;
+								for (int y = 0; y < sprite.Height; y++)
+								{
+									for (int x = 0; x < sprite.Width; x++)
+									{
+										var srcIdx = (y * sprite.Width + x) * 4;
+										var dstIdx = y * bitmapData.Stride + x * 4;
+										
+										// RGBA to BGRA conversion for System.Drawing
+										ptr[dstIdx] = sprite.RgbaData[srcIdx + 2];     // B
+										ptr[dstIdx + 1] = sprite.RgbaData[srcIdx + 1]; // G
+										ptr[dstIdx + 2] = sprite.RgbaData[srcIdx];     // R
+										ptr[dstIdx + 3] = sprite.RgbaData[srcIdx + 3]; // A
+									}
+								}
+							}
+						}
+						finally
+						{
+							bitmap.UnlockBits(bitmapData);
+						}
+
+						// Convert to PNG
+						using (var stream = new MemoryStream())
+						{
+							bitmap.Save(stream, ImageFormat.Png);
+							template.TileImages[i] = stream.ToArray();
+						}
+					}
+				}
+				else
+				{
+					logger.LogWarning("Failed to load frame {Index} from {ImageFile}", i, imageFile);
+				}
+			}
+
+			// If we didn't get enough tiles, fill in with placeholders
+			if (template.TileImages.Count < tileMapping.Count)
+			{
+				logger.LogWarning("Not enough frames in {ImageFile}, creating placeholders", imageFile);
+				for (int i = template.TileImages.Count; i < tileMapping.Count; i++)
+				{
+					CreatePlaceholderTile(template, i, tileMapping.ContainsKey(i) ? tileMapping[i] : "Clear");
+				}
+			}
 		}
 		catch (Exception ex)
 		{
@@ -271,36 +340,47 @@ public class AssetLoaderService
 		}
 	}
 
-	private string? FindImageFile(string modPath, string imageFile)
+	private void CreatePlaceholderTile(TerrainTemplate template, int index, string terrainType)
 	{
-		// Remove extension if present
-		var baseName = Path.GetFileNameWithoutExtension(imageFile);
-		var possibleExtensions = new[] { ".tem", ".shp", ".png", ".sno", ".int", ".des", ".jun", ".win" };
-
-		// Common locations for sprites
-		var searchDirs = new[]
+		var tileSize = 24;
+		var color = GetTerrainColor(terrainType);
+		
+		using (var bitmap = new Bitmap(tileSize, tileSize))
+		using (var g = System.Drawing.Graphics.FromImage(bitmap))
 		{
-			Path.Combine(modPath, "bits"),
-			Path.Combine(modPath, "bits", "terrain"),
-			Path.Combine(modPath, "sprites"),
-			Path.Combine(modPath, "uibits"),
-			modPath
-		};
-
-		foreach (var dir in searchDirs)
-		{
-			if (!Directory.Exists(dir))
-				continue;
-
-			foreach (var ext in possibleExtensions)
+			// Fill with base color
+			using (var brush = new System.Drawing.SolidBrush(color))
 			{
-				var fullPath = Path.Combine(dir, baseName + ext);
-				if (File.Exists(fullPath))
-					return fullPath;
+				g.FillRectangle(brush, 0, 0, tileSize, tileSize);
+			}
+
+			// Add some texture
+			var random = new Random(template.Id * 1000 + index);
+			using (var pen = new System.Drawing.Pen(System.Drawing.Color.FromArgb(32, 0, 0, 0), 1))
+			{
+				for (int j = 0; j < 5; j++)
+				{
+					var x1 = random.Next(tileSize);
+					var y1 = random.Next(tileSize);
+					var x2 = x1 + random.Next(-3, 4);
+					var y2 = y1 + random.Next(-3, 4);
+					g.DrawLine(pen, x1, y1, x2, y2);
+				}
+			}
+
+			// Add border
+			using (var pen = new System.Drawing.Pen(System.Drawing.Color.FromArgb(64, 0, 0, 0), 1))
+			{
+				g.DrawRectangle(pen, 0, 0, tileSize - 1, tileSize - 1);
+			}
+
+			// Convert to PNG
+			using (var stream = new MemoryStream())
+			{
+				bitmap.Save(stream, ImageFormat.Png);
+				template.TileImages[index] = stream.ToArray();
 			}
 		}
-
-		return null;
 	}
 
 	private void CreatePlaceholderImages(TerrainTemplate template, Dictionary<int, string> tileMapping)
@@ -325,7 +405,7 @@ public class AssetLoaderService
 
 				// Add some texture
 				var random = new Random(template.Id * 1000 + i);
-				using (var pen = new System.Drawing.Pen(Color.FromArgb(32, 0, 0, 0), 1))
+				using (var pen = new System.Drawing.Pen(System.Drawing.Color.FromArgb(32, 0, 0, 0), 1))
 				{
 					for (int j = 0; j < 5; j++)
 					{
@@ -338,7 +418,7 @@ public class AssetLoaderService
 				}
 
 				// Add border
-				using (var pen = new System.Drawing.Pen(Color.FromArgb(64, 0, 0, 0), 1))
+				using (var pen = new System.Drawing.Pen(System.Drawing.Color.FromArgb(64, 0, 0, 0), 1))
 				{
 					g.DrawRectangle(pen, 0, 0, tileSize - 1, tileSize - 1);
 				}
@@ -353,25 +433,25 @@ public class AssetLoaderService
 		}
 	}
 
-	private Color GetTerrainColor(string terrainType)
+	private System.Drawing.Color GetTerrainColor(string terrainType)
 	{
 		// Default colors for common terrain types
 		return terrainType.ToLowerInvariant() switch
 		{
-			"water" => Color.FromArgb(64, 64, 192),
-			"river" => Color.FromArgb(80, 80, 200),
-			"road" => Color.FromArgb(128, 128, 128),
-			"rock" => Color.FromArgb(96, 96, 96),
-			"mountain" => Color.FromArgb(80, 80, 80),
-			"tree" => Color.FromArgb(34, 85, 34),
-			"forest" => Color.FromArgb(28, 70, 28),
-			"beach" => Color.FromArgb(194, 178, 128),
-			"sand" => Color.FromArgb(210, 190, 140),
-			"rough" => Color.FromArgb(100, 90, 70),
-			"cliff" => Color.FromArgb(70, 70, 70),
-			"ore" => Color.FromArgb(180, 140, 80),
-			"gems" => Color.FromArgb(140, 80, 180),
-			_ => Color.FromArgb(76, 140, 43) // Default green for "clear"
+			"water" => System.Drawing.Color.FromArgb(64, 64, 192),
+			"river" => System.Drawing.Color.FromArgb(80, 80, 200),
+			"road" => System.Drawing.Color.FromArgb(128, 128, 128),
+			"rock" => System.Drawing.Color.FromArgb(96, 96, 96),
+			"mountain" => System.Drawing.Color.FromArgb(80, 80, 80),
+			"tree" => System.Drawing.Color.FromArgb(34, 85, 34),
+			"forest" => System.Drawing.Color.FromArgb(28, 70, 28),
+			"beach" => System.Drawing.Color.FromArgb(194, 178, 128),
+			"sand" => System.Drawing.Color.FromArgb(210, 190, 140),
+			"rough" => System.Drawing.Color.FromArgb(100, 90, 70),
+			"cliff" => System.Drawing.Color.FromArgb(70, 70, 70),
+			"ore" => System.Drawing.Color.FromArgb(180, 140, 80),
+			"gems" => System.Drawing.Color.FromArgb(140, 80, 180),
+			_ => System.Drawing.Color.FromArgb(76, 140, 43) // Default green for "clear"
 		};
 	}
 
@@ -390,7 +470,7 @@ public class AssetLoaderService
 				using (var g = System.Drawing.Graphics.FromImage(bitmap))
 				{
 					// Clear to black
-					g.Clear(Color.Black);
+					g.Clear(System.Drawing.Color.Black);
 
 					// Draw each tile
 					foreach (var cell in map.AllCells)
@@ -404,7 +484,7 @@ public class AssetLoaderService
 							if (template.TileImages.TryGetValue(tileIndex, out var imageData))
 							{
 								using (var stream = new MemoryStream(imageData))
-								using (var tileImage = Image.FromStream(stream))
+								using (var tileImage = System.Drawing.Image.FromStream(stream))
 								{
 									var destX = pos.X * tileSize;
 									var destY = pos.Y * tileSize;
