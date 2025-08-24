@@ -8,6 +8,12 @@
 
   <ItemGroup>
     <PackageReference Include="MudBlazor" Version="6.11.2" />
+    <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../OpenRA.Game/OpenRA.Game.csproj" />
+    <ProjectReference Include="../OpenRA.Mods.Common/OpenRA.Mods.Common.csproj" />
   </ItemGroup>
 
 

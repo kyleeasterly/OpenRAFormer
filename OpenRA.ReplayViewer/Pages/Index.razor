@@ -1,4 +1,8 @@
 @page "/"
+@using OpenRA.ReplayViewer.Services
+@inject ReplayService ReplayService
+@inject TerrainRenderService TerrainRenderService
+@inject IJSRuntime JSRuntime
 
 <PageTitle>OpenRA Replay Viewer</PageTitle>
 
@@ -9,35 +13,223 @@
 			
 			<MudCard>
 				<MudCardContent>
-					<MudText Typo="Typo.h6" Class="mb-3">Upload Replay File</MudText>
+					<MudText Typo="Typo.h6" Class="mb-3">Load Replay File</MudText>
 					
 					<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
-						Select an OpenRA replay file (.orarep) to view
+						Enter the full path to an OpenRA replay file (.orarep) on this machine
 					</MudText>
 					
-					<MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Upload">
-						Select Replay File
-					</MudButton>
+					<MudGrid>
+						<MudItem xs="9">
+							<MudTextField @bind-Value="replayFilePath" 
+										  Label="Replay File Path" 
+										  Variant="Variant.Outlined"
+										  Placeholder="/path/to/replay.orarep" />
+						</MudItem>
+						<MudItem xs="3">
+							<MudButton Variant="Variant.Filled" 
+									   Color="Color.Primary" 
+									   StartIcon="@Icons.Material.Filled.FileOpen"
+									   OnClick="LoadReplay"
+									   Disabled="@isLoading"
+									   Class="mt-2">
+								@if (isLoading)
+								{
+									<MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+								}
+								Load Replay
+							</MudButton>
+						</MudItem>
+					</MudGrid>
+					
+					@if (!string.IsNullOrEmpty(errorMessage))
+					{
+						<MudAlert Severity="Severity.Error" Class="mt-3">@errorMessage</MudAlert>
+					}
 				</MudCardContent>
 			</MudCard>
 			
 			<MudDivider Class="my-4" />
 			
-			<MudCard>
-				<MudCardContent>
-					<MudText Typo="Typo.h6" Class="mb-2">Replay Information</MudText>
-					<MudText Typo="Typo.body2" Color="Color.Secondary">
-						No replay loaded
-					</MudText>
-				</MudCardContent>
-			</MudCard>
+			@if (replayInfo != null && replayInfo.GameInfo != null)
+			{
+				<MudCard>
+					<MudCardContent>
+						<MudText Typo="Typo.h6" Class="mb-3">Replay Information</MudText>
+						
+						<MudSimpleTable>
+							<tbody>
+								<tr>
+									<td><strong>Map Title:</strong></td>
+									<td>@replayInfo.GameInfo.MapTitle</td>
+								</tr>
+								<tr>
+									<td><strong>Map UID:</strong></td>
+									<td>@replayInfo.GameInfo.MapUid</td>
+								</tr>
+								<tr>
+									<td><strong>Mod:</strong></td>
+									<td>@replayInfo.GameInfo.Mod (@replayInfo.GameInfo.Version)</td>
+								</tr>
+								<tr>
+									<td><strong>Start Time:</strong></td>
+									<td>@replayInfo.GameInfo.StartTimeUtc</td>
+								</tr>
+								<tr>
+									<td><strong>Duration:</strong></td>
+									<td>@(replayInfo.GameInfo.Duration.ToString(@"mm\:ss"))</td>
+								</tr>
+								<tr>
+									<td><strong>Players:</strong></td>
+									<td>
+										@if (replayInfo.GameInfo.Players != null)
+										{
+											@string.Join(", ", replayInfo.GameInfo.Players.Select(p => p.Name))
+										}
+									</td>
+								</tr>
+							</tbody>
+						</MudSimpleTable>
+						
+						@if (replayInfo.Tiles != null)
+						{
+							<MudText Typo="Typo.body2" Class="mt-3">
+								Map Size: @replayInfo.Tiles.GetLength(0) x @replayInfo.Tiles.GetLength(1) tiles
+							</MudText>
+						}
+					</MudCardContent>
+				</MudCard>
+			}
+			else if (replayInfo == null && !isLoading)
+			{
+				<MudCard>
+					<MudCardContent>
+						<MudText Typo="Typo.h6" Class="mb-2">Replay Information</MudText>
+						<MudText Typo="Typo.body2" Color="Color.Secondary">
+							No replay loaded
+						</MudText>
+					</MudCardContent>
+				</MudCard>
+			}
+			
+			@if (replayInfo?.Tiles != null)
+			{
+				<MudDivider Class="my-4" />
+				
+				<MudCard>
+					<MudCardContent>
+						<MudText Typo="Typo.h6" Class="mb-3">Map Preview</MudText>
+						
+						@if (isRenderingMap)
+						{
+							<MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-2" />
+							<MudText Typo="Typo.body2">Rendering map...</MudText>
+						}
+						
+						@if (!string.IsNullOrEmpty(mapImageData))
+						{
+							<div style="width: 100%; height: 600px; overflow: auto; border: 1px solid #ccc; background: #222;">
+								<img src="@mapImageData" style="image-rendering: pixelated; image-rendering: crisp-edges;" />
+							</div>
+						}
+					</MudCardContent>
+				</MudCard>
+			}
 		</MudPaper>
 	</MudItem>
 </MudGrid>
 
 @code {
-	protected override async Task OnInitializedAsync()
+	private string replayFilePath = "";
+	private bool isLoading = false;
+	private string? errorMessage;
+	private ReplayService.ReplayInfo? replayInfo;
+	private bool isRenderingMap = false;
+	private string? mapImageData;
+
+	private async Task LoadReplay()
 	{
-		await base.OnInitializedAsync();
+		if (string.IsNullOrWhiteSpace(replayFilePath))
+		{
+			errorMessage = "Please enter a replay file path";
+			return;
+		}
+
+		isLoading = true;
+		errorMessage = null;
+		StateHasChanged();
+
+		try
+		{
+			replayInfo = await ReplayService.LoadReplayAsync(replayFilePath);
+			
+			if (!string.IsNullOrEmpty(replayInfo.Error))
+			{
+				errorMessage = replayInfo.Error;
+			}
+			else if (replayInfo.Tiles != null)
+			{
+				// Wait for the canvas to be rendered
+				await Task.Delay(100);
+				await RenderMap();
+			}
+		}
+		catch (Exception ex)
+		{
+			errorMessage = $"Failed to load replay: {ex.Message}";
+		}
+		finally
+		{
+			isLoading = false;
+			StateHasChanged();
+		}
+	}
+
+	private async Task RenderMap()
+	{
+		if (replayInfo?.Tiles == null || replayInfo.GameInfo == null)
+			return;
+
+		isRenderingMap = true;
+		mapImageData = null;
+		StateHasChanged();
+
+		try
+		{
+			// Load terrain assets for the mod
+			var mod = replayInfo.GameInfo.Mod ?? "ra";
+			var terrainAssets = await TerrainRenderService.LoadTerrainAssetsAsync(mod);
+			
+			if (!string.IsNullOrEmpty(terrainAssets.Error))
+			{
+				errorMessage = $"Failed to load terrain assets: {terrainAssets.Error}";
+				return;
+			}
+
+			// Render the map to an image
+			var imageBytes = await TerrainRenderService.RenderMapToImageAsync(
+				replayInfo.Tiles, 
+				terrainAssets);
+			
+			if (imageBytes != null)
+			{
+				// Convert to base64 data URL
+				var base64 = Convert.ToBase64String(imageBytes);
+				mapImageData = $"data:image/png;base64,{base64}";
+			}
+			else
+			{
+				errorMessage = "Failed to render map image";
+			}
+		}
+		catch (Exception ex)
+		{
+			errorMessage = $"Failed to render map: {ex.Message}";
+		}
+		finally
+		{
+			isRenderingMap = false;
+			StateHasChanged();
+		}
 	}
 }
