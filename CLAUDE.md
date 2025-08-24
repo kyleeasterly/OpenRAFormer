@@ -79,6 +79,28 @@ When implementing new game logic:
 4. **Follow YAML conventions** - use existing traits/properties where possible
 5. **Branch from `bleed`** - main development branch for pull requests
 
+## IMPORTANT: Build, Commit, and Push Workflow
+
+**After making any code changes, ALWAYS follow this workflow:**
+
+1. **Build the project** to verify changes compile:
+   ```bash
+   make  # or make check for style validation
+   ```
+
+2. **Commit changes** with descriptive message:
+   ```bash
+   git add -A
+   git commit -m "Your descriptive commit message"
+   ```
+
+3. **Push to remote repository**:
+   ```bash
+   git push origin bleed  # or current branch name
+   ```
+
+This ensures code quality, maintains a clean commit history, and keeps the remote repository up to date.
+
 <openra_coding_standard>
 This page outlines OpenRA's coding standard, which is based on the [.NET conventions](http://msdn.microsoft.com/en-us/library/czefa0ke). Please consult the .NET conventions for any points that are not covered here. You should use [StyleCop](https://stylecop.codeplex.com/) or the OpenRA.Utility `--check-code-style` command to check your code prior to submission.  Our automated test suite will fail if your code contains style violations.
 
@@ -170,12 +192,12 @@ First, select `Tools` from the Visual Studio main menu, and click `Options...`.
 ![](https://github.com/LavenderMoon/Docs/raw/master/VisualStudioUseTabs.Figure2.png)  
 Next, navigate to `Text Editor` > `C#` > `Tabs` and click `Use Tabs`. Visual Studio should now use tabs when you edit C# code.
 
-### Set Visual Studio to Place ‘System’ directives first when sorting usings
+### Set Visual Studio to Place ï¿½Systemï¿½ directives first when sorting usings
 
-By default, Visual Studio will sort using statements alphabetically, instead of placing System usings first for C# code. To make sure usings are sorted correctly while writing code for OpenRA, you can set Visual Studio to place ‘System’ directives first when sorting usings.
+By default, Visual Studio will sort using statements alphabetically, instead of placing System usings first for C# code. To make sure usings are sorted correctly while writing code for OpenRA, you can set Visual Studio to place ï¿½Systemï¿½ directives first when sorting usings.
 
 First, select `Tools` from the Visual Studio main menu, and click `Options...`.
-Next, navigate to `Text Editor` > `C#` > `Advanced` and click `Place ‘System’ directives first when sorting usings`. Visual Studio should now sort usings correctly when you edit C# code.
+Next, navigate to `Text Editor` > `C#` > `Advanced` and click `Place ï¿½Systemï¿½ directives first when sorting usings`. Visual Studio should now sort usings correctly when you edit C# code.
 
 ### Install StyleCop
 
