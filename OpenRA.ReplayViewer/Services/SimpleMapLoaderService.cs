@@ -14,7 +14,8 @@ public class SimpleMapLoaderService
 	{
 		public string? Title { get; set; }
 		public string? Tileset { get; set; }
-		public Rectangle Bounds { get; set; }
+		public OpenRA.Primitives.Rectangle Bounds { get; set; }  // Playable area (e.g., 1,1,135,135)
+		public OpenRA.Primitives.Size MapSize { get; set; }      // Full map dimensions (e.g., 137x137)
 		public TerrainTile[,]? Tiles { get; set; }
 		public ResourceTile[,]? Resources { get; set; }
 		public byte[,]? Heights { get; set; }
@@ -170,7 +171,10 @@ public class SimpleMapLoaderService
 					{
 						if (int.TryParse(parts[0], out var w) && int.TryParse(parts[1], out var h))
 						{
-							result.Bounds = new Rectangle(0, 0, w, h);
+							result.MapSize = new Size(w, h);
+							// Set default bounds to full map if Bounds not specified
+							if (result.Bounds.Width == 0 && result.Bounds.Height == 0)
+								result.Bounds = new Rectangle(0, 0, w, h);
 						}
 					}
 				}
@@ -232,8 +236,9 @@ public class SimpleMapLoaderService
 	{
 		// Format 1: Simple linear format
 		// Tiles are stored directly after the format byte
-		var width = result.Bounds.Width;
-		var height = result.Bounds.Height;
+		// Use MapSize if available, otherwise fall back to Bounds
+		var width = result.MapSize.Width > 0 ? result.MapSize.Width : result.Bounds.Width;
+		var height = result.MapSize.Height > 0 ? result.MapSize.Height : result.Bounds.Height;
 
 		if (width <= 0 || height <= 0)
 		{
@@ -243,6 +248,7 @@ public class SimpleMapLoaderService
 
 		result.Tiles = new TerrainTile[width, height];
 
+		// Format 1 stores tiles in row-major order (y, then x)
 		for (var y = 0; y < height; y++)
 		{
 			for (var x = 0; x < width; x++)
@@ -256,16 +262,12 @@ public class SimpleMapLoaderService
 
 	private void LoadFormatV2(SimpleMap result, BinaryReader reader)
 	{
-		// Format 2: Multi-section format with offsets
+		// Format 2: Has width/height then offsets
+		// Note: Format byte has already been read
 		
-		// Read bounds
-		var left = reader.ReadInt32();
-		var top = reader.ReadInt32();
-		var right = reader.ReadInt32();
-		var bottom = reader.ReadInt32();
-
-		var width = right - left;
-		var height = bottom - top;
+		// Read map dimensions (these should match MapSize from YAML, not Bounds)
+		var width = reader.ReadUInt16();
+		var height = reader.ReadUInt16();
 
 		if (width <= 0 || height <= 0)
 		{
@@ -273,7 +275,10 @@ public class SimpleMapLoaderService
 			return;
 		}
 
-		result.Bounds = new Rectangle(left, top, width, height);
+		// The width/height here is the full map size (e.g., 137x137)
+		// Store this as MapSize - the Bounds from YAML define the playable area
+		result.MapSize = new Size(width, height);
+		logger.LogInformation("Binary map dimensions: {Width}x{Height}", width, height);
 
 		// Read data offsets
 		var tileDataOffset = reader.ReadUInt32();
@@ -286,36 +291,15 @@ public class SimpleMapLoaderService
 			reader.BaseStream.Seek(tileDataOffset, SeekOrigin.Begin);
 			result.Tiles = new TerrainTile[width, height];
 
-			for (var y = 0; y < height; y++)
+			// Important: OpenRA stores tiles in column-major order (x, then y)
+			for (var x = 0; x < width; x++)
 			{
-				for (var x = 0; x < width; x++)
+				for (var y = 0; y < height; y++)
 				{
 					var type = reader.ReadUInt16();
 					var index = reader.ReadByte();
 					result.Tiles[x, y] = new TerrainTile(type, index);
 				}
-			}
-		}
-
-		// Load heights
-		if (heightDataOffset > 0 && reader.BaseStream.Position < reader.BaseStream.Length)
-		{
-			try
-			{
-				reader.BaseStream.Seek(heightDataOffset, SeekOrigin.Begin);
-				result.Heights = new byte[width, height];
-
-				for (var y = 0; y < height; y++)
-				{
-					for (var x = 0; x < width; x++)
-					{
-						result.Heights[x, y] = reader.ReadByte();
-					}
-				}
-			}
-			catch (Exception ex)
-			{
-				logger.LogWarning(ex, "Failed to load height data");
 			}
 		}
 
@@ -327,9 +311,10 @@ public class SimpleMapLoaderService
 				reader.BaseStream.Seek(resourceDataOffset, SeekOrigin.Begin);
 				result.Resources = new ResourceTile[width, height];
 
-				for (var y = 0; y < height; y++)
+				// Resources are also stored in column-major order
+				for (var x = 0; x < width; x++)
 				{
-					for (var x = 0; x < width; x++)
+					for (var y = 0; y < height; y++)
 					{
 						var type = reader.ReadByte();
 						var density = reader.ReadByte();
@@ -340,6 +325,29 @@ public class SimpleMapLoaderService
 			catch (Exception ex)
 			{
 				logger.LogWarning(ex, "Failed to load resource data");
+			}
+		}
+
+		// Load heights
+		if (heightDataOffset > 0 && reader.BaseStream.Position < reader.BaseStream.Length)
+		{
+			try
+			{
+				reader.BaseStream.Seek(heightDataOffset, SeekOrigin.Begin);
+				result.Heights = new byte[width, height];
+
+				// Heights are also stored in column-major order
+				for (var x = 0; x < width; x++)
+				{
+					for (var y = 0; y < height; y++)
+					{
+						result.Heights[x, y] = reader.ReadByte();
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				logger.LogWarning(ex, "Failed to load height data");
 			}
 		}
 	}
