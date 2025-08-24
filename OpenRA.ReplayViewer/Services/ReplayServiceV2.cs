@@ -37,68 +37,108 @@ public class ReplayServiceV2
 	public async Task<ReplayInfo> LoadReplayAsync(string filePath)
 	{
 		var result = new ReplayInfo { FilePath = filePath };
+		logger.LogInformation("=== Loading replay: {FilePath} ===", filePath);
 
 		try
 		{
 			if (!File.Exists(filePath))
 			{
 				result.Error = $"File not found: {filePath}";
+				logger.LogError("Replay file not found: {FilePath}", filePath);
 				return result;
 			}
 
 			await Task.Run(() =>
 			{
+				logger.LogInformation("Reading replay metadata...");
+				
 				// Read replay metadata
 				var metadata = ReplayMetadata.Read(filePath);
 				if (metadata == null)
 				{
 					result.Error = "Failed to read replay metadata";
+					logger.LogError("Failed to read replay metadata from {FilePath}", filePath);
 					return;
 				}
 
 				result.GameInfo = metadata.GameInfo;
 				var modId = metadata.GameInfo.Mod ?? "ra";
+				
+				logger.LogInformation("Replay metadata loaded:");
+				logger.LogInformation("  Map Title: {MapTitle}", metadata.GameInfo.MapTitle);
+				logger.LogInformation("  Map UID: {MapUid}", metadata.GameInfo.MapUid);
+				logger.LogInformation("  Mod: {Mod}", modId);
+				logger.LogInformation("  Has embedded map data: {HasData}", !string.IsNullOrEmpty(metadata.GameInfo.MapData));
 
 				// Try to load the map
 				if (!string.IsNullOrEmpty(metadata.GameInfo.MapData))
 				{
+					logger.LogInformation("Loading embedded map data ({Length} bytes)...", metadata.GameInfo.MapData.Length);
+					
 					// Map is embedded in the replay
 					var mapData = Convert.FromBase64String(metadata.GameInfo.MapData);
+					logger.LogInformation("Decoded map data: {Length} bytes", mapData.Length);
+					
 					result.Map = mapLoader.LoadMapFromData(mapData);
 
 					if (!string.IsNullOrEmpty(result.Map.Error))
 					{
 						result.Error = result.Map.Error;
+						logger.LogError("Failed to load embedded map: {Error}", result.Map.Error);
 						return;
 					}
+					
+					logger.LogInformation("Successfully loaded embedded map");
+					logger.LogInformation("  Map size: {Width}x{Height}", result.Map.Bounds.Width, result.Map.Bounds.Height);
+					logger.LogInformation("  Tileset: {Tileset}", result.Map.Tileset ?? "unknown");
 				}
 				else if (!string.IsNullOrEmpty(metadata.GameInfo.MapUid))
 				{
+					logger.LogInformation("No embedded map data, searching for local map with UID: {MapUid}", metadata.GameInfo.MapUid);
+					
 					// Try to find the map locally
 					var mapInfo = mapLoader.FindMapInMod(metadata.GameInfo.MapUid, modId);
 					if (mapInfo != null)
 					{
 						result.MapPath = mapInfo["Path"];
+						logger.LogInformation("Found local map at: {Path}", result.MapPath);
+						
 						result.Map = mapLoader.LoadMapFromPath(result.MapPath);
 
 						if (!string.IsNullOrEmpty(result.Map.Error))
 						{
 							result.Error = result.Map.Error;
+							logger.LogError("Failed to load local map: {Error}", result.Map.Error);
 							return;
 						}
+						
+						logger.LogInformation("Successfully loaded local map");
+						logger.LogInformation("  Map size: {Width}x{Height}", result.Map.Bounds.Width, result.Map.Bounds.Height);
+						logger.LogInformation("  Tileset: {Tileset}", result.Map.Tileset ?? "unknown");
 					}
 					else
 					{
 						result.Error = $"Map not found locally: {metadata.GameInfo.MapUid}";
+						logger.LogError("Map not found locally: {MapUid}", metadata.GameInfo.MapUid);
 						return;
 					}
 				}
 				else
 				{
 					result.Error = "No map data available in replay";
+					logger.LogError("No map data or UID available in replay");
 					return;
 				}
 			});
+			
+			if (string.IsNullOrEmpty(result.Error))
+			{
+				logger.LogInformation("=== Replay loaded successfully ===");
+			}
+			else
+			{
+				logger.LogError("=== Replay loading failed: {Error} ===", result.Error);
+			}
 		}
 		catch (Exception ex)
 		{

@@ -348,37 +348,107 @@ public class SimpleMapLoaderService
 	{
 		try
 		{
+			logger.LogInformation("=== Starting map search ===");
+			logger.LogInformation("Looking for map UID: {MapUid} in mod: {ModId}", mapUid, modId);
+			
 			var gameRoot = Path.Combine(environment.ContentRootPath, "..");
+			logger.LogInformation("Game root: {GameRoot}", gameRoot);
+			
 			var modPath = Path.Combine(gameRoot, "mods", modId.ToLowerInvariant());
+			logger.LogInformation("Mod path: {ModPath}", modPath);
+			
 			var mapsPath = Path.Combine(modPath, "maps");
+			logger.LogInformation("Maps path: {MapsPath}", mapsPath);
 
 			if (!Directory.Exists(mapsPath))
 			{
 				logger.LogWarning("Maps directory not found: {MapsPath}", mapsPath);
-				return null;
+				
+				// Try alternative paths
+				var altPaths = new[]
+				{
+					Path.Combine(gameRoot, "maps"),
+					Path.Combine(gameRoot, "mods", "ra", "maps"),
+					Path.Combine(gameRoot, "mods", "cnc", "maps"),
+					Path.Combine(gameRoot, "mods", "d2k", "maps")
+				};
+				
+				logger.LogInformation("Trying alternative paths...");
+				foreach (var altPath in altPaths)
+				{
+					logger.LogInformation("Checking: {Path}", altPath);
+					if (Directory.Exists(altPath))
+					{
+						logger.LogInformation("Found alternative maps directory: {Path}", altPath);
+						mapsPath = altPath;
+						break;
+					}
+				}
+				
+				if (!Directory.Exists(mapsPath))
+					return null;
 			}
 
 			// Search directories
-			foreach (var mapDir in Directory.GetDirectories(mapsPath))
+			var directories = Directory.GetDirectories(mapsPath);
+			logger.LogInformation("Found {Count} directories to search", directories.Length);
+			
+			int dirCount = 0;
+			foreach (var mapDir in directories)
 			{
+				dirCount++;
+				if (dirCount <= 5 || dirCount % 10 == 0)
+					logger.LogInformation("Checking directory {Count}/{Total}: {Dir}", dirCount, directories.Length, Path.GetFileName(mapDir));
+				
 				var mapYamlPath = Path.Combine(mapDir, "map.yaml");
 				if (File.Exists(mapYamlPath))
 				{
 					var yaml = File.ReadAllText(mapYamlPath);
-					if (yaml.Contains($"Uid: {mapUid}") || yaml.Contains($"MapUid: {mapUid}"))
+					
+					// Look for UID in different formats
+					var uidPatterns = new[]
 					{
-						return new Dictionary<string, string>
+						$"Uid: {mapUid}",
+						$"MapUid: {mapUid}",
+						$"Uid:{mapUid}",
+						$"MapUid:{mapUid}"
+					};
+					
+					foreach (var pattern in uidPatterns)
+					{
+						if (yaml.Contains(pattern))
 						{
-							["Path"] = mapDir,
-							["Name"] = Path.GetFileName(mapDir)
-						};
+							logger.LogInformation("FOUND MAP! Directory: {Path}, Pattern matched: {Pattern}", mapDir, pattern);
+							return new Dictionary<string, string>
+							{
+								["Path"] = mapDir,
+								["Name"] = Path.GetFileName(mapDir)
+							};
+						}
+					}
+					
+					// Log the first few characters of UID found in this map for debugging
+					var uidIndex = yaml.IndexOf("Uid:");
+					if (uidIndex >= 0 && uidIndex + 50 < yaml.Length)
+					{
+						var snippet = yaml.Substring(uidIndex, Math.Min(50, yaml.Length - uidIndex));
+						if (dirCount <= 3)
+							logger.LogDebug("Map {Name} has UID snippet: {Snippet}", Path.GetFileName(mapDir), snippet.Replace("\n", " ").Replace("\r", ""));
 					}
 				}
 			}
 
 			// Search .oramap files
-			foreach (var mapFile in Directory.GetFiles(mapsPath, "*.oramap"))
+			var oramapFiles = Directory.GetFiles(mapsPath, "*.oramap");
+			logger.LogInformation("Found {Count} .oramap files to search", oramapFiles.Length);
+			
+			int fileCount = 0;
+			foreach (var mapFile in oramapFiles)
 			{
+				fileCount++;
+				if (fileCount <= 5 || fileCount % 10 == 0)
+					logger.LogInformation("Checking .oramap {Count}/{Total}: {File}", fileCount, oramapFiles.Length, Path.GetFileName(mapFile));
+				
 				try
 				{
 					using (var zip = ZipFile.OpenRead(mapFile))
@@ -390,13 +460,36 @@ public class SimpleMapLoaderService
 							using (var reader = new StreamReader(stream))
 							{
 								var yaml = reader.ReadToEnd();
-								if (yaml.Contains($"Uid: {mapUid}") || yaml.Contains($"MapUid: {mapUid}"))
+								
+								// Look for UID in different formats
+								var uidPatterns = new[]
 								{
-									return new Dictionary<string, string>
+									$"Uid: {mapUid}",
+									$"MapUid: {mapUid}",
+									$"Uid:{mapUid}",
+									$"MapUid:{mapUid}"
+								};
+								
+								foreach (var pattern in uidPatterns)
+								{
+									if (yaml.Contains(pattern))
 									{
-										["Path"] = mapFile,
-										["Name"] = Path.GetFileNameWithoutExtension(mapFile)
-									};
+										logger.LogInformation("FOUND MAP! File: {Path}, Pattern matched: {Pattern}", mapFile, pattern);
+										return new Dictionary<string, string>
+										{
+											["Path"] = mapFile,
+											["Name"] = Path.GetFileNameWithoutExtension(mapFile)
+										};
+									}
+								}
+								
+								// Log the first few characters of UID found in this map for debugging
+								var uidIndex = yaml.IndexOf("Uid:");
+								if (uidIndex >= 0 && uidIndex + 50 < yaml.Length)
+								{
+									var snippet = yaml.Substring(uidIndex, Math.Min(50, yaml.Length - uidIndex));
+									if (fileCount <= 3)
+										logger.LogDebug("Map {Name} has UID snippet: {Snippet}", Path.GetFileName(mapFile), snippet.Replace("\n", " ").Replace("\r", ""));
 								}
 							}
 						}
@@ -408,6 +501,7 @@ public class SimpleMapLoaderService
 				}
 			}
 
+			logger.LogWarning("Map not found after searching all directories and .oramap files");
 			return null;
 		}
 		catch (Exception ex)
