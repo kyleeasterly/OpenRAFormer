@@ -139,9 +139,12 @@ public class SimpleMapLoaderService
 			return;
 		}
 
-		// Load binary data
-		using (var stream = binEntry.Open())
+		// Load binary data - copy to MemoryStream since ZipArchive streams aren't seekable
+		using (var zipStream = binEntry.Open())
+		using (var stream = new MemoryStream())
 		{
+			zipStream.CopyTo(stream);
+			stream.Position = 0;
 			LoadMapBinary(result, stream);
 		}
 	}
