@@ -397,8 +397,7 @@ public class SimpleMapLoaderService
 			foreach (var mapDir in directories)
 			{
 				dirCount++;
-				if (dirCount <= 5 || dirCount % 10 == 0)
-					logger.LogInformation("Checking directory {Count}/{Total}: {Dir}", dirCount, directories.Length, Path.GetFileName(mapDir));
+				logger.LogInformation("Checking directory {Count}/{Total}: {Dir}", dirCount, directories.Length, Path.GetFileName(mapDir));
 				
 				var mapYamlPath = Path.Combine(mapDir, "map.yaml");
 				if (File.Exists(mapYamlPath))
@@ -432,8 +431,7 @@ public class SimpleMapLoaderService
 					if (uidIndex >= 0 && uidIndex + 50 < yaml.Length)
 					{
 						var snippet = yaml.Substring(uidIndex, Math.Min(50, yaml.Length - uidIndex));
-						if (dirCount <= 3)
-							logger.LogDebug("Map {Name} has UID snippet: {Snippet}", Path.GetFileName(mapDir), snippet.Replace("\n", " ").Replace("\r", ""));
+						logger.LogDebug("Map {Name} has UID snippet: {Snippet}", Path.GetFileName(mapDir), snippet.Replace("\n", " ").Replace("\r", ""));
 					}
 				}
 			}
@@ -446,8 +444,7 @@ public class SimpleMapLoaderService
 			foreach (var mapFile in oramapFiles)
 			{
 				fileCount++;
-				if (fileCount <= 5 || fileCount % 10 == 0)
-					logger.LogInformation("Checking .oramap {Count}/{Total}: {File}", fileCount, oramapFiles.Length, Path.GetFileName(mapFile));
+				logger.LogInformation("Checking .oramap {Count}/{Total}: {File}", fileCount, oramapFiles.Length, Path.GetFileName(mapFile));
 				
 				try
 				{
@@ -488,8 +485,7 @@ public class SimpleMapLoaderService
 								if (uidIndex >= 0 && uidIndex + 50 < yaml.Length)
 								{
 									var snippet = yaml.Substring(uidIndex, Math.Min(50, yaml.Length - uidIndex));
-									if (fileCount <= 3)
-										logger.LogDebug("Map {Name} has UID snippet: {Snippet}", Path.GetFileName(mapFile), snippet.Replace("\n", " ").Replace("\r", ""));
+									logger.LogDebug("Map {Name} has UID snippet: {Snippet}", Path.GetFileName(mapFile), snippet.Replace("\n", " ").Replace("\r", ""));
 								}
 							}
 						}
