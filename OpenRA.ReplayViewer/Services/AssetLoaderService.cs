@@ -73,13 +73,13 @@ public class AssetLoaderService
 					return;
 				}
 
-				// Parse the tileset YAML
-				var yaml = MiniYaml.FromFile(tilesetPath);
+				// Parse the tileset YAML - materialize the list to avoid multiple enumeration
+				var yaml = MiniYaml.FromFile(tilesetPath).ToList();
 				
 				// Load terrain types
-				if (yaml.Any(n => n.Key == "Terrain"))
+				var terrainNode = yaml.FirstOrDefault(n => n.Key == "Terrain");
+				if (terrainNode != null)
 				{
-					var terrainNode = yaml.First(n => n.Key == "Terrain");
 					foreach (var terrain in terrainNode.Value.Nodes)
 					{
 						var info = ParseTerrainType(terrain);
@@ -88,9 +88,9 @@ public class AssetLoaderService
 				}
 
 				// Load templates
-				if (yaml.Any(n => n.Key == "Templates"))
+				var templatesNode = yaml.FirstOrDefault(n => n.Key == "Templates");
+				if (templatesNode != null)
 				{
-					var templatesNode = yaml.First(n => n.Key == "Templates");
 					foreach (var template in templatesNode.Value.Nodes)
 					{
 						var tmpl = ParseTemplate(template, modPath);
