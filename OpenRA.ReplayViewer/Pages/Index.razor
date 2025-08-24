@@ -1,0 +1,43 @@
+@page "/"
+
+<PageTitle>OpenRA Replay Viewer</PageTitle>
+
+<MudGrid>
+	<MudItem xs="12">
+		<MudPaper Elevation="3" Class="pa-4">
+			<MudText Typo="Typo.h4" Class="mb-4">OpenRA Replay Viewer</MudText>
+			
+			<MudCard>
+				<MudCardContent>
+					<MudText Typo="Typo.h6" Class="mb-3">Upload Replay File</MudText>
+					
+					<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+						Select an OpenRA replay file (.orarep) to view
+					</MudText>
+					
+					<MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Upload">
+						Select Replay File
+					</MudButton>
+				</MudCardContent>
+			</MudCard>
+			
+			<MudDivider Class="my-4" />
+			
+			<MudCard>
+				<MudCardContent>
+					<MudText Typo="Typo.h6" Class="mb-2">Replay Information</MudText>
+					<MudText Typo="Typo.body2" Color="Color.Secondary">
+						No replay loaded
+					</MudText>
+				</MudCardContent>
+			</MudCard>
+		</MudPaper>
+	</MudItem>
+</MudGrid>
+
+@code {
+	protected override async Task OnInitializedAsync()
+	{
+		await base.OnInitializedAsync();
+	}
+}
