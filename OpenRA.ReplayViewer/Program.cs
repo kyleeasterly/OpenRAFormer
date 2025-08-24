@@ -9,7 +9,9 @@ builder.Services.AddServerSideBlazor();
 builder.Services.AddMudServices();
 
 // Add replay services
-builder.Services.AddScoped<ReplayService>();
+builder.Services.AddScoped<SimpleMapLoaderService>();
+builder.Services.AddScoped<AssetLoaderService>();
+builder.Services.AddScoped<ReplayServiceV2>();
 builder.Services.AddScoped<TerrainRenderService>();
 
 var app = builder.Build();

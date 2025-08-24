@@ -1,7 +1,6 @@
 @page "/"
 @using OpenRA.ReplayViewer.Services
-@inject ReplayService ReplayService
-@inject TerrainRenderService TerrainRenderService
+@inject ReplayServiceV2 ReplayService
 @inject IJSRuntime JSRuntime
 
 <PageTitle>OpenRA Replay Viewer</PageTitle>
@@ -91,11 +90,23 @@
 							</tbody>
 						</MudSimpleTable>
 						
-						@if (replayInfo.Tiles != null)
+						@if (replayInfo.Map != null)
 						{
 							<MudText Typo="Typo.body2" Class="mt-3">
-								Map Size: @replayInfo.Tiles.GetLength(0) x @replayInfo.Tiles.GetLength(1) tiles
+								Map Size: @replayInfo.Map.Bounds.Width x @replayInfo.Map.Bounds.Height tiles
 							</MudText>
+							@if (!string.IsNullOrEmpty(replayInfo.Map.Tileset))
+							{
+								<MudText Typo="Typo.body2">
+									Tileset: @replayInfo.Map.Tileset
+								</MudText>
+							}
+							@if (!string.IsNullOrEmpty(replayInfo.MapPath))
+							{
+								<MudText Typo="Typo.caption" Color="Color.Secondary">
+									Loaded from: @replayInfo.MapPath
+								</MudText>
+							}
 						}
 					</MudCardContent>
 				</MudCard>
@@ -112,7 +123,7 @@
 				</MudCard>
 			}
 			
-			@if (replayInfo?.Tiles != null)
+			@if (replayInfo?.Map != null)
 			{
 				<MudDivider Class="my-4" />
 				
@@ -143,7 +154,7 @@
 	private string replayFilePath = "";
 	private bool isLoading = false;
 	private string? errorMessage;
-	private ReplayService.ReplayInfo? replayInfo;
+	private ReplayServiceV2.ReplayInfo? replayInfo;
 	private bool isRenderingMap = false;
 	private string? mapImageData;
 
@@ -167,9 +178,9 @@
 			{
 				errorMessage = replayInfo.Error;
 			}
-			else if (replayInfo.Tiles != null)
+			else if (replayInfo.Map != null)
 			{
-				// Wait for the canvas to be rendered
+				// Wait for UI to update
 				await Task.Delay(100);
 				await RenderMap();
 			}
@@ -187,7 +198,7 @@
 
 	private async Task RenderMap()
 	{
-		if (replayInfo?.Tiles == null || replayInfo.GameInfo == null)
+		if (replayInfo?.Map == null)
 			return;
 
 		isRenderingMap = true;
@@ -196,20 +207,8 @@
 
 		try
 		{
-			// Load terrain assets for the mod
-			var mod = replayInfo.GameInfo.Mod ?? "ra";
-			var terrainAssets = await TerrainRenderService.LoadTerrainAssetsAsync(mod);
-			
-			if (!string.IsNullOrEmpty(terrainAssets.Error))
-			{
-				errorMessage = $"Failed to load terrain assets: {terrainAssets.Error}";
-				return;
-			}
-
-			// Render the map to an image
-			var imageBytes = await TerrainRenderService.RenderMapToImageAsync(
-				replayInfo.Tiles, 
-				terrainAssets);
+			// Render the map using the ReplayService
+			var imageBytes = await ReplayService.RenderMapAsync(replayInfo);
 			
 			if (imageBytes != null)
 			{
