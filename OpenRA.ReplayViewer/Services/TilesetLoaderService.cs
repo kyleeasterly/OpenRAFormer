@@ -98,9 +98,28 @@ public class TilesetLoaderService
 			}
 
 			logger.LogInformation("Loading tileset from: {Path}", tilesetPath);
+			
+			// Verify the file exists and is readable
+			if (!File.Exists(tilesetPath))
+			{
+				tileset.Error = $"Tileset file does not exist: {tilesetPath}";
+				logger.LogError("Tileset file does not exist: {Path}", tilesetPath);
+				return tileset;
+			}
 
-			// Parse the YAML
-			var yaml = MiniYaml.FromFile(tilesetPath);
+			// Parse the YAML - read the file content first
+			IEnumerable<MiniYamlNode> yaml;
+			try
+			{
+				var content = File.ReadAllText(tilesetPath);
+				yaml = MiniYaml.FromString(content, tilesetPath);
+			}
+			catch (Exception ex)
+			{
+				tileset.Error = $"Failed to read tileset file: {ex.Message}";
+				logger.LogError(ex, "Failed to read tileset file: {Path}", tilesetPath);
+				return tileset;
+			}
 			
 			// Parse General section for palette info
 			var generalNode = yaml.FirstOrDefault(n => n.Key == "General");
@@ -161,12 +180,41 @@ public class TilesetLoaderService
 
 	private string? FindTilesetFile(string modId, string tilesetName)
 	{
-		// Use the proper game root path - ContentRootPath is the web project, we need the parent
-		var gameRoot = Path.Combine(environment.ContentRootPath, "..");
+		// Try multiple approaches to find the game root
+		string gameRoot;
+		
+		// First, try using the environment's content root
+		if (!string.IsNullOrEmpty(environment.ContentRootPath))
+		{
+			gameRoot = Path.GetFullPath(Path.Combine(environment.ContentRootPath, ".."));
+		}
+		else
+		{
+			// Fallback to current directory
+			gameRoot = Directory.GetCurrentDirectory();
+			// If we're in bin/Debug or bin/Release, go up to the project root
+			if (gameRoot.Contains("bin"))
+			{
+				gameRoot = Path.GetFullPath(Path.Combine(gameRoot, "..", "..", ".."));
+			}
+		}
+		
 		var modPath = Path.Combine(gameRoot, "mods", modId.ToLowerInvariant());
 		
-		// Normalize the path
-		modPath = Path.GetFullPath(modPath);
+		// Log the search path for debugging
+		logger.LogDebug("Searching for tileset in mod path: {ModPath}", modPath);
+		
+		if (!Directory.Exists(modPath))
+		{
+			logger.LogWarning("Mod directory does not exist: {ModPath}", modPath);
+			// Try one more time with just mods folder relative to current directory
+			modPath = Path.Combine("mods", modId.ToLowerInvariant());
+			if (!Directory.Exists(modPath))
+			{
+				logger.LogError("Cannot find mod directory for {ModId}", modId);
+				return null;
+			}
+		}
 
 		// Try different case variations of the tileset name
 		var nameVariations = new[]
