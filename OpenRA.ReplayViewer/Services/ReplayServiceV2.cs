@@ -219,7 +219,15 @@ public class ReplayServiceV2
 							if (assets.Templates.TryGetValue(tile.Type, out var template))
 							{
 								// Use the tile index directly - it specifies which tile in the template
-								var tileIndex = tile.Index;
+								var tileIndex = (int)tile.Index;
+								
+								// For PickAny templates, the tile index might be a variant selection
+								// Try the exact index first, then fall back to modulo if needed
+								if (!template.TileImages.ContainsKey(tileIndex) && template.TileImages.Count > 0)
+								{
+									// Use modulo to select a variant
+									tileIndex = tileIndex % template.TileImages.Count;
+								}
 								
 								if (template.TileImages.TryGetValue(tileIndex, out var imageData))
 								{
@@ -236,8 +244,13 @@ public class ReplayServiceV2
 								{
 									// Tile index not found in template
 									missingTiles++;
-									logger.LogDebug("Tile index {Index} not found in template {TemplateId}, using fallback", 
-										tileIndex, tile.Type);
+									
+									// Log first few mismatches for debugging
+									if (missingTiles <= 10)
+									{
+										logger.LogWarning("Tile index {Index} not found in template {TemplateId} (template has {Count} tiles), using fallback", 
+											tileIndex, tile.Type, template.TileImages.Count);
+									}
 									
 									// Try to use first tile as fallback
 									if (template.TileImages.Count > 0 && template.TileImages.TryGetValue(0, out var fallbackData))

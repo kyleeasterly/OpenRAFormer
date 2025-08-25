@@ -28,6 +28,7 @@ public class AssetLoaderService
 		public ushort Id { get; set; }
 		public string Name { get; set; } = "";
 		public OpenRA.Primitives.Size Size { get; set; }
+		public bool PickAny { get; set; }
 		public Dictionary<int, byte[]> TileImages { get; set; } = new();
 		public Dictionary<int, string> TileTerrainTypes { get; set; } = new();
 	}
@@ -89,20 +90,39 @@ public class AssetLoaderService
 						Id = template.Id,
 						Name = template.Name,
 						Size = new OpenRA.Primitives.Size(template.Size.X, template.Size.Y),
+						PickAny = template.PickAny,
 						TileImages = new Dictionary<int, byte[]>(),
 						TileTerrainTypes = new Dictionary<int, string>()
 					};
 
 					// Convert sprites to tile images
-					for (int i = 0; i < template.Sprites.Count; i++)
+					// IMPORTANT: The tile index in the map corresponds to the tile position in the template,
+					// not the sprite array index. For templates with explicit frames, we need to map correctly.
+					if (template.Sprites.Count > 0)
 					{
-						var sprite = template.Sprites[i];
-						assetTemplate.TileImages[i] = sprite.ImageData;
-						
-						if (template.Tiles.TryGetValue(i, out var tileInfo))
+						// For templates with PickAny, all sprites are variants of tile 0
+						if (template.PickAny)
 						{
-							assetTemplate.TileTerrainTypes[i] = tileInfo.TerrainType;
+							// All sprites are variants for tile index 0
+							for (int i = 0; i < template.Sprites.Count; i++)
+							{
+								assetTemplate.TileImages[i] = template.Sprites[i].ImageData;
+							}
 						}
+						else
+						{
+							// Regular template: sprites map directly to tile indices
+							for (int i = 0; i < template.Sprites.Count; i++)
+							{
+								assetTemplate.TileImages[i] = template.Sprites[i].ImageData;
+							}
+						}
+					}
+					
+					// Copy terrain type mappings
+					foreach (var kvp2 in template.Tiles)
+					{
+						assetTemplate.TileTerrainTypes[kvp2.Key] = kvp2.Value.TerrainType;
 					}
 
 					assets.Templates[assetTemplate.Id] = assetTemplate;
