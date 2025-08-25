@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using OpenRA;
 using OpenRA.FileSystem;
+using OpenRA.Mods.Cnc.FileSystem;
 using OpenRA.Primitives;
 
 namespace OpenRA.ReplayViewer.Services;
@@ -57,10 +58,11 @@ public class FileSystemService
 			{
 				try
 				{
-					// MixFile loading disabled for now - would need custom implementation
-					// var mix = new MixFile(File.OpenRead(mixFile), mixFile, null);
-					// packages.Add(mix);
-					logger.LogInformation("Found MIX file: {MixFile} (loading disabled)", 
+					// Load the MIX file
+					var stream = File.OpenRead(mixFile);
+					var mix = new MixLoader.MixFile(stream, mixFile, null);
+					packages.Add(mix);
+					logger.LogInformation("Loaded MIX file: {MixFile}", 
 						Path.GetFileName(mixFile));
 				}
 				catch (Exception ex)
@@ -82,10 +84,11 @@ public class FileSystemService
 				{
 					try
 					{
-						// MixFile loading disabled for now
-						// var mix = new MixFile(File.OpenRead(mixFile), mixFile, null);
-						// packages.Add(mix);
-						logger.LogInformation("Found content MIX file: {MixFile} (loading disabled)", 
+						// Load the MIX file
+						var stream = File.OpenRead(mixFile);
+						var mix = new MixLoader.MixFile(stream, mixFile, null);
+						packages.Add(mix);
+						logger.LogInformation("Loaded content MIX file: {MixFile}", 
 							Path.GetFileName(mixFile));
 					}
 					catch (Exception ex)
