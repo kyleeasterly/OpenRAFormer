@@ -190,6 +190,7 @@ public class ReplayServiceV2
 				var width = map.Tiles.GetLength(0);
 				var height = map.Tiles.GetLength(1);
 				var tileSize = 24;
+				var random = new Random(1234); // Consistent random for variants
 
 				using (var bitmap = new System.Drawing.Bitmap(width * tileSize, height * tileSize))
 				using (var g = System.Drawing.Graphics.FromImage(bitmap))
@@ -201,10 +202,17 @@ public class ReplayServiceV2
 						for (var x = 0; x < width; x++)
 						{
 							var tile = map.Tiles[x, y];
-
+							
+							// tile.Type is the template ID, tile.Index is the tile index within that template
 							if (assets.Templates.TryGetValue(tile.Type, out var template))
 							{
-								var tileIndex = Math.Min(tile.Index, template.TileImages.Count - 1);
+								// Use the tile index directly - it specifies which tile in the template
+								var tileIndex = tile.Index;
+								
+								// Some templates have variants (multiple image sets)
+								// For now, pick a random variant consistently based on position
+								var variant = (x * 7 + y * 13) % template.TileImages.Count;
+								
 								if (template.TileImages.TryGetValue(tileIndex, out var imageData))
 								{
 									using (var stream = new MemoryStream(imageData))
@@ -215,10 +223,33 @@ public class ReplayServiceV2
 										g.DrawImage(tileImage, destX, destY, tileSize, tileSize);
 									}
 								}
+								else
+								{
+									// Tile index out of range - use first tile or placeholder
+									if (template.TileImages.Count > 0 && template.TileImages.TryGetValue(0, out var fallbackData))
+									{
+										using (var stream = new MemoryStream(fallbackData))
+										using (var tileImage = System.Drawing.Image.FromStream(stream))
+										{
+											var destX = x * tileSize;
+											var destY = y * tileSize;
+											g.DrawImage(tileImage, destX, destY, tileSize, tileSize);
+										}
+									}
+									else
+									{
+										// No tiles at all - use color
+										var color = GetSimpleTileColor(tile.Type);
+										using (var brush = new System.Drawing.SolidBrush(color))
+										{
+											g.FillRectangle(brush, x * tileSize, y * tileSize, tileSize, tileSize);
+										}
+									}
+								}
 							}
 							else
 							{
-								// Unknown tile - use fallback color
+								// Unknown template - use fallback color
 								var color = GetSimpleTileColor(tile.Type);
 								using (var brush = new System.Drawing.SolidBrush(color))
 								{

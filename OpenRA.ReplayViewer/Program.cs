@@ -13,6 +13,7 @@ builder.Services.AddSingleton<FileSystemService>();
 builder.Services.AddSingleton<SpriteLoaderService>();
 builder.Services.AddSingleton<PaletteService>();
 builder.Services.AddSingleton<FrameCacheService>();
+builder.Services.AddSingleton<TilesetLoaderService>();
 
 // Add replay services
 builder.Services.AddScoped<SimpleMapLoaderService>();
