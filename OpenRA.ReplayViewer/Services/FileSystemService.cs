@@ -60,7 +60,7 @@ public class FileSystemService
 				{
 					// Load the MIX file
 					var stream = File.OpenRead(mixFile);
-					var mix = new MixLoader.MixFile(stream, mixFile, null);
+					var mix = new MixLoader.MixFile(stream, mixFile, Array.Empty<string>());
 					packages.Add(mix);
 					logger.LogInformation("Loaded MIX file: {MixFile}", 
 						Path.GetFileName(mixFile));
@@ -86,7 +86,7 @@ public class FileSystemService
 					{
 						// Load the MIX file
 						var stream = File.OpenRead(mixFile);
-						var mix = new MixLoader.MixFile(stream, mixFile, null);
+						var mix = new MixLoader.MixFile(stream, mixFile, Array.Empty<string>());
 						packages.Add(mix);
 						logger.LogInformation("Loaded content MIX file: {MixFile}", 
 							Path.GetFileName(mixFile));
