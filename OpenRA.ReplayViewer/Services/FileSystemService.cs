@@ -11,6 +11,7 @@ public class FileSystemService
 	private readonly ILogger<FileSystemService> logger;
 	private readonly IWebHostEnvironment environment;
 	private readonly ConcurrentDictionary<string, OpenRA.FileSystem.FileSystem> modFileSystems = new();
+	private bool loggedDesPaths = false;
 
 	public FileSystemService(ILogger<FileSystemService> logger, IWebHostEnvironment environment)
 	{
@@ -71,24 +72,63 @@ public class FileSystemService
 				}
 			}
 			
-			// Look for additional content packages
-			var contentPath = Path.Combine(gameRoot, "mods", $"{modId}-content");
-			if (Directory.Exists(contentPath))
+			// Look for additional content packages in multiple locations
+			var contentPaths = new[]
 			{
+				Path.Combine(gameRoot, "mods", $"{modId}-content"),
+				Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "OpenRA", "Content", modId),
+				Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "OpenRA", "Content", modId),
+				Path.Combine(gameRoot, "Content", modId)
+			};
+			
+			foreach (var contentPath in contentPaths)
+			{
+				if (!Directory.Exists(contentPath))
+				{
+					logger.LogDebug("Content path not found: {Path}", contentPath);
+					continue;
+				}
+				
 				packages.Add(new OpenRA.FileSystem.Folder(contentPath));
 				logger.LogInformation("Added content folder: {ContentPath}", contentPath);
 				
-				// Load MIX files from content directory
+				// Load MIX files from content directory - especially important ones
+				var importantMixFiles = new[] { "desert.mix", "temperat.mix", "winter.mix", "conquer.mix", "tempicnh.mix" };
+				foreach (var mixName in importantMixFiles)
+				{
+					var mixPath = Path.Combine(contentPath, mixName);
+					if (File.Exists(mixPath))
+					{
+						try
+						{
+							var stream = File.OpenRead(mixPath);
+							var mix = new MixLoader.MixFile(stream, mixPath, Array.Empty<string>());
+							packages.Add(mix);
+							logger.LogInformation("Loaded content MIX file: {MixFile} ({Count} files)", 
+								Path.GetFileName(mixPath), mix.Contents.Count());
+						}
+						catch (Exception ex)
+						{
+							logger.LogWarning(ex, "Failed to load content MIX file: {MixFile}", mixPath);
+						}
+					}
+				}
+				
+				// Also load any other MIX files
 				var contentMixFiles = Directory.GetFiles(contentPath, "*.mix", SearchOption.AllDirectories);
 				foreach (var mixFile in contentMixFiles)
 				{
+					// Skip if already loaded
+					if (importantMixFiles.Any(m => mixFile.EndsWith(m, StringComparison.OrdinalIgnoreCase)))
+						continue;
+					
 					try
 					{
 						// Load the MIX file
 						var stream = File.OpenRead(mixFile);
 						var mix = new MixLoader.MixFile(stream, mixFile, Array.Empty<string>());
 						packages.Add(mix);
-						logger.LogInformation("Loaded content MIX file: {MixFile}", 
+						logger.LogInformation("Loaded additional content MIX file: {MixFile}", 
 							Path.GetFileName(mixFile));
 					}
 					catch (Exception ex)
@@ -166,6 +206,55 @@ public class FileSystemService
 					logger.LogDebug("Opening file with extension: {Filename}", tryFilename);
 					return fs.Open(tryFilename);
 				}
+			}
+			
+			// Log detailed debugging info on first .des file miss
+			if (filename.EndsWith(".des") && !loggedDesPaths)
+			{
+				loggedDesPaths = true;
+				logger.LogWarning("=== ASSET SEARCH DEBUG INFO ===");
+				logger.LogWarning("Looking for: {Filename}", filename);
+				logger.LogWarning("Current directory: {Dir}", Directory.GetCurrentDirectory());
+				logger.LogWarning("Content root: {Root}", environment.ContentRootPath);
+				logger.LogWarning("Mod folder searched: {ModPath}", Path.Combine(environment.ContentRootPath, "..", "mods", modId.ToLowerInvariant()));
+				
+				// List all mounted packages
+				var mountedCount = 0;
+				foreach (var pkg in fs.MountedPackages)
+				{
+					mountedCount++;
+					var fileCount = pkg.Contents.Count();
+					logger.LogWarning("Package {Index}: {Name} ({Count} files)", mountedCount, pkg.Name, fileCount);
+					
+					// Show first few terrain files in this package
+					var terrainFiles = pkg.Contents
+						.Where(f => f.EndsWith(".tem") || f.EndsWith(".des") || f.Contains("clear") || f.Contains("s01"))
+						.Take(5)
+						.ToList();
+					
+					if (terrainFiles.Any())
+					{
+						logger.LogWarning("  Sample terrain files: {Files}", string.Join(", ", terrainFiles));
+					}
+				}
+				
+				// Try to find any file with "clear" or "s01" in the name
+				var searchTerms = new[] { "clear", "s01", "w1" };
+				foreach (var term in searchTerms)
+				{
+					var matches = fs.MountedPackages
+						.SelectMany(p => p.Contents)
+						.Where(f => f.Contains(term, StringComparison.OrdinalIgnoreCase))
+						.Take(3)
+						.ToList();
+					
+					if (matches.Any())
+					{
+						logger.LogWarning("Files containing '{Term}': {Files}", term, string.Join(", ", matches));
+					}
+				}
+				
+				logger.LogWarning("=== END DEBUG INFO ===");
 			}
 			
 			logger.LogWarning("File not found in filesystem: {Filename}", filename);
