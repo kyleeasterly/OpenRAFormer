@@ -14,6 +14,7 @@ public class TilesetLoaderService
 	private readonly FileSystemService fileSystemService;
 	private readonly FrameCacheService frameCacheService;
 	private readonly PaletteService paletteService;
+	private readonly IWebHostEnvironment environment;
 	private readonly Dictionary<string, TilesetData> tilesetCache = new();
 
 	public class TilesetData
@@ -67,12 +68,14 @@ public class TilesetLoaderService
 		ILogger<TilesetLoaderService> logger,
 		FileSystemService fileSystemService,
 		FrameCacheService frameCacheService,
-		PaletteService paletteService)
+		PaletteService paletteService,
+		IWebHostEnvironment environment)
 	{
 		this.logger = logger;
 		this.fileSystemService = fileSystemService;
 		this.frameCacheService = frameCacheService;
 		this.paletteService = paletteService;
+		this.environment = environment;
 	}
 
 	public TilesetData LoadTileset(string modId, string tilesetName)
@@ -158,23 +161,47 @@ public class TilesetLoaderService
 
 	private string? FindTilesetFile(string modId, string tilesetName)
 	{
-		var gameRoot = Path.GetDirectoryName(Path.GetDirectoryName(Environment.CurrentDirectory)) ?? "";
+		// Use the proper game root path - ContentRootPath is the web project, we need the parent
+		var gameRoot = Path.Combine(environment.ContentRootPath, "..");
 		var modPath = Path.Combine(gameRoot, "mods", modId.ToLowerInvariant());
+		
+		// Normalize the path
+		modPath = Path.GetFullPath(modPath);
 
-		// Common locations for tileset files
-		var possiblePaths = new[]
+		// Try different case variations of the tileset name
+		var nameVariations = new[]
 		{
-			Path.Combine(modPath, "tilesets", $"{tilesetName}.yaml"),
-			Path.Combine(modPath, "tileset", $"{tilesetName}.yaml"),
-			Path.Combine(modPath, $"{tilesetName}.yaml"),
+			tilesetName.ToLowerInvariant(),  // lowercase (most common)
+			tilesetName.ToUpperInvariant(),  // uppercase
+			tilesetName,                      // as provided
 		};
 
-		foreach (var path in possiblePaths)
+		// Common locations for tileset files
+		var folders = new[]
 		{
-			if (File.Exists(path))
-				return path;
+			"tilesets",
+			"tileset",
+			"",  // root of mod
+		};
+
+		foreach (var folder in folders)
+		{
+			foreach (var name in nameVariations)
+			{
+				var path = string.IsNullOrEmpty(folder) 
+					? Path.Combine(modPath, $"{name}.yaml")
+					: Path.Combine(modPath, folder, $"{name}.yaml");
+				
+				if (File.Exists(path))
+				{
+					logger.LogDebug("Found tileset file at: {Path}", path);
+					return path;
+				}
+			}
 		}
 
+		logger.LogWarning("Tileset file not found for {TilesetName} in mod {ModId}. Searched paths under: {ModPath}", 
+			tilesetName, modId, modPath);
 		return null;
 	}
 
