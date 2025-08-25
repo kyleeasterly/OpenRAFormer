@@ -190,7 +190,14 @@ public class ReplayServiceV2
 				var width = map.Tiles.GetLength(0);
 				var height = map.Tiles.GetLength(1);
 				var tileSize = 24;
-				var random = new Random(1234); // Consistent random for variants
+				
+				logger.LogInformation("Rendering map: {Width}x{Height} tiles, {TemplateCount} templates available", 
+					width, height, assets.Templates.Count);
+				
+				// Collect statistics
+				var templateUsage = new Dictionary<ushort, int>();
+				var missingTiles = 0;
+				var renderedTiles = 0;
 
 				using (var bitmap = new System.Drawing.Bitmap(width * tileSize, height * tileSize))
 				using (var g = System.Drawing.Graphics.FromImage(bitmap))
@@ -203,15 +210,16 @@ public class ReplayServiceV2
 						{
 							var tile = map.Tiles[x, y];
 							
+							// Track template usage
+							if (!templateUsage.ContainsKey(tile.Type))
+								templateUsage[tile.Type] = 0;
+							templateUsage[tile.Type]++;
+							
 							// tile.Type is the template ID, tile.Index is the tile index within that template
 							if (assets.Templates.TryGetValue(tile.Type, out var template))
 							{
 								// Use the tile index directly - it specifies which tile in the template
 								var tileIndex = tile.Index;
-								
-								// Some templates have variants (multiple image sets)
-								// For now, pick a random variant consistently based on position
-								var variant = (x * 7 + y * 13) % template.TileImages.Count;
 								
 								if (template.TileImages.TryGetValue(tileIndex, out var imageData))
 								{
@@ -221,11 +229,17 @@ public class ReplayServiceV2
 										var destX = x * tileSize;
 										var destY = y * tileSize;
 										g.DrawImage(tileImage, destX, destY, tileSize, tileSize);
+										renderedTiles++;
 									}
 								}
 								else
 								{
-									// Tile index out of range - use first tile or placeholder
+									// Tile index not found in template
+									missingTiles++;
+									logger.LogDebug("Tile index {Index} not found in template {TemplateId}, using fallback", 
+										tileIndex, tile.Type);
+									
+									// Try to use first tile as fallback
 									if (template.TileImages.Count > 0 && template.TileImages.TryGetValue(0, out var fallbackData))
 									{
 										using (var stream = new MemoryStream(fallbackData))
@@ -238,7 +252,7 @@ public class ReplayServiceV2
 									}
 									else
 									{
-										// No tiles at all - use color
+										// No tiles available - use color fallback
 										var color = GetSimpleTileColor(tile.Type);
 										using (var brush = new System.Drawing.SolidBrush(color))
 										{
@@ -250,6 +264,7 @@ public class ReplayServiceV2
 							else
 							{
 								// Unknown template - use fallback color
+								missingTiles++;
 								var color = GetSimpleTileColor(tile.Type);
 								using (var brush = new System.Drawing.SolidBrush(color))
 								{
@@ -257,6 +272,24 @@ public class ReplayServiceV2
 								}
 							}
 						}
+					}
+					
+					// Log rendering statistics
+					var totalTiles = width * height;
+					logger.LogInformation("Map rendering complete: {Rendered}/{Total} tiles rendered, {Missing} missing tiles", 
+						renderedTiles, totalTiles, missingTiles);
+					
+					if (templateUsage.Count > 0)
+					{
+						var topTemplates = templateUsage.OrderByDescending(kvp => kvp.Value).Take(5);
+						logger.LogInformation("Top 5 template usage: {Templates}", 
+							string.Join(", ", topTemplates.Select(kvp => $"ID {kvp.Key}: {kvp.Value} tiles")));
+					}
+					
+					if (missingTiles > totalTiles * 0.1) // More than 10% missing
+					{
+						logger.LogWarning("High number of missing tiles detected ({Percentage:F1}%). Check tileset loading.", 
+							(missingTiles * 100.0) / totalTiles);
 					}
 
 					using (var stream = new MemoryStream())
