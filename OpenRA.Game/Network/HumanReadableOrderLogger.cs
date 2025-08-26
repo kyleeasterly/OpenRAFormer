@@ -12,7 +12,6 @@
 using System;
 using System.IO;
 using System.Text;
-
 namespace OpenRA.Network
 {
 	public sealed class HumanReadableOrderLogger : IDisposable
@@ -149,19 +148,23 @@ namespace OpenRA.Network
 			if (order.Target.Type != Traits.TargetType.Invalid)
 			{
 				if (details.Length > 0) details.Append(" ");
-				
+
 				if (order.Target.Type == Traits.TargetType.Actor && order.Target.Actor != null && !order.Target.Actor.Disposed)
 				{
 					try
 					{
 						var targetPos = order.Target.Actor.CenterPosition;
 						var targetName = GetFriendlyActorName(order.Target.Actor);
-						details.Append($"Target:{targetName}@{targetPos}");
+						if(String.IsNullOrWhiteSpace(targetName))
+							details.Append($"Target:{targetName}@{targetPos}");
+						else details.Append($"Target:{order.Target.Actor.Info.Name}@{targetPos}");
 					}
 					catch
 					{
 						var targetName = GetFriendlyActorName(order.Target.Actor);
-						details.Append($"Target:{targetName}@Unknown");
+						if (String.IsNullOrWhiteSpace(targetName))
+							details.Append($"Target:{targetName}@Unknown");
+						else details.Append($"Target:{order.Target.Actor.Info.Name}@Unknown");
 					}
 				}
 				else if (order.Target.Type == Traits.TargetType.Terrain)
@@ -188,7 +191,10 @@ namespace OpenRA.Network
 			if (!string.IsNullOrEmpty(order.TargetString))
 			{
 				if (details.Length > 0) details.Append(" ");
-				details.Append($"TargetString:\"{order.TargetString}\"");
+				var targetName = FindFriendlyName(order.TargetString);
+				if (String.IsNullOrWhiteSpace(targetName))
+					details.Append($"TargetString:{order.TargetString}");
+				else details.Append($"TargetString:{targetName}");
 			}
 
 			if (order.ExtraData != 0)
@@ -224,12 +230,20 @@ namespace OpenRA.Network
 				return "Unknown";
 
 			// Check if actor is a building
-			if (actor.Info.HasTraitInfo<Traits.BuildingInfo>())
+			if (FriendlyNames.MeanBuildingNames.Contains(actor.Info.Name))
 				return FriendlyNames.GetFriendlyBuildingName(actor.Info.Name);
 			else
 				return FriendlyNames.GetFriendlyUnitName(actor.Info.Name);
 		}
+		string FindFriendlyName(string internalName)
+		{
+			// Check if actor is a building
+			if (FriendlyNames.MeanBuildingNames.Contains(internalName))
+				return FriendlyNames.GetFriendlyBuildingName(internalName);
+			else
+				return FriendlyNames.GetFriendlyUnitName(internalName);
 
+		}
 		public void Dispose()
 		{
 			if (isDisposed)

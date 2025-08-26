@@ -9,10 +9,34 @@
  */
 #endregion
 
+using System.Collections.Generic;
+
 namespace OpenRA
 {
 	public static class FriendlyNames
 	{
+		public static List<string> MeanBuildingNames= [
+			 "FACT",
+			 "NUKE",
+			 "NUK2",
+			 "PROC",
+			 "SILO",
+			 "PYLE",
+			 "HAND",
+			 "WEAP",
+			 "AFLD",
+			 "HPAD",
+			 "EYE",
+			 "TMPL",
+			 "GTWR",
+			 "ATWR",
+			 "OBLI",
+			 "GUN",
+			 "SAM",
+			 "HQ",
+			 "FIX",
+			 "HBOX",
+			 "V19"];
 		public static string GetFriendlyBuildingName(string internalName)
 		{
 			return internalName.ToUpperInvariant() switch
