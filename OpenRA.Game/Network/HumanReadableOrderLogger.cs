@@ -128,18 +128,20 @@ namespace OpenRA.Network
 		{
 			var details = new StringBuilder();
 
-			// Add unit starting position
+			// Add unit starting position with friendly name
 			if (order.Subject != null && !order.Subject.Disposed && order.Subject.OccupiesSpace != null)
 			{
 				try
 				{
 					var startPos = order.Subject.CenterPosition;
-					details.Append($"From:{startPos}");
+					var subjectName = GetFriendlyActorName(order.Subject);
+					details.Append($"From:{subjectName}@{startPos}");
 				}
 				catch
 				{
 					// Actor might not have valid position (system actors, disposed, etc.)
-					details.Append($"From:Unknown");
+					var subjectName = GetFriendlyActorName(order.Subject);
+					details.Append($"From:{subjectName}@Unknown");
 				}
 			}
 
@@ -153,11 +155,13 @@ namespace OpenRA.Network
 					try
 					{
 						var targetPos = order.Target.Actor.CenterPosition;
-						details.Append($"Target:{order.Target.Actor.Info.Name}@{targetPos}");
+						var targetName = GetFriendlyActorName(order.Target.Actor);
+						details.Append($"Target:{targetName}@{targetPos}");
 					}
 					catch
 					{
-						details.Append($"Target:{order.Target.Actor.Info.Name}@Unknown");
+						var targetName = GetFriendlyActorName(order.Target.Actor);
+						details.Append($"Target:{targetName}@Unknown");
 					}
 				}
 				else if (order.Target.Type == Traits.TargetType.Terrain)
@@ -212,6 +216,18 @@ namespace OpenRA.Network
 			}
 
 			return details.Length > 0 ? $"({details})" : "";
+		}
+
+		string GetFriendlyActorName(Actor actor)
+		{
+			if (actor == null || actor.Disposed)
+				return "Unknown";
+
+			// Check if actor is a building
+			if (actor.Info.HasTraitInfo<Traits.BuildingInfo>())
+				return FriendlyNames.GetFriendlyBuildingName(actor.Info.Name);
+			else
+				return FriendlyNames.GetFriendlyUnitName(actor.Info.Name);
 		}
 
 		public void Dispose()

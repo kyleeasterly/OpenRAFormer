@@ -192,7 +192,7 @@ namespace OpenRA.Mods.Common.Traits
 						var firstUnit = group.First();
 						var valued = firstUnit.Info.TraitInfoOrDefault<ValuedInfo>();
 						var cost = valued?.Cost ?? 0;
-						var friendlyName = GetFriendlyUnitName(group.Key);
+						var friendlyName = FriendlyNames.GetFriendlyUnitName(group.Key);
 						sb.AppendLine(CultureInfo.InvariantCulture, $"{friendlyName}: {group.Count()} units (${cost} each, ${cost * group.Count()} total)");
 					}
 
@@ -205,7 +205,7 @@ namespace OpenRA.Mods.Common.Traits
 						var firstBuilding = group.First();
 						var valued = firstBuilding.Info.TraitInfoOrDefault<ValuedInfo>();
 						var cost = valued?.Cost ?? 0;
-						var friendlyName = GetFriendlyBuildingName(group.Key);
+						var friendlyName = FriendlyNames.GetFriendlyBuildingName(group.Key);
 						sb.AppendLine(CultureInfo.InvariantCulture, $"{friendlyName}: {group.Count()} buildings (${cost} each, ${cost * group.Count()} total)");
 					}
 
@@ -222,7 +222,7 @@ namespace OpenRA.Mods.Common.Traits
 						{
 							var pos = building.CenterPosition;
 							var cell = world.Map.CellContaining(pos);
-							var friendlyName = GetFriendlyBuildingName(building.Info.Name);
+							var friendlyName = FriendlyNames.GetFriendlyBuildingName(building.Info.Name);
 							
 							if (!buildingPositions.ContainsKey(friendlyName))
 								buildingPositions[friendlyName] = new HashSet<(int, int)>();
@@ -277,8 +277,8 @@ namespace OpenRA.Mods.Common.Traits
 								var progress = firstItem.RemainingCost == 0 ? 100 :
 									(100 * (firstItem.TotalCost - firstItem.RemainingCost) / firstItem.TotalCost);
 								var friendlyName = world.Map.Rules.Actors[group.Key.Name].TraitInfoOrDefault<BuildingInfo>() != null
-									? GetFriendlyBuildingName(group.Key.Name)
-									: GetFriendlyUnitName(group.Key.Name);
+									? FriendlyNames.GetFriendlyBuildingName(group.Key.Name)
+									: FriendlyNames.GetFriendlyUnitName(group.Key.Name);
 								
 								var count = group.Count();
 								var countStr = count > 1 ? $" x{count}" : "";
@@ -342,11 +342,11 @@ namespace OpenRA.Mods.Common.Traits
 							var enemyPlayerName = playerGroup.Key.PlayerName.Replace("bot-", "").Replace(".name", "");
 							sb.AppendLine(CultureInfo.InvariantCulture, $"### {enemyPlayerName} ({enemyFactionName})");
 							
-							foreach (var building in playerGroup.OrderBy(b => GetFriendlyBuildingName(b.Info.Name)))
+							foreach (var building in playerGroup.OrderBy(b => FriendlyNames.GetFriendlyBuildingName(b.Info.Name)))
 							{
 								var pos = building.CenterPosition;
 								var cell = world.Map.CellContaining(pos);
-								var friendlyName = GetFriendlyBuildingName(building.Info.Name);
+								var friendlyName = FriendlyNames.GetFriendlyBuildingName(building.Info.Name);
 								sb.AppendLine(CultureInfo.InvariantCulture, $"{friendlyName} at ({cell.X}, {cell.Y})");
 							}
 						}
@@ -385,67 +385,6 @@ namespace OpenRA.Mods.Common.Traits
 			}
 		}
 
-		static string GetFriendlyBuildingName(string internalName)
-		{
-			return internalName.ToUpperInvariant() switch
-			{
-				"FACT" => "Construction Yard",
-				"NUKE" => "Power Plant",
-				"NUK2" => "Advanced Power Plant",
-				"PROC" => "Refinery",
-				"SILO" => "Tiberium Silo",
-				"PYLE" => "Barracks (GDI)",
-				"HAND" => "Hand of Nod (Barracks)",
-				"WEAP" => "War Factory",
-				"AFLD" => "Airfield",
-				"HPAD" => "Helipad",
-				"EYE" => "Advanced Communications Center",
-				"TMPL" => "Temple of Nod",
-				"GTWR" => "Guard Tower",
-				"ATWR" => "Advanced Guard Tower",
-				"OBLI" => "Obelisk of Light",
-				"GUN" => "Turret",
-				"SAM" => "SAM Site",
-				"HQ" => "Communications Center",
-				"FIX" => "Repair Bay",
-				"HBOX" => "Pillbox",
-				"V19" => "Oil Pump",
-				_ => internalName
-			};
-		}
-
-		static string GetFriendlyUnitName(string internalName)
-		{
-			return internalName.ToUpperInvariant() switch
-			{
-				"MCV" => "Mobile Construction Vehicle",
-				"HARV" => "Harvester",
-				"APC" => "Armored Personnel Carrier",
-				"ARTY" => "Artillery",
-				"FTNK" => "Flame Tank",
-				"BGGY" => "Nod Buggy",
-				"BIKE" => "Recon Bike",
-				"JEEP" => "Humvee",
-				"LTNK" => "Light Tank",
-				"MTNK" => "Medium Tank",
-				"HTNK" => "Mammoth Tank",
-				"MSAM" => "Rocket Launcher",
-				"MLRS" => "Mobile Rocket Launch System",
-				"STNK" => "Stealth Tank",
-				"TRAN" => "Chinook Transport",
-				"HELI" => "Apache Attack Helicopter",
-				"ORCA" => "Orca VTOL",
-				"E1" => "Minigunner",
-				"E2" => "Grenadier",
-				"E3" => "Rocket Soldier",
-				"E4" => "Flamethrower Infantry",
-				"E5" => "Chemical Warrior",
-				"E6" => "Engineer",
-				"RMBO" => "Commando",
-				"A10" => "A10 Warthog",
-				_ => internalName
-			};
-		}
 
 		static string GetFriendlyOptionDescription(string optionId, OpenRA.Network.Session.LobbyOptionState optionState)
 		{
