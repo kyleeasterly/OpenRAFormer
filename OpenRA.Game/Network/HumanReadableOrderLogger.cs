@@ -10,18 +10,28 @@
 #endregion
 
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 namespace OpenRA.Network
 {
 	public sealed class HumanReadableOrderLogger : IDisposable
 	{
 		const long MaxFileSizeBytes = 3 * 1024 * 1024; // 3MB
 		const string LogDirectory = @"C:\OpenRATest_Orders";
+		const string GameStateDirectory = @"C:\OpenRATest";
 
 		StreamWriter writer;
 		bool isDisposed;
 		bool fileSizeLimitReached;
+
+		// For tracking orders between gamestate snapshots
+		readonly List<string> ordersBuffer = [];
+		string currentGameStateFile;
+		int lastGameStateTick = 0;
 
 		public HumanReadableOrderLogger()
 		{
@@ -48,7 +58,7 @@ namespace OpenRA.Network
 
 		public void LogOrder(int frame, int clientId, Order order, World world)
 		{
-			if (writer == null || isDisposed || fileSizeLimitReached)
+			if (isDisposed)
 				return;
 
 			// Skip pregame activities - only log orders with frame > 0
@@ -60,27 +70,38 @@ namespace OpenRA.Network
 				return;
 
 			try
-			{
-				// Check file size limit
-				if (writer.BaseStream.Length > MaxFileSizeBytes)
 				{
-					writer.WriteLine($"[{FormatGameTime(frame)}] --- File size limit reached (3MB), stopping order logging ---");
-					writer.Flush();
-					fileSizeLimitReached = true;
-					return;
+					// Check if a new gamestate file was created and append orders to the previous one
+					CheckAndAppendOrdersToGameState(frame);
+
+					var gameTime = FormatGameTime(frame);
+					var playerName = GetPlayerName(order, world, clientId);
+					var orderDetails = FormatOrderDetails(order);
+					var orderLine = $"[{gameTime}] {playerName}: {order.OrderString} {orderDetails}";
+
+					// Add to buffer for gamestate file appending
+					ordersBuffer.Add(orderLine);
+
+					// Also write to regular orders file if available
+					if (writer != null && !fileSizeLimitReached)
+					{
+						// Check file size limit
+						if (writer.BaseStream.Length > MaxFileSizeBytes)
+						{
+							writer.WriteLine($"[{gameTime}] --- File size limit reached (3MB), stopping order logging ---");
+							writer.Flush();
+							fileSizeLimitReached = true;
+							return;
+						}
+
+						writer.WriteLine(orderLine);
+						writer.Flush();
+					}
 				}
-
-				var gameTime = FormatGameTime(frame);
-				var playerName = GetPlayerName(order, world, clientId);
-				var orderDetails = FormatOrderDetails(order);
-
-				writer.WriteLine($"[{gameTime}] {playerName}: {order.OrderString} {orderDetails}");
-				writer.Flush();
-			}
-			catch (Exception ex)
-			{
-				Log.Write("debug", $"Failed to log order: {ex}");
-			}
+				catch (Exception ex)
+				{
+					Log.Write("debug", $"Failed to log order: {ex}");
+				}
 		}
 
 		bool IsPreGameOrder(Order order)
@@ -224,6 +245,84 @@ namespace OpenRA.Network
 			return details.Length > 0 ? $"({details})" : "";
 		}
 
+		void CheckAndAppendOrdersToGameState(int currentFrame)
+		{
+			try
+			{
+				if (!Directory.Exists(GameStateDirectory))
+					return;
+
+				// Find the most recent gamestate file
+				var gameStateFiles = Directory.GetFiles(GameStateDirectory, "gamestate_*.txt")
+					.OrderByDescending(File.GetCreationTime)
+					.ToList();
+
+				if (gameStateFiles.Count == 0)
+					return;
+
+				var newestGameStateFile = gameStateFiles.First();
+
+				// Check if this is a new gamestate file since last check
+				if (newestGameStateFile != currentGameStateFile)
+				{
+					// If we have a previous gamestate file and accumulated orders, append them
+					if (currentGameStateFile != null && ordersBuffer.Count > 0)
+					{
+						AppendOrdersToGameStateFile(currentGameStateFile, ordersBuffer);
+						ordersBuffer.Clear();
+					}
+
+					// Update to the new gamestate file
+					currentGameStateFile = newestGameStateFile;
+					
+					// Extract tick from filename to track progress
+					var filename = Path.GetFileName(newestGameStateFile);
+					var tickMatch = Regex.Match(filename, @"tick(\d+)");
+					if (tickMatch.Success && int.TryParse(tickMatch.Groups[1].Value, out var tick))
+					{
+						lastGameStateTick = tick;
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				Log.Write("debug", $"Failed to check gamestate files: {ex}");
+			}
+		}
+
+		void AppendOrdersToGameStateFile(string gameStateFilePath, List<string> orders)
+		{
+			try
+			{
+				if (orders.Count == 0)
+					return;
+
+				// Read existing content
+				var existingContent = File.ReadAllText(gameStateFilePath);
+				
+				// Append orders section
+				var sb = new StringBuilder();
+				sb.AppendLine();
+				sb.AppendLine("## Orders Since Last Game State");
+				sb.AppendLine($"*{orders.Count} orders recorded between game state snapshots*");
+				sb.AppendLine();
+				foreach (var order in orders)
+				{
+					sb.AppendLine(order);
+				}
+				sb.AppendLine();
+				sb.AppendLine("---");
+				sb.AppendLine("*End of orders section*");
+
+				// Write back to file
+				File.WriteAllText(gameStateFilePath, existingContent + sb.ToString());
+			}
+			catch (Exception ex)
+			{
+				Log.Write("debug", $"Failed to append orders to gamestate file: {ex}");
+			}
+		}
+
 		string GetFriendlyActorName(Actor actor)
 		{
 			if (actor == null || actor.Disposed)
@@ -253,6 +352,13 @@ namespace OpenRA.Network
 
 			try
 			{
+				// Append any remaining orders to the current gamestate file
+				if (currentGameStateFile != null && ordersBuffer.Count > 0)
+				{
+					AppendOrdersToGameStateFile(currentGameStateFile, ordersBuffer);
+					ordersBuffer.Clear();
+				}
+
 				if (writer != null)
 				{
 					writer.WriteLine($"----------------------------------------");
