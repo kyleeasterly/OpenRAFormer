@@ -339,8 +339,7 @@ namespace OpenRA.Mods.Common.Traits
 							else if (enemyFactionName.Equals("gdi", StringComparison.OrdinalIgnoreCase))
 								enemyFactionName = "GDI";
 							
-							var enemyPlayerName = playerGroup.Key.PlayerName.Replace("bot-", "").Replace(".name", "");
-							sb.AppendLine(CultureInfo.InvariantCulture, $"### {enemyPlayerName} ({enemyFactionName})");
+							sb.AppendLine(CultureInfo.InvariantCulture, $"### {playerGroup.Key.ResolvedPlayerName} ({enemyFactionName})");
 							
 							foreach (var building in playerGroup.OrderBy(b => FriendlyNames.GetFriendlyBuildingName(b.Info.Name)))
 							{
