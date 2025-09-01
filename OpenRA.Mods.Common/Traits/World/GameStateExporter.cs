@@ -376,6 +376,20 @@ namespace OpenRA.Mods.Common.Traits
 					sb.AppendLine(CultureInfo.InvariantCulture, $"Total Resource Cells: {totalResourceCells}");
 				}
 
+				// Include orders since last snapshot
+				var recentOrders = Network.HumanReadableOrderLogger.GetAndClearOrderBuffer();
+				if (recentOrders.Count > 0)
+				{
+					sb.AppendLine();
+					sb.AppendLine("## Orders Since Last Snapshot");
+					sb.AppendLine(CultureInfo.InvariantCulture, $"*{recentOrders.Count} orders recorded*");
+					sb.AppendLine();
+					foreach (var order in recentOrders)
+					{
+						sb.AppendLine(order);
+					}
+				}
+
 				// Write to file
 				File.WriteAllText(filename, sb.ToString());
 			}
