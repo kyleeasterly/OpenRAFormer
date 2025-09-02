@@ -299,8 +299,13 @@ namespace OpenRA.Mods.Common.Traits
 					var harvesters = world.ActorsWithTrait<Harvester>()
 						.Where(tp => tp.Actor.Owner == player && !tp.Actor.IsDead)
 						.Select(tp => tp.Actor).ToList();
+					// Only count mobile MCVs, not deployed Construction Yards
+					// MCVs have BaseBuildingInfo but not BuildingInfo
+					// Construction Yards have both BaseBuildingInfo and BuildingInfo
 					var mcvs = world.Actors
-						.Where(a => a.Owner == player && !a.IsDead && a.Info.HasTraitInfo<BaseBuildingInfo>())
+						.Where(a => a.Owner == player && !a.IsDead && 
+							a.Info.HasTraitInfo<BaseBuildingInfo>() && 
+							!a.Info.HasTraitInfo<BuildingInfo>())
 						.ToList();
 
 					sb.AppendLine();
