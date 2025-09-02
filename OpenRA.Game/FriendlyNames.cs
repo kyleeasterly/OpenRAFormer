@@ -21,7 +21,8 @@ namespace OpenRA
 		{
 			"fact", "nuke", "nuk2", "proc", "silo", "pyle", "hand",
 			"weap", "afld", "hpad", "eye", "tmpl", "gtwr", "atwr",
-			"obli", "gun", "sam", "hq", "fix", "hbox", "v19"
+			"obli", "gun", "sam", "hq", "fix", "hbox", "v19",
+			"sbag", "cycl", "brik", "bio", "hosp", "miss", "arco"
 		};
 
 		// Dictionary for O(1) friendly name lookups
@@ -48,7 +49,14 @@ namespace OpenRA
 			["hq"] = "Communications Center",
 			["fix"] = "Repair Bay",
 			["hbox"] = "Pillbox",
-			["v19"] = "Oil Pump"
+			["v19"] = "Oil Pump",
+			["sbag"] = "Sandbag Wall",
+			["cycl"] = "Chain Link Fence",
+			["brik"] = "Concrete Wall",
+			["bio"] = "Biological Research Facility",
+			["hosp"] = "Hospital",
+			["miss"] = "Technology Center",
+			["arco"] = "Oil Pump"
 		};
 
 		static readonly Dictionary<string, string> UnitNameMap = new()
@@ -77,7 +85,12 @@ namespace OpenRA
 			["e5"] = "Chemical Warrior",
 			["e6"] = "Engineer",
 			["rmbo"] = "Commando",
-			["a10"] = "A10 Warthog"
+			["a10"] = "A10 Warthog",
+			["c17"] = "Supply Aircraft",
+			["truck"] = "Supply Truck",
+			["mhq"] = "Mobile HQ",
+			["boat"] = "Gunboat",
+			["lst"] = "Landing Craft"
 		};
 
 		public static string GetFriendlyBuildingName(string internalName)

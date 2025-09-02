@@ -169,16 +169,18 @@ namespace OpenRA.Network
 					{
 						var targetPos = order.Target.Actor.CenterPosition;
 						var targetName = GetFriendlyActorName(order.Target.Actor);
-						if(String.IsNullOrWhiteSpace(targetName))
+						if (!String.IsNullOrWhiteSpace(targetName))
 							details.Append($"Target:{targetName}@{targetPos}");
-						else details.Append($"Target:{order.Target.Actor.Info.Name}@{targetPos}");
+						else
+							details.Append($"Target:{order.Target.Actor.Info.Name}@{targetPos}");
 					}
 					catch
 					{
 						var targetName = GetFriendlyActorName(order.Target.Actor);
-						if (String.IsNullOrWhiteSpace(targetName))
+						if (!String.IsNullOrWhiteSpace(targetName))
 							details.Append($"Target:{targetName}@Unknown");
-						else details.Append($"Target:{order.Target.Actor.Info.Name}@Unknown");
+						else
+							details.Append($"Target:{order.Target.Actor.Info.Name}@Unknown");
 					}
 				}
 				else if (order.Target.Type == Traits.TargetType.Terrain)
@@ -206,9 +208,10 @@ namespace OpenRA.Network
 			{
 				if (details.Length > 0) details.Append(" ");
 				var targetName = FindFriendlyName(order.TargetString);
-				if (String.IsNullOrWhiteSpace(targetName))
+				if (!String.IsNullOrWhiteSpace(targetName))
+					details.Append($"TargetString:{targetName}");
+				else
 					details.Append($"TargetString:{order.TargetString}");
-				else details.Append($"TargetString:{targetName}");
 			}
 
 			if (order.ExtraData != 0)
