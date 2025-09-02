@@ -311,6 +311,52 @@ namespace OpenRA.Mods.Common.Traits
 					sb.AppendLine();
 				}
 
+				// Control groups for Player 1
+				if (player1 != null)
+				{
+					var controlGroups = world.ControlGroups;
+					if (controlGroups != null)
+					{
+						sb.AppendLine();
+						sb.AppendLine("## Player 1 Control Groups");
+						
+						var hasGroups = false;
+						for (var groupIndex = 0; groupIndex < controlGroups.Groups.Length; groupIndex++)
+						{
+							var actors = controlGroups.GetActorsInControlGroup(groupIndex)
+								.Where(a => a.Owner == player1)
+								.ToList();
+							
+							if (actors.Count > 0)
+							{
+								hasGroups = true;
+								var composition = actors.GroupBy(a => a.Info.Name)
+									.Select(g => 
+									{
+										var friendlyName = g.First().Info.HasTraitInfo<BuildingInfo>() 
+											? FriendlyNames.GetFriendlyBuildingName(g.Key)
+											: FriendlyNames.GetFriendlyUnitName(g.Key);
+										return g.Count() > 1 ? $"{g.Count()} {friendlyName}s" : friendlyName;
+									})
+									.ToList();
+								
+								// Calculate center position
+								var centerX = actors.Average(a => a.CenterPosition.X);
+								var centerY = actors.Average(a => a.CenterPosition.Y);
+								var mapCell = world.Map.CellContaining(new WPos((int)centerX, (int)centerY, 0));
+								
+								sb.AppendLine(CultureInfo.InvariantCulture, $"**Control Group {groupIndex + 1}:** {string.Join(", ", composition)}");
+								sb.AppendLine(CultureInfo.InvariantCulture, $"  Position: Center at ({mapCell.X}, {mapCell.Y})");
+							}
+						}
+						
+						if (!hasGroups)
+						{
+							sb.AppendLine("*No control groups currently assigned*");
+						}
+					}
+				}
+
 				// Visible enemy structures
 				if (player1 != null)
 				{
@@ -381,9 +427,12 @@ namespace OpenRA.Mods.Common.Traits
 				{
 					sb.AppendLine();
 					sb.AppendLine("## Orders Since Last Snapshot");
-					sb.AppendLine(CultureInfo.InvariantCulture, $"*{recentOrders.Count} orders recorded*");
+					
+					var consolidatedOrders = ConsolidateOrders(recentOrders);
+					sb.AppendLine(CultureInfo.InvariantCulture, $"*{recentOrders.Count} orders consolidated to {consolidatedOrders.Count} entries*");
 					sb.AppendLine();
-					foreach (var order in recentOrders)
+					
+					foreach (var order in consolidatedOrders)
 					{
 						sb.AppendLine(order);
 					}
@@ -486,6 +535,218 @@ namespace OpenRA.Mods.Common.Traits
 				5 => "Slowest",
 				_ => $"Custom ({netFrameInterval})"
 			};
+		}
+
+		class OrderInfo
+		{
+			public string Timestamp { get; set; }
+			public string Player { get; set; }
+			public string OrderType { get; set; }
+			public string UnitType { get; set; }
+			public string UnitPosition { get; set; }
+			public string Target { get; set; }
+			public string FullLine { get; set; }
+			public int ExtraActors { get; set; }
+		}
+
+		List<string> ConsolidateOrders(List<string> orders)
+		{
+			var result = new List<string>();
+			var i = 0;
+			
+			while (i < orders.Count)
+			{
+				var current = orders[i];
+				
+				// Check if this is a CreateGroup order
+				if (current.Contains("CreateGroup") && current.Contains("ExtraActors:"))
+				{
+					var createGroupInfo = ParseOrderLine(current);
+					if (createGroupInfo != null && createGroupInfo.ExtraActors > 1)
+					{
+						// Look ahead for matching orders
+						var groupedOrders = new List<OrderInfo>();
+						var j = i + 1;
+						
+						// Collect all orders with same timestamp and player
+						while (j < orders.Count && groupedOrders.Count < createGroupInfo.ExtraActors)
+						{
+							var next = orders[j];
+							if (next.Contains("CreateGroup"))
+								break; // Hit another CreateGroup, stop here
+							
+							var nextInfo = ParseOrderLine(next);
+							if (nextInfo != null && 
+								nextInfo.Timestamp == createGroupInfo.Timestamp && 
+								nextInfo.Player == createGroupInfo.Player)
+							{
+								groupedOrders.Add(nextInfo);
+								j++;
+							}
+							else
+							{
+								break;
+							}
+						}
+						
+						// If we found a complete group of orders, consolidate them
+						if (groupedOrders.Count == createGroupInfo.ExtraActors && groupedOrders.Count > 1)
+						{
+							var consolidated = ConsolidateGroupOrders(createGroupInfo, groupedOrders);
+							if (consolidated != null)
+							{
+								result.Add(consolidated);
+								i = j; // Skip past all the orders we just consolidated
+								continue;
+							}
+						}
+					}
+					
+					// If we couldn't consolidate, skip the CreateGroup order
+					i++;
+					continue;
+				}
+				
+				// If not a CreateGroup order or not consolidated, add as-is
+				result.Add(current);
+				i++;
+			}
+			
+			return result;
+		}
+
+		OrderInfo ParseOrderLine(string orderLine)
+		{
+			try
+			{
+				// Parse "[13:22] Player1: Attack (From:Mammoth Tank@61009,48559,0)"
+				// or "[13:22] Player1: CreateGroup (ExtraActors:14)"
+				var info = new OrderInfo { FullLine = orderLine };
+				
+				// Extract timestamp [HH:MM]
+				var timestampEnd = orderLine.IndexOf(']');
+				if (timestampEnd > 0)
+				{
+					info.Timestamp = orderLine.Substring(1, timestampEnd - 1);
+				}
+				
+				// Extract player name
+				var playerStart = timestampEnd + 2;
+				var colonIndex = orderLine.IndexOf(':', playerStart);
+				if (colonIndex > playerStart)
+				{
+					info.Player = orderLine.Substring(playerStart, colonIndex - playerStart);
+				}
+				
+				// Extract order type
+				var orderStart = colonIndex + 2;
+				var parenIndex = orderLine.IndexOf('(', orderStart);
+				if (parenIndex > orderStart)
+				{
+					info.OrderType = orderLine.Substring(orderStart, parenIndex - orderStart - 1);
+				}
+				else
+				{
+					info.OrderType = orderLine.Substring(orderStart).Trim();
+				}
+				
+				// Extract details within parentheses
+				if (parenIndex >= 0)
+				{
+					var closeParenIndex = orderLine.LastIndexOf(')');
+					if (closeParenIndex > parenIndex)
+					{
+						var details = orderLine.Substring(parenIndex + 1, closeParenIndex - parenIndex - 1);
+						
+						// Parse ExtraActors for CreateGroup
+						if (details.Contains("ExtraActors:"))
+						{
+							var extraActorsStart = details.IndexOf("ExtraActors:") + 12;
+							var nextSpace = details.IndexOf(' ', extraActorsStart);
+							var extraActorsStr = nextSpace > 0 
+								? details.Substring(extraActorsStart, nextSpace - extraActorsStart)
+								: details.Substring(extraActorsStart);
+							if (int.TryParse(extraActorsStr, out var extraActors))
+								info.ExtraActors = extraActors;
+						}
+						
+						// Parse From: unit type and position
+						if (details.Contains("From:"))
+						{
+							var fromStart = details.IndexOf("From:") + 5;
+							var atIndex = details.IndexOf('@', fromStart);
+							if (atIndex > fromStart)
+							{
+								info.UnitType = details.Substring(fromStart, atIndex - fromStart);
+								var nextSpace = details.IndexOf(' ', atIndex);
+								if (nextSpace > 0)
+									info.UnitPosition = details.Substring(atIndex + 1, nextSpace - atIndex - 1);
+								else
+									info.UnitPosition = details.Substring(atIndex + 1);
+							}
+						}
+						
+						// Parse Target:
+						if (details.Contains("Target:"))
+						{
+							var targetStart = details.IndexOf("Target:") + 7;
+							var nextSpace = details.IndexOf(" From:", targetStart);
+							if (nextSpace > 0)
+								info.Target = details.Substring(targetStart, nextSpace - targetStart);
+							else
+								info.Target = details.Substring(targetStart);
+						}
+					}
+				}
+				
+				return info;
+			}
+			catch
+			{
+				return null;
+			}
+		}
+
+		string ConsolidateGroupOrders(OrderInfo createGroup, List<OrderInfo> orders)
+		{
+			if (orders.Count == 0)
+				return null;
+			
+			// Check if all orders are the same type
+			var orderType = orders[0].OrderType;
+			if (!orders.All(o => o.OrderType == orderType))
+				return null; // Mixed order types, don't consolidate
+			
+			// Group units by type
+			var unitGroups = orders
+				.Where(o => !string.IsNullOrEmpty(o.UnitType))
+				.GroupBy(o => o.UnitType)
+				.Select(g => g.Count() > 1 ? $"{g.Count()} {g.Key}s" : g.Key)
+				.ToList();
+			
+			if (unitGroups.Count == 0)
+				return null;
+			
+			// Check if all have the same target
+			var targets = orders.Where(o => !string.IsNullOrEmpty(o.Target)).Select(o => o.Target).Distinct().ToList();
+			string targetStr;
+			
+			if (targets.Count == 0)
+			{
+				targetStr = "";
+			}
+			else if (targets.Count == 1)
+			{
+				targetStr = $" → {targets[0]}";
+			}
+			else
+			{
+				// Multiple targets, show count
+				targetStr = $" → Multiple targets ({targets.Count} different)";
+			}
+			
+			// Format consolidated output
+			return $"[{createGroup.Timestamp}] {createGroup.Player}: Control Group {orderType} ({string.Join(", ", unitGroups)}){targetStr}";
 		}
 	}
 }
