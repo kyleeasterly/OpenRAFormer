@@ -76,10 +76,10 @@
             <!-- Controls -->
             <MudGrid>
                 <MudItem xs="12" sm="4">
-                    <MudSwitch @bind-Value="@verboseMode" Label="Verbose Mode" Color="Color.Primary" ValueChanged="@(() => OllamaService.VerboseMode = verboseMode)" />
+                    <MudSwitch Value="@verboseMode" Label="Verbose Mode" Color="Color.Primary" ValueChanged="@((bool val) => { verboseMode = val; OllamaService.VerboseMode = val; })" />
                 </MudItem>
                 <MudItem xs="12" sm="4">
-                    <MudSwitch @bind-Value="@writeOrdersToGame" Label="Send Orders to Game" Color="Color.Primary" ValueChanged="@(() => OllamaService.WriteOrdersToGame = writeOrdersToGame)" />
+                    <MudSwitch Value="@writeOrdersToGame" Label="Send Orders to Game" Color="Color.Primary" ValueChanged="@((bool val) => { writeOrdersToGame = val; OllamaService.WriteOrdersToGame = val; })" />
                 </MudItem>
                 <MudItem xs="12" sm="4">
                     <MudText Typo="Typo.subtitle2">Thinking Level:</MudText>
