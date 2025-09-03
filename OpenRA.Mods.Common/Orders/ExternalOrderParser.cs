@@ -11,56 +11,10 @@ namespace OpenRA.Mods.Common.Orders
 	public class ExternalOrderParser
 	{
 		readonly World world;
-		readonly Dictionary<string, string> unitTypeMap;
 
 		public ExternalOrderParser(World world)
 		{
 			this.world = world;
-			
-			// Initialize unit type mappings (internal name -> friendly name)
-			unitTypeMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-			{
-				// GDI Units
-				{ "e1", "Minigunner" },
-				{ "e2", "Grenadier" },
-				{ "e3", "RocketSoldier" },
-				{ "e6", "Engineer" },
-				{ "rmbo", "Commando" },
-				{ "jeep", "Humvee" },
-				{ "apc", "APC" },
-				{ "mtnk", "MediumTank" },
-				{ "htnk", "MammothTank" },
-				{ "msam", "RocketLauncher" },
-				{ "arty", "Artillery" },
-				{ "harv", "Harvester" },
-				{ "mcv", "MCV" },
-				
-				// Nod Units
-				{ "bggy", "Buggy" },
-				{ "bike", "ReconBike" },
-				{ "ltnk", "LightTank" },
-				{ "ftnk", "FlameTank" },
-				{ "stnk", "StealthTank" },
-				{ "ssm", "SSMLauncher" },
-				
-				// Buildings
-				{ "fact", "WarFactory" },
-				{ "pyle", "Barracks" },
-				{ "hand", "HandOfNod" },
-				{ "weap", "WeaponsFactory" },
-				{ "nuke", "PowerPlant" },
-				{ "nuk2", "AdvancedPowerPlant" },
-				{ "proc", "Refinery" },
-				{ "silo", "Silo" },
-				{ "hq", "CommunicationsCenter" },
-				{ "eye", "TempleOfNod" },
-				{ "tmpl", "Temple" },
-				{ "gtwr", "GuardTower" },
-				{ "atwr", "AdvancedGuardTower" },
-				{ "gun", "Turret" },
-				{ "sam", "SAMSite" },
-				{ "obli", "Obelisk" },
-			};
 		}
 
 		public Order[] ParseOrder(string orderText)
@@ -340,7 +294,8 @@ namespace OpenRA.Mods.Common.Orders
 			}
 
 			// Map friendly item name to internal name
-			var internalItemName = GetInternalUnitName(itemStr);
+			var internalItemName = FriendlyNames.GetInternalActorName(itemStr);
+			Log.Write("debug", $"[ExternalOrderParser] Mapped '{itemStr}' to internal name '{internalItemName}'");
 
 			// Check if this should be queued (default true for production)
 			var queued = !parameters.ContainsKey("Queued") || 
@@ -373,7 +328,7 @@ namespace OpenRA.Mods.Common.Orders
 				return null;
 			}
 
-			var internalItemName = GetInternalUnitName(itemStr);
+			var internalItemName = FriendlyNames.GetInternalActorName(itemStr);
 			return new[] { Order.CancelProduction(building, internalItemName, count) };
 		}
 
@@ -534,7 +489,7 @@ namespace OpenRA.Mods.Common.Orders
 
 		Actor[] GetUnitsByType(string unitType, Player player)
 		{
-			var internalName = GetInternalUnitName(unitType);
+			var internalName = FriendlyNames.GetInternalActorName(unitType);
 			
 			return world.Actors
 				.Where(a => a.Owner == player && 
@@ -565,7 +520,7 @@ namespace OpenRA.Mods.Common.Orders
 			if (!buildingSpec.Equals("any", StringComparison.OrdinalIgnoreCase))
 			{
 				// Specific building type requested
-				var internalBuildingName = GetInternalUnitName(buildingSpec);
+				var internalBuildingName = FriendlyNames.GetInternalActorName(buildingSpec);
 				buildings = buildings.Where(b => 
 					string.Equals(b.Info.Name, internalBuildingName, StringComparison.OrdinalIgnoreCase));
 			}
@@ -576,9 +531,13 @@ namespace OpenRA.Mods.Common.Orders
 				var queues = building.TraitsImplementing<ProductionQueue>();
 				foreach (var queue in queues)
 				{
-					var actorInfo = world.Map.Rules.Actors.TryGetValue(GetInternalUnitName(itemToProduce), out var info) ? info : null;
+					var internalName = FriendlyNames.GetInternalActorName(itemToProduce);
+					var actorInfo = world.Map.Rules.Actors.TryGetValue(internalName, out var info) ? info : null;
 					if (actorInfo != null && queue.CanBuild(actorInfo))
+					{
+						Log.Write("debug", $"[ExternalOrderParser] Found building {building.Info.Name} that can produce {internalName}");
 						return building;
+					}
 				}
 			}
 
@@ -586,9 +545,13 @@ namespace OpenRA.Mods.Common.Orders
 			var playerQueues = player.PlayerActor.TraitsImplementing<ProductionQueue>();
 			foreach (var queue in playerQueues)
 			{
-				var actorInfo = world.Map.Rules.Actors.TryGetValue(GetInternalUnitName(itemToProduce), out var info) ? info : null;
+				var internalName = FriendlyNames.GetInternalActorName(itemToProduce);
+				var actorInfo = world.Map.Rules.Actors.TryGetValue(internalName, out var info) ? info : null;
 				if (actorInfo != null && queue.CanBuild(actorInfo))
+				{
+					Log.Write("debug", $"[ExternalOrderParser] Found player queue that can produce {internalName}");
 					return player.PlayerActor;
+				}
 			}
 
 			return null;
@@ -596,7 +559,7 @@ namespace OpenRA.Mods.Common.Orders
 
 		Actor FindProductionBuildingWithItem(string item, Player player)
 		{
-			var internalName = GetInternalUnitName(item);
+			var internalName = FriendlyNames.GetInternalActorName(item);
 			
 			// Check all buildings
 			var buildings = world.Actors
@@ -625,7 +588,7 @@ namespace OpenRA.Mods.Common.Orders
 
 		Actor FindNearestActor(string actorType, CPos position, Player player)
 		{
-			var internalName = GetInternalUnitName(actorType);
+			var internalName = FriendlyNames.GetInternalActorName(actorType);
 			var worldPos = world.Map.CenterOfCell(position);
 
 			var candidates = world.Actors
@@ -651,7 +614,7 @@ namespace OpenRA.Mods.Common.Orders
 
 		Actor FindActorByName(string name, Player player)
 		{
-			var internalName = GetInternalUnitName(name);
+			var internalName = FriendlyNames.GetInternalActorName(name);
 			
 			return world.Actors
 				.FirstOrDefault(a => a.Owner == player && 
@@ -659,21 +622,5 @@ namespace OpenRA.Mods.Common.Orders
 								   string.Equals(a.Info.Name, internalName, StringComparison.OrdinalIgnoreCase));
 		}
 
-		string GetInternalUnitName(string friendlyName)
-		{
-			// Check if it's already an internal name
-			if (unitTypeMap.ContainsKey(friendlyName))
-				return friendlyName;
-
-			// Check if it's a friendly name that maps to an internal name
-			var mapping = unitTypeMap.FirstOrDefault(kvp => 
-				string.Equals(kvp.Value, friendlyName, StringComparison.OrdinalIgnoreCase));
-			
-			if (mapping.Key != null)
-				return mapping.Key;
-
-			// Return as-is and hope it's valid
-			return friendlyName.ToLowerInvariant();
-		}
 	}
 }

@@ -9,7 +9,9 @@
  */
 #endregion
 
+using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace OpenRA
 {
@@ -93,6 +95,14 @@ namespace OpenRA
 			["lst"] = "Landing Craft"
 		};
 
+		// Reverse mappings for converting friendly names to internal names
+		// Built lazily on first access for performance
+		static readonly Lazy<Dictionary<string, string>> ReverseBuildingMap = new Lazy<Dictionary<string, string>>(() =>
+			BuildingNameMap.ToDictionary(kvp => kvp.Value, kvp => kvp.Key, StringComparer.OrdinalIgnoreCase));
+
+		static readonly Lazy<Dictionary<string, string>> ReverseUnitMap = new Lazy<Dictionary<string, string>>(() =>
+			UnitNameMap.ToDictionary(kvp => kvp.Value, kvp => kvp.Key, StringComparer.OrdinalIgnoreCase));
+
 		public static string GetFriendlyBuildingName(string internalName)
 		{
 			// No need for ToUpperInvariant since names are already lowercase
@@ -111,6 +121,108 @@ namespace OpenRA
 				return friendlyName;
 			
 			return internalName;
+		}
+
+		// Convert friendly name or internal name to the proper internal name for use in orders
+		public static string GetInternalActorName(string input)
+		{
+			// Handle null/empty
+			if (string.IsNullOrWhiteSpace(input))
+				return input;
+
+			// First check if it's already a known internal name (case-insensitive)
+			var lowerInput = input.ToLowerInvariant();
+			
+			// Check buildings
+			if (BuildingNameMap.ContainsKey(lowerInput))
+				return lowerInput.ToUpperInvariant(); // C&C uses uppercase internal names
+			
+			// Check units
+			if (UnitNameMap.ContainsKey(lowerInput))
+				return lowerInput.ToUpperInvariant(); // C&C uses uppercase internal names
+
+			// Now check if it's a friendly name that needs conversion
+			// Check building friendly names
+			if (ReverseBuildingMap.Value.TryGetValue(input, out var internalBuilding))
+				return internalBuilding.ToUpperInvariant(); // C&C uses uppercase
+			
+			// Check unit friendly names
+			if (ReverseUnitMap.Value.TryGetValue(input, out var internalUnit))
+				return internalUnit.ToUpperInvariant(); // C&C uses uppercase
+
+			// Additional common variations and shortcuts
+			var shortcuts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+			{
+				// Common abbreviations and variations
+				["PowerPlant"] = "NUKE",
+				["Power Plant"] = "NUKE",
+				["PP"] = "NUKE",
+				["AdvPowerPlant"] = "NUK2",
+				["Advanced Power Plant"] = "NUK2",
+				["APP"] = "NUK2",
+				["Refinery"] = "PROC",
+				["Ref"] = "PROC",
+				["Tiberium Refinery"] = "PROC",
+				["Barracks"] = "PYLE",
+				["Bar"] = "PYLE",
+				["GDI Barracks"] = "PYLE",
+				["Hand of Nod"] = "HAND",
+				["Hand"] = "HAND",
+				["Nod Barracks"] = "HAND",
+				["War Factory"] = "WEAP",
+				["Weapons Factory"] = "WEAP",
+				["WF"] = "WEAP",
+				["Factory"] = "WEAP",
+				["Construction Yard"] = "FACT",
+				["CY"] = "FACT",
+				["ConYard"] = "FACT",
+				["Silo"] = "SILO",
+				["Storage"] = "SILO",
+				
+				// Units
+				["MCV"] = "MCV",
+				["Mobile Construction Vehicle"] = "MCV",
+				["Harvester"] = "HARV",
+				["Harv"] = "HARV",
+				["Minigunner"] = "E1",
+				["Rifle"] = "E1",
+				["Grenadier"] = "E2",
+				["Rocket Soldier"] = "E3",
+				["Rocket"] = "E3",
+				["Bazooka"] = "E3",
+				["Engineer"] = "E6",
+				["Engi"] = "E6",
+				["Eng"] = "E6",
+				["Commando"] = "RMBO",
+				["Humvee"] = "JEEP",
+				["Hummer"] = "JEEP",
+				["APC"] = "APC",
+				["Medium Tank"] = "MTNK",
+				["Med Tank"] = "MTNK",
+				["Light Tank"] = "LTNK",
+				["Mammoth Tank"] = "HTNK",
+				["Mammoth"] = "HTNK",
+				["Heavy Tank"] = "HTNK",
+				["Artillery"] = "ARTY",
+				["Arty"] = "ARTY",
+				["Rocket Launcher"] = "MSAM",
+				["MLRS"] = "MSAM",
+				["Buggy"] = "BGGY",
+				["Recon Bike"] = "BIKE",
+				["Bike"] = "BIKE",
+				["Flame Tank"] = "FTNK",
+				["Flamer"] = "FTNK",
+				["Stealth Tank"] = "STNK",
+				["Stealth"] = "STNK",
+				["SSM Launcher"] = "SSM",
+				["SSM"] = "SSM"
+			};
+
+			if (shortcuts.TryGetValue(input, out var shortcutResult))
+				return shortcutResult;
+
+			// If nothing matched, return the input uppercased (C&C convention)
+			return input.ToUpperInvariant();
 		}
 	}
 }
