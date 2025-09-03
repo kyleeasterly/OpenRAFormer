@@ -2,6 +2,7 @@ using System.ClientModel;
 using System.Text;
 using OpenAI;
 using OpenAI.Chat;
+using OpenRA;
 
 namespace OpenRA.LLMHarness.Services
 {
@@ -9,6 +10,8 @@ namespace OpenRA.LLMHarness.Services
 	{
 		const string WatchDirectory = @"C:\OpenRATest";
 		const string LogDirectory = @"C:\OpenRATest\LLM_Coach_Logs";
+		const string OrderInputDirectory = @"C:\OpenRATest_Orders\input";
+		const string OrderArchiveDirectory = @"C:\OpenRATest_Orders\archive";
 		const string OllamaApiUrl = "http://localhost:11434/v1";
 		const string ModelName = "gpt-oss:20b";
 		const string ApiKey = "ollama"; // Dummy key for Ollama
@@ -18,6 +21,7 @@ namespace OpenRA.LLMHarness.Services
 
 		public bool VerboseMode { get; set; } = false;
 		public string ThinkingLevel { get; set; } = "medium";
+		public bool WriteOrdersToGame { get; set; } = false; // Start disabled for testing
 
 		string? currentLogFile;
 
@@ -67,6 +71,17 @@ namespace OpenRA.LLMHarness.Services
 				Directory.CreateDirectory(LogDirectory);
 			}
 
+			// Create order directories if they don't exist
+			if (!Directory.Exists(OrderInputDirectory))
+			{
+				Directory.CreateDirectory(OrderInputDirectory);
+			}
+
+			if (!Directory.Exists(OrderArchiveDirectory))
+			{
+				Directory.CreateDirectory(OrderArchiveDirectory);
+			}
+
 			// Initialize log file for this session
 			var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
 			currentLogFile = Path.Combine(LogDirectory, $"llm_coach_log_{timestamp}.txt");
@@ -75,6 +90,9 @@ namespace OpenRA.LLMHarness.Services
 			await LogToFileAsync($"=== OpenRA LLM Coach Session Started at {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
 			await LogToFileAsync($"Model: {ModelName}");
 			await LogToFileAsync($"Watch Directory: {WatchDirectory}");
+			await LogToFileAsync($"Order Input Directory: {OrderInputDirectory}");
+			await LogToFileAsync($"Order Archive Directory: {OrderArchiveDirectory}");
+			await LogToFileAsync($"Write Orders To Game: {WriteOrdersToGame}");
 			await LogToFileAsync($"Thinking Level: {ThinkingLevel}");
 			await LogToFileAsync($"Ollama API URL: {OllamaApiUrl}");
 			await LogToFileAsync("");
@@ -552,6 +570,22 @@ namespace OpenRA.LLMHarness.Services
 				var seconds = (DateTime.Now - startTime).TotalSeconds;
 				await LogToFileAsync($"Generation completed in {seconds:F2} seconds");
 
+				// Extract and process orders
+				var orders = ExtractOrders(fullResponse);
+				if (!string.IsNullOrEmpty(orders))
+				{
+					await LogToFileAsync("\n=== EXTRACTED ORDERS ===");
+					await LogToFileAsync(orders);
+					await LogToFileAsync("=== END OF EXTRACTED ORDERS ===\n");
+					
+					// Write order files
+					await WriteOrderFiles(orders);
+				}
+				else
+				{
+					await LogToFileAsync("[ORDERS] No orders found in LLM response");
+				}
+
 				// Notify completion
 				if (OnResponseComplete != null)
 				{
@@ -627,8 +661,27 @@ namespace OpenRA.LLMHarness.Services
 			sb.AppendLine();
 			sb.AppendLine("You are a helpful OpenRA Command & Conquer strategy game coach. Analyze the current game state and give advice to help the player win.");
 			sb.AppendLine("Consider the economy, military strength, map control, and immediate threats.");
-			sb.AppendLine("Give specific, actionable advice about what to do next.");
-			sb.AppendLine("Keep your response concise and focused on the most important next steps.");
+			sb.AppendLine();
+			sb.AppendLine("IMPORTANT: Your response must have two parts:");
+			sb.AppendLine("1. FIRST, provide strategic advice about what the player should do next.");
+			sb.AppendLine("2. THEN, provide specific build orders in a section marked with <orders> tags.");
+			sb.AppendLine();
+			sb.AppendLine("For the orders section:");
+			sb.AppendLine("- Currently, you should ONLY issue StartProduction orders for constructing buildings.");
+			sb.AppendLine("- ALWAYS use quotes for ALL building and unit names.");
+			sb.AppendLine("- Use Player1 for all orders.");
+			sb.AppendLine("- Only order buildings that can actually be built given current tech/prerequisites.");
+			sb.AppendLine();
+			sb.AppendLine("Order format:");
+			sb.AppendLine("Player1: StartProduction (Building:\"Construction Yard\" Item:\"Power Plant\" Count:1)");
+			sb.AppendLine();
+			sb.AppendLine("Example orders:");
+			sb.AppendLine("Player1: StartProduction (Building:\"Construction Yard\" Item:\"Power Plant\" Count:1)");
+			sb.AppendLine("Player1: StartProduction (Building:\"Construction Yard\" Item:\"Refinery\" Count:1)");
+			sb.AppendLine("Player1: StartProduction (Building:\"Construction Yard\" Item:\"Barracks\" Count:1)");
+			sb.AppendLine("Player1: StartProduction (Building:\"Barracks\" Item:\"Guard Tower\" Count:2)");
+			sb.AppendLine();
+			sb.AppendLine("Place your orders between <orders> and </orders> tags.");
 			sb.AppendLine();
 
 			sb.AppendLine("<game_knowledge>");
@@ -645,9 +698,79 @@ namespace OpenRA.LLMHarness.Services
 			sb.AppendLine(gameState);
 			sb.AppendLine("</game_state>");
 			sb.AppendLine();
-			sb.AppendLine("Based on the game knowledge above and current state, what should the player do next?\nIMPORTANT: You must only respond with a Markdown bullet list with simple instructions, no detailed narrative.");
+			sb.AppendLine("Based on the game knowledge above and current state:");
+			sb.AppendLine("1. First, provide strategic advice about what the player should do next.");
+			sb.AppendLine("2. Then, provide build orders for any buildings that should be constructed.");
+			sb.AppendLine();
+			sb.AppendLine("Remember to place your build orders between <orders> and </orders> tags.");
 
 			return sb.ToString();
+		}
+
+		private string? ExtractOrders(string llmResponse)
+		{
+			// Find content between <orders> and </orders> tags
+			var startTag = "<orders>";
+			var endTag = "</orders>";
+			
+			var startIndex = llmResponse.IndexOf(startTag, StringComparison.OrdinalIgnoreCase);
+			if (startIndex == -1)
+			{
+				Log.Write("debug", "[OllamaService] No <orders> tag found in LLM response");
+				return null;
+			}
+			
+			startIndex += startTag.Length;
+			var endIndex = llmResponse.IndexOf(endTag, startIndex, StringComparison.OrdinalIgnoreCase);
+			if (endIndex == -1)
+			{
+				Log.Write("debug", "[OllamaService] No closing </orders> tag found in LLM response");
+				return null;
+			}
+			
+			var orders = llmResponse.Substring(startIndex, endIndex - startIndex).Trim();
+			if (string.IsNullOrWhiteSpace(orders))
+			{
+				Log.Write("debug", "[OllamaService] Empty orders section in LLM response");
+				return null;
+			}
+			
+			return orders;
+		}
+
+		private async Task WriteOrderFiles(string orders)
+		{
+			try
+			{
+				var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+				var filename = $"order_{timestamp}.txt";
+				
+				// ALWAYS write to archive
+				var archivePath = Path.Combine(OrderArchiveDirectory, filename);
+				await File.WriteAllTextAsync(archivePath, orders);
+				await LogToFileAsync($"[ORDERS] Archived orders to: {archivePath}");
+				await NotifyStatusAsync($"Orders archived: {filename}");
+				
+				// Conditionally write to input (for game processing)
+				if (WriteOrdersToGame)
+				{
+					var inputPath = Path.Combine(OrderInputDirectory, filename);
+					await File.WriteAllTextAsync(inputPath, orders);
+					await LogToFileAsync($"[ORDERS] Wrote orders for game processing to: {inputPath}");
+					await NotifyStatusAsync($"Orders sent to game: {filename}");
+				}
+				else
+				{
+					await LogToFileAsync("[ORDERS] Orders NOT sent to game (WriteOrdersToGame=false)");
+					await NotifyStatusAsync("Orders archived only (not sent to game)");
+				}
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] Failed to write order files: {ex.Message}\n{ex.StackTrace}");
+				await LogToFileAsync($"[ERROR] Failed to write order files: {ex.Message}\n{ex.StackTrace}");
+				await NotifyStatusAsync($"Failed to write order files: {ex.Message}");
+			}
 		}
 
 		private async Task LogToFileAsync(string message)

@@ -12,6 +12,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\OpenRA.Game\OpenRA.Game.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="CnC_Strategy_Guide.txt">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
