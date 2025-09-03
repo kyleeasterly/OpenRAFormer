@@ -11,6 +11,11 @@ namespace OpenRA.Mods.Common.Traits
 	[Desc("Reads external orders from text files and injects them into the game.")]
 	public class ExternalOrderReaderInfo : TraitInfo
 	{
+		static ExternalOrderReaderInfo()
+		{
+			Log.Write("debug", "[ExternalOrderReader] Static constructor for ExternalOrderReaderInfo called!");
+			Console.WriteLine("[ExternalOrderReader] Static constructor for ExternalOrderReaderInfo called!");
+		}
 		[Desc("Directory path where order files will be read from.")]
 		public readonly string InputDirectory = @"C:\OpenRATest_Orders\input";
 
@@ -26,7 +31,12 @@ namespace OpenRA.Mods.Common.Traits
 		[Desc("Delete order files after processing.")]
 		public readonly bool DeleteAfterProcessing = true;
 
-		public override object Create(ActorInitializer init) { return new ExternalOrderReader(this); }
+		public override object Create(ActorInitializer init) 
+		{
+			Log.Write("debug", "[ExternalOrderReader] Creating trait instance...");
+			Console.WriteLine("[ExternalOrderReader] Creating trait instance...");
+			return new ExternalOrderReader(this); 
+		}
 	}
 
 	public class ExternalOrderReader : ITick, INotifyCreated
@@ -41,13 +51,18 @@ namespace OpenRA.Mods.Common.Traits
 		public ExternalOrderReader(ExternalOrderReaderInfo info)
 		{
 			this.info = info;
+			Log.Write("debug", $"[ExternalOrderReader] Constructor called. Enabled={info.Enabled}, Directory={info.InputDirectory}");
+			Console.WriteLine($"[ExternalOrderReader] Constructor called. Enabled={info.Enabled}, Directory={info.InputDirectory}");
 		}
 
 		void INotifyCreated.Created(Actor self)
 		{
+			Log.Write("debug", "[ExternalOrderReader] INotifyCreated.Created called");
+			Console.WriteLine("[ExternalOrderReader] INotifyCreated.Created called");
+			
 			if (!info.Enabled)
 			{
-				Log.Write("debug", "ExternalOrderReader is disabled in configuration");
+				Log.Write("debug", "[ExternalOrderReader] is disabled in configuration");
 				return;
 			}
 
