@@ -1,0 +1,16 @@
+# SIMPLE TEST ORDERS - PASTE INTO NOTEPAD
+# Save as .txt file in C:\OpenRATest_Orders\input\
+
+# Build essential structures
+Player1: StartProduction (Item:NUKE Count:1)
+Player1: StartProduction (Item:PROC Count:1)
+Player1: StartProduction (Item:PYLE Count:1)
+
+# Build some infantry
+Player1: StartProduction (Item:E1 Count:5)
+
+# Move units to position 30,25 (cell coordinates)
+Player1: Move (Units:E1 Target:30,25)
+
+# Attack position 40,30
+Player1: Attack (Units:E1 Target:40,30)

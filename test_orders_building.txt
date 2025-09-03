@@ -1,0 +1,33 @@
+# Test Orders for Building Base Structures
+# Copy this file to C:\OpenRATest_Orders\input\
+# These orders assume you're playing as GDI/Allies (adapt for Nod/Soviet)
+
+# === INITIAL BUILD ORDER ===
+
+# Build a Power Plant first (essential for power)
+Player1: StartProduction (Item:PowerPlant Count:1)
+
+# Build a Refinery (for economy)
+Player1: StartProduction (Item:Refinery Count:1)
+
+# Build a Barracks (for infantry)
+Player1: StartProduction (Item:Barracks Count:1)
+
+# Build a War Factory (for vehicles)
+Player1: StartProduction (Item:WarFactory Count:1)
+
+# === UNIT PRODUCTION ===
+
+# Start producing infantry (once Barracks is built)
+Player1: StartProduction (Item:Minigunner Count:3)
+Player1: StartProduction (Item:RocketSoldier Count:2)
+
+# Start producing vehicles (once War Factory is built)
+Player1: StartProduction (Item:Harvester Count:1)
+Player1: StartProduction (Item:MediumTank Count:2)
+
+# === DEFENSIVE STRUCTURES ===
+
+# Build defensive structures
+Player1: StartProduction (Item:GuardTower Count:2)
+Player1: StartProduction (Item:SAMSite Count:1)

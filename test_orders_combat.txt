@@ -1,0 +1,33 @@
+# Test Orders for Unit Movement and Combat
+# Copy this file to C:\OpenRATest_Orders\input\
+# Note: Uses CELL coordinates (e.g., 50,30 not 50000,30000)
+
+# === MOVEMENT ORDERS ===
+
+# Move units to specific map cells (cell coordinates)
+Player1: Move (Units:Minigunner Target:30,25)
+Player1: Move (Units:MediumTank Target:40,30)
+Player1: Move (Units:Harvester Target:25,35)
+
+# Queue movement (add Queued:true for shift-click behavior)
+Player1: Move (Units:Infantry Target:35,28 Queued:true)
+
+# === COMBAT ORDERS ===
+
+# Attack a specific map position
+Player1: Attack (Units:MediumTank Target:50,40)
+
+# Attack with multiple unit types
+Player1: Attack (Units:MediumTank,RocketSoldier Target:60,45)
+
+# Stop all units of a type
+Player1: Stop (Units:Minigunner)
+Player1: Stop (Units:MediumTank)
+
+# === SPECIFIC UNIT TARGETING ===
+
+# Target the 2nd tank to move (if you have multiple tanks)
+Player1: Move (Units:MediumTank#2 Target:45,35)
+
+# Target the 1st harvester
+Player1: Move (Units:Harvester#1 Target:20,30)
