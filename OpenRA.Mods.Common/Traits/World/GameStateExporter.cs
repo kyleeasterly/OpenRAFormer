@@ -16,7 +16,7 @@ namespace OpenRA.Mods.Common.Traits
 		public readonly string OutputDirectory = @"C:\OpenRATest";
 
 		[Desc("Interval between snapshots in game ticks (25 ticks = 1 second).")]
-		public readonly int SnapshotInterval = 250; // 10 seconds
+		public readonly int SnapshotInterval = 500; // 20 seconds
 
 		[Desc("Enable or disable the exporter.")]
 		public readonly bool Enabled = true;
