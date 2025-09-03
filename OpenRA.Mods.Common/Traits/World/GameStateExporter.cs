@@ -63,8 +63,11 @@ namespace OpenRA.Mods.Common.Traits
 				sb.AppendLine("# OpenRA Game State Snapshot");
 				sb.AppendLine("## IMPORTANT: This report is for advising Player 1 (the human player)");
 				sb.AppendLine();
-				sb.AppendLine(CultureInfo.InvariantCulture, $"**Timestamp:** {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-				sb.AppendLine(CultureInfo.InvariantCulture, $"**Game Tick:** {world.WorldTick} (Time: {world.WorldTick / 25}s)");
+				var totalSeconds = world.WorldTick / 25;
+				var minutes = totalSeconds / 60;
+				var seconds = totalSeconds % 60;
+				sb.AppendLine(CultureInfo.InvariantCulture, $"**Game Time:** {minutes:D2}:{seconds:D2}");
+				sb.AppendLine(CultureInfo.InvariantCulture, $"**Game Tick:** {world.WorldTick}");
 				sb.AppendLine(CultureInfo.InvariantCulture, $"**Map:** {world.Map.Title}");
 				sb.AppendLine("**Game Type:** " + (world.LobbyInfo?.GlobalSettings?.ServerName ?? "Unknown"));
 				
