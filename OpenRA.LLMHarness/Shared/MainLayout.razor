@@ -2,9 +2,27 @@
 
 <MudLayout>
     <MudAppBar Dense="true">
-        <MudText Typo="Typo.h6" Class="ml-3">OpenRA LLM Coach</MudText>
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" 
+                       Color="Color.Inherit" 
+                       Edge="Edge.Start" 
+                       OnClick="ToggleSidebar" 
+                       Title="Toggle Sidebar" />
+        <MudText Typo="Typo.h6">OpenRA LLM Coach</MudText>
     </MudAppBar>
     <MudMainContent>
-        @Body
+        <CascadingValue Value="@sidebarOpen">
+            <CascadingValue Value="@((Action)ToggleSidebar)" Name="ToggleSidebar">
+                @Body
+            </CascadingValue>
+        </CascadingValue>
     </MudMainContent>
 </MudLayout>
+
+@code {
+    private bool sidebarOpen = true;
+
+    private void ToggleSidebar()
+    {
+        sidebarOpen = !sidebarOpen;
+    }
+}

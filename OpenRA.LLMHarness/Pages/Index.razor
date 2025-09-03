@@ -12,6 +12,10 @@
         50% { opacity: 0; }
         100% { opacity: 1; }
     }
+    
+    .sidebar-transition {
+        transition: all 0.3s ease-in-out;
+    }
 </style>
 
 <script>
@@ -25,7 +29,9 @@
 
 <MudGrid>
     <!-- Sidebar with session history -->
-    <MudItem xs="3">
+    @if (sidebarOpen)
+    {
+        <MudItem xs="3" Class="sidebar-transition">
         <MudPaper Elevation="3" Class="pa-4" Style="height: calc(100vh - 80px); overflow-y: auto;">
             <MudText Typo="Typo.h6" Class="mb-4">Session History</MudText>
             
@@ -57,9 +63,10 @@
             }
         </MudPaper>
     </MudItem>
+    }
     
     <!-- Main content area -->
-    <MudItem xs="9">
+    <MudItem xs="@(sidebarOpen ? 9 : 12)" Class="sidebar-transition">
         <MudPaper Elevation="3" Class="pa-4" Style="height: calc(100vh - 80px); overflow-y: auto;">
             <!-- Status bar -->
             <MudAlert Severity="@(isConnected ? Severity.Success : Severity.Warning)" Class="mb-4">
@@ -174,6 +181,9 @@
 </MudGrid>
 
 @code {
+    [CascadingParameter] private bool sidebarOpen { get; set; } = true;
+    [CascadingParameter(Name = "ToggleSidebar")] private Action? ToggleSidebar { get; set; }
+    
     private bool isConnected = false;
     private bool isProcessing = false;
     private bool verboseMode = false;

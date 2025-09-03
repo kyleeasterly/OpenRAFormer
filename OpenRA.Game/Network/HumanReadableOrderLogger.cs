@@ -11,27 +11,21 @@
 
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
-using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
 namespace OpenRA.Network
 {
 	public sealed class HumanReadableOrderLogger : IDisposable
 	{
 		const long MaxFileSizeBytes = 3 * 1024 * 1024; // 3MB
 		const string LogDirectory = @"C:\OpenRATest_Orders";
-		const string GameStateDirectory = @"C:\OpenRATest";
 
 		StreamWriter writer;
 		bool isDisposed;
 		bool fileSizeLimitReached;
 
-		// For tracking orders between gamestate snapshots
-		readonly List<string> ordersBuffer = [];
-		string currentGameStateFile;
-		int lastGameStateTick = 0;
+		static readonly List<string> OrdersBuffer = [];
+		static readonly object BufferLock = new object();
 
 		public HumanReadableOrderLogger()
 		{
@@ -71,16 +65,15 @@ namespace OpenRA.Network
 
 			try
 				{
-					// Check if a new gamestate file was created and append orders to the previous one
-					CheckAndAppendOrdersToGameState(frame);
-
 					var gameTime = FormatGameTime(frame);
 					var playerName = GetPlayerName(order, world, clientId);
 					var orderDetails = FormatOrderDetails(order);
 					var orderLine = $"[{gameTime}] {playerName}: {order.OrderString} {orderDetails}";
 
-					// Add to buffer for gamestate file appending
-					ordersBuffer.Add(orderLine);
+					lock (BufferLock)
+					{
+						OrdersBuffer.Add(orderLine);
+					}
 
 					// Also write to regular orders file if available
 					if (writer != null && !fileSizeLimitReached)
@@ -176,16 +169,18 @@ namespace OpenRA.Network
 					{
 						var targetPos = order.Target.Actor.CenterPosition;
 						var targetName = GetFriendlyActorName(order.Target.Actor);
-						if(String.IsNullOrWhiteSpace(targetName))
+						if (!String.IsNullOrWhiteSpace(targetName))
 							details.Append($"Target:{targetName}@{targetPos}");
-						else details.Append($"Target:{order.Target.Actor.Info.Name}@{targetPos}");
+						else
+							details.Append($"Target:{order.Target.Actor.Info.Name}@{targetPos}");
 					}
 					catch
 					{
 						var targetName = GetFriendlyActorName(order.Target.Actor);
-						if (String.IsNullOrWhiteSpace(targetName))
+						if (!String.IsNullOrWhiteSpace(targetName))
 							details.Append($"Target:{targetName}@Unknown");
-						else details.Append($"Target:{order.Target.Actor.Info.Name}@Unknown");
+						else
+							details.Append($"Target:{order.Target.Actor.Info.Name}@Unknown");
 					}
 				}
 				else if (order.Target.Type == Traits.TargetType.Terrain)
@@ -213,9 +208,10 @@ namespace OpenRA.Network
 			{
 				if (details.Length > 0) details.Append(" ");
 				var targetName = FindFriendlyName(order.TargetString);
-				if (String.IsNullOrWhiteSpace(targetName))
+				if (!String.IsNullOrWhiteSpace(targetName))
+					details.Append($"TargetString:{targetName}");
+				else
 					details.Append($"TargetString:{order.TargetString}");
-				else details.Append($"TargetString:{targetName}");
 			}
 
 			if (order.ExtraData != 0)
@@ -245,81 +241,13 @@ namespace OpenRA.Network
 			return details.Length > 0 ? $"({details})" : "";
 		}
 
-		void CheckAndAppendOrdersToGameState(int currentFrame)
+		public static List<string> GetAndClearOrderBuffer()
 		{
-			try
+			lock (BufferLock)
 			{
-				if (!Directory.Exists(GameStateDirectory))
-					return;
-
-				// Find the most recent gamestate file
-				var gameStateFiles = Directory.GetFiles(GameStateDirectory, "gamestate_*.txt")
-					.OrderByDescending(File.GetCreationTime)
-					.ToList();
-
-				if (gameStateFiles.Count == 0)
-					return;
-
-				var newestGameStateFile = gameStateFiles.First();
-
-				// Check if this is a new gamestate file since last check
-				if (newestGameStateFile != currentGameStateFile)
-				{
-					// If we have a previous gamestate file and accumulated orders, append them
-					if (currentGameStateFile != null && ordersBuffer.Count > 0)
-					{
-						AppendOrdersToGameStateFile(currentGameStateFile, ordersBuffer);
-						ordersBuffer.Clear();
-					}
-
-					// Update to the new gamestate file
-					currentGameStateFile = newestGameStateFile;
-					
-					// Extract tick from filename to track progress
-					var filename = Path.GetFileName(newestGameStateFile);
-					var tickMatch = Regex.Match(filename, @"tick(\d+)");
-					if (tickMatch.Success && int.TryParse(tickMatch.Groups[1].Value, out var tick))
-					{
-						lastGameStateTick = tick;
-					}
-				}
-			}
-			catch (Exception ex)
-			{
-				Log.Write("debug", $"Failed to check gamestate files: {ex}");
-			}
-		}
-
-		void AppendOrdersToGameStateFile(string gameStateFilePath, List<string> orders)
-		{
-			try
-			{
-				if (orders.Count == 0)
-					return;
-
-				// Read existing content
-				var existingContent = File.ReadAllText(gameStateFilePath);
-				
-				// Append orders section
-				var sb = new StringBuilder();
-				sb.AppendLine();
-				sb.AppendLine("## Orders Since Last Game State");
-				sb.AppendLine($"*{orders.Count} orders recorded between game state snapshots*");
-				sb.AppendLine();
-				foreach (var order in orders)
-				{
-					sb.AppendLine(order);
-				}
-				sb.AppendLine();
-				sb.AppendLine("---");
-				sb.AppendLine("*End of orders section*");
-
-				// Write back to file
-				File.WriteAllText(gameStateFilePath, existingContent + sb.ToString());
-			}
-			catch (Exception ex)
-			{
-				Log.Write("debug", $"Failed to append orders to gamestate file: {ex}");
+				var orders = new List<string>(OrdersBuffer);
+				OrdersBuffer.Clear();
+				return orders;
 			}
 		}
 
@@ -352,13 +280,6 @@ namespace OpenRA.Network
 
 			try
 			{
-				// Append any remaining orders to the current gamestate file
-				if (currentGameStateFile != null && ordersBuffer.Count > 0)
-				{
-					AppendOrdersToGameStateFile(currentGameStateFile, ordersBuffer);
-					ordersBuffer.Clear();
-				}
-
 				if (writer != null)
 				{
 					writer.WriteLine($"----------------------------------------");

@@ -51,6 +51,11 @@ namespace OpenRA.Mods.Common.Traits
 		[Desc("Prefer deploying MCVs near resource patches outside the base.")]
 		public readonly bool PreferResourceExpansion = false;
 
+		[Desc("Avoid placing MCVs near allied players' buildings to prevent territory conflicts.")]
+		public readonly bool AvoidAlliedTerritory = true;
+
+		[Desc("Radius in cells to check for allied buildings when avoiding allied territory.")]
+		public readonly int AlliedTerritoryCheckRadius = 12;
 
 		public override object Create(ActorInitializer init) { return new McvManagerBotModule(init.Self, this); }
 	}
@@ -451,16 +456,25 @@ namespace OpenRA.Mods.Common.Traits
 			if (distanceRange == 0)
 				distanceRange = 1; // Avoid division by zero
 
-			// Get all friendly construction yards and refineries for checking harvesting status
-			var friendlyHarvestingBuildings = world.ActorsHavingTrait<Building>()
+			// Get all friendly and allied construction yards and refineries for checking harvesting status
+			var ownHarvestingBuildings = world.ActorsHavingTrait<Building>()
 				.Where(a => a.Owner == player && 
 					(Info.ConstructionYardTypes.Contains(a.Info.Name) || 
 					Info.RefineryTypes.Contains(a.Info.Name)))
 				.ToList();
+			
+			var alliedHarvestingBuildings = Info.AvoidAlliedTerritory 
+				? world.ActorsHavingTrait<Building>()
+					.Where(a => a.Owner != player && 
+						player.IsAlliedWith(a.Owner) &&
+						(Info.ConstructionYardTypes.Contains(a.Info.Name) || 
+						Info.RefineryTypes.Contains(a.Info.Name)))
+					.ToList()
+				: new List<Actor>();
 
 			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Found {patches.Count} resource patches");
 			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Distance range: {minDistance} to {maxDistance}");
-			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Friendly harvesting buildings: {friendlyHarvestingBuildings.Count}");
+			Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Own harvesting buildings: {ownHarvestingBuildings.Count}, Allied: {alliedHarvestingBuildings.Count}");
 
 			foreach (var patch in patches)
 			{
@@ -470,14 +484,23 @@ namespace OpenRA.Mods.Common.Traits
 				// Use resource count as a secondary factor
 				var score = distanceScore * 100f + patch.ResourceCount;
 
-				// Check if this patch is already being harvested (has a construction yard or refinery nearby)
-				var alreadyHarvesting = friendlyHarvestingBuildings
+				// Check if this patch is already being harvested by us
+				var ownHarvesting = ownHarvestingBuildings
+					.Any(building => (building.Location - patch.Center).Length < 15);
+				
+				// Check if this patch is being harvested by allies
+				var alliedHarvesting = alliedHarvestingBuildings
 					.Any(building => (building.Location - patch.Center).Length < 15);
 
-				if (alreadyHarvesting)
+				if (ownHarvesting)
 				{
-					Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Patch at {patch.Center} (dist={patch.DistanceFromBase}, res={patch.ResourceCount}): Already harvesting, penalizing score from {score:F1} to {score * 0.1f:F1}");
+					Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Patch at {patch.Center} (dist={patch.DistanceFromBase}, res={patch.ResourceCount}): Already harvesting (own), penalizing score from {score:F1} to {score * 0.1f:F1}");
 					score *= 0.1f; // Heavily penalize patches we're already harvesting
+				}
+				else if (alliedHarvesting)
+				{
+					Console.WriteLine($"[P{player.ClientIndex}:{player.PlayerName}] Patch at {patch.Center} (dist={patch.DistanceFromBase}, res={patch.ResourceCount}): Allied territory, penalizing score from {score:F1} to {score * 0.05f:F1}");
+					score *= 0.05f; // Even more heavily penalize patches in allied territory
 				}
 				else
 				{
@@ -500,6 +523,21 @@ namespace OpenRA.Mods.Common.Traits
 			return sortedPatches;
 		}
 
+		bool IsInAlliedTerritory(CPos location)
+		{
+			if (!Info.AvoidAlliedTerritory)
+				return false;
+
+			// Check if there are allied (but not owned by us) buildings nearby
+			var nearbyBuildings = world.ActorsHavingTrait<Building>()
+				.Where(a => !a.IsDead && 
+					a.Owner != player && 
+					player.IsAlliedWith(a.Owner) &&
+					(a.Location - location).Length <= Info.AlliedTerritoryCheckRadius);
+
+			return nearbyBuildings.Any();
+		}
+
 		CPos? ChooseMcvDeployLocation(string actorType, CVec offset, bool distanceToBaseIsImportant)
 		{
 			var actorInfo = world.Map.Rules.Actors[actorType];
@@ -519,8 +557,16 @@ namespace OpenRA.Mods.Common.Traits
 					cells = cells.Shuffle(world.LocalRandom);
 
 				foreach (var cell in cells)
-					if (world.CanPlaceBuilding(cell + offset, actorInfo, bi, null))
-						return cell;
+				{
+					if (!world.CanPlaceBuilding(cell + offset, actorInfo, bi, null))
+						continue;
+
+					// Check if this location is in allied territory (if we should avoid it)
+					if (IsInAlliedTerritory(cell))
+						continue;
+
+					return cell;
+				}
 
 				return null;
 			}
