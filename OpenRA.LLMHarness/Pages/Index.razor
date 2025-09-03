@@ -76,10 +76,10 @@
             <!-- Controls -->
             <MudGrid>
                 <MudItem xs="12" sm="4">
-                    <MudSwitch @bind-Value="@verboseMode" Label="Verbose Mode" Color="Color.Primary" />
+                    <MudSwitch @bind-Value="@verboseMode" Label="Verbose Mode" Color="Color.Primary" ValueChanged="@(() => OllamaService.VerboseMode = verboseMode)" />
                 </MudItem>
                 <MudItem xs="12" sm="4">
-                    <MudSwitch Value="@writeOrdersToGame" ValueChanged="OnWriteOrdersToGameChanged" Label="Send Orders to Game" Color="Color.Primary" />
+                    <MudSwitch @bind-Value="@writeOrdersToGame" Label="Send Orders to Game" Color="Color.Primary" ValueChanged="@(() => OllamaService.WriteOrdersToGame = writeOrdersToGame)" />
                 </MudItem>
                 <MudItem xs="12" sm="4">
                     <MudText Typo="Typo.subtitle2">Thinking Level:</MudText>
@@ -292,18 +292,6 @@
     private LLMResponse? GetSelectedResponse()
     {
         return sessionHistory.FirstOrDefault(r => r.Id == selectedResponseId);
-    }
-
-    private void OnVerboseModeChanged(bool newValue)
-    {
-        verboseMode = newValue;
-        OllamaService.VerboseMode = verboseMode;
-    }
-
-    private void OnWriteOrdersToGameChanged(bool newValue)
-    {
-        writeOrdersToGame = newValue;
-        OllamaService.WriteOrdersToGame = writeOrdersToGame;
     }
 
     public void Dispose()
