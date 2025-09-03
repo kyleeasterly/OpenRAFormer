@@ -645,7 +645,7 @@ namespace OpenRA.LLMHarness.Services
 			sb.AppendLine(gameState);
 			sb.AppendLine("</game_state>");
 			sb.AppendLine();
-			sb.AppendLine("Based on the game knowledge above and current state, what should the player do next?");
+			sb.AppendLine("Based on the game knowledge above and current state, what should the player do next?\nIMPORTANT: You must only respond with a Markdown bullet list with simple instructions, no detailed narrative.");
 
 			return sb.ToString();
 		}
