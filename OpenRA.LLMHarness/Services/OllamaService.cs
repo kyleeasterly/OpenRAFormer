@@ -2,7 +2,6 @@ using System.ClientModel;
 using System.Text;
 using OpenAI;
 using OpenAI.Chat;
-using OpenRA;
 
 namespace OpenRA.LLMHarness.Services
 {
@@ -716,7 +715,7 @@ namespace OpenRA.LLMHarness.Services
 			var startIndex = llmResponse.IndexOf(startTag, StringComparison.OrdinalIgnoreCase);
 			if (startIndex == -1)
 			{
-				Log.Write("debug", "[OllamaService] No <orders> tag found in LLM response");
+				Console.WriteLine("[OllamaService] No <orders> tag found in LLM response");
 				return null;
 			}
 			
@@ -724,14 +723,14 @@ namespace OpenRA.LLMHarness.Services
 			var endIndex = llmResponse.IndexOf(endTag, startIndex, StringComparison.OrdinalIgnoreCase);
 			if (endIndex == -1)
 			{
-				Log.Write("debug", "[OllamaService] No closing </orders> tag found in LLM response");
+				Console.WriteLine("[OllamaService] No closing </orders> tag found in LLM response");
 				return null;
 			}
 			
 			var orders = llmResponse.Substring(startIndex, endIndex - startIndex).Trim();
 			if (string.IsNullOrWhiteSpace(orders))
 			{
-				Log.Write("debug", "[OllamaService] Empty orders section in LLM response");
+				Console.WriteLine("[OllamaService] Empty orders section in LLM response");
 				return null;
 			}
 			
