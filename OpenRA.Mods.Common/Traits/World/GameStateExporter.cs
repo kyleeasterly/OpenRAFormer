@@ -28,7 +28,7 @@ namespace OpenRA.Mods.Common.Traits
 	{
 		readonly GameStateExporterInfo info;
 		World world;
-		int lastSnapshotTick = 0;
+		int lastSnapshotTime = 0; // in seconds
 
 		public GameStateExporter(GameStateExporterInfo info)
 		{
@@ -42,9 +42,10 @@ namespace OpenRA.Mods.Common.Traits
 
 			world = self.World;
 
-			if (world.WorldTick - lastSnapshotTick >= info.SnapshotInterval)
+			var currentGameTimeSeconds = world.WorldTick / 25;
+			if (currentGameTimeSeconds - lastSnapshotTime >= (info.SnapshotInterval / 25))
 			{
-				lastSnapshotTick = world.WorldTick;
+				lastSnapshotTime = currentGameTimeSeconds;
 				ExportGameState();
 			}
 		}
@@ -57,17 +58,16 @@ namespace OpenRA.Mods.Common.Traits
 					Directory.CreateDirectory(info.OutputDirectory);
 
 				var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
-				var filename = Path.Combine(info.OutputDirectory, $"gamestate_{timestamp}_tick{world.WorldTick}.txt");
+				var totalSeconds = world.WorldTick / 25;
+			var minutes = totalSeconds / 60;
+			var seconds = totalSeconds % 60;
+			var filename = Path.Combine(info.OutputDirectory, $"gamestate_{timestamp}_{minutes:D2}m{seconds:D2}s.txt");
 
 				var sb = new StringBuilder();
 				sb.AppendLine("# OpenRA Game State Snapshot");
 				sb.AppendLine("## IMPORTANT: This report is for advising Player 1 (the human player)");
 				sb.AppendLine();
-				var totalSeconds = world.WorldTick / 25;
-				var minutes = totalSeconds / 60;
-				var seconds = totalSeconds % 60;
 				sb.AppendLine(CultureInfo.InvariantCulture, $"**Game Time:** {minutes:D2}:{seconds:D2}");
-				sb.AppendLine(CultureInfo.InvariantCulture, $"**Game Tick:** {world.WorldTick}");
 				sb.AppendLine(CultureInfo.InvariantCulture, $"**Map:** {world.Map.Title}");
 				sb.AppendLine("**Game Type:** " + (world.LobbyInfo?.GlobalSettings?.ServerName ?? "Unknown"));
 				
@@ -84,12 +84,11 @@ namespace OpenRA.Mods.Common.Traits
 						foreach (var option in settings.LobbyOptions.OrderBy(kv => kv.Key))
 						{
 							var description = GetFriendlyOptionDescription(option.Key, option.Value);
-							sb.AppendLine(description);
+							if (description != null)
+								sb.AppendLine(description);
 						}
 					}
 					
-					sb.AppendLine(CultureInfo.InvariantCulture, $"Spectators: {(settings.AllowSpectators ? "Allowed" : "Not allowed")}");
-					sb.AppendLine(CultureInfo.InvariantCulture, $"Game Speed: {GetGameSpeedDescription(settings.NetFrameInterval)}");
 				}
 				
 				sb.AppendLine();
@@ -130,9 +129,7 @@ namespace OpenRA.Mods.Common.Traits
 					// Show allies instead of teams
 					var allies = players.Where(p => p != player && player.IsAlliedWith(p)).Select(p => p.PlayerName).ToList();
 					sb.AppendLine("Allies: " + (allies.Count > 0 ? string.Join(", ", allies) : "None"));
-					sb.AppendLine(CultureInfo.InvariantCulture, $"Is Local Player: {player == world.LocalPlayer}");
-					sb.AppendLine(CultureInfo.InvariantCulture, $"Is Bot: {player.IsBot}");
-					var status = player.WinState == WinState.Won ? "Won" : player.WinState == WinState.Lost ? "Lost" : "Playing";
+							var status = player.WinState == WinState.Won ? "Won" : player.WinState == WinState.Lost ? "Lost" : "Playing";
 					sb.AppendLine(CultureInfo.InvariantCulture, $"Status: {status}");
 
 					// Resources
@@ -144,8 +141,6 @@ namespace OpenRA.Mods.Common.Traits
 						sb.AppendLine(CultureInfo.InvariantCulture, $"Cash: ${resources.Cash}");
 						sb.AppendLine(CultureInfo.InvariantCulture, $"Stored Resources: {resources.Resources}/{resources.ResourceCapacity}");
 						sb.AppendLine(CultureInfo.InvariantCulture, $"Total Value: ${resources.GetCashAndResources()}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Total Earned: ${resources.Earned}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Total Spent: ${resources.Spent}");
 					}
 
 					// Statistics
@@ -160,7 +155,6 @@ namespace OpenRA.Mods.Common.Traits
 						sb.AppendLine(CultureInfo.InvariantCulture, $"Units Lost: {stats.UnitsDead} (${stats.DeathsCost} value)");
 						sb.AppendLine(CultureInfo.InvariantCulture, $"Buildings Destroyed: {stats.BuildingsKilled}");
 						sb.AppendLine(CultureInfo.InvariantCulture, $"Buildings Lost: {stats.BuildingsDead}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Experience Points: {stats.Experience}");
 						sb.AppendLine(CultureInfo.InvariantCulture, $"Income Rate: ${stats.DisplayIncome}/min");
 					}
 
@@ -469,14 +463,6 @@ namespace OpenRA.Mods.Common.Traits
 					"low" => "Tech Level: Low (basic units only)",
 					_ => $"Tech Level: {value}"
 				},
-				"startingunits" => value switch
-				{
-					"mcv" => "Starting Units: MCV only",
-					"light" => "Starting Units: MCV + light forces",
-					"heavy" => "Starting Units: MCV + heavy forces",
-					_ => $"Starting Units: {value}"
-				},
-				"startingcash" => $"Starting Cash: ${value}",
 				"superweapons" => optionState.IsEnabled 
 					? "Superweapons: Enabled (Ion Cannon, Nuclear Missile available)"
 					: "Superweapons: Disabled (no Ion Cannon or Nuclear Missile)",
@@ -520,14 +506,12 @@ namespace OpenRA.Mods.Common.Traits
 				"factundeploy" => optionState.IsEnabled
 					? "Redeployable MCVs: Enabled (can pack/unpack Construction Yard)"
 					: "Redeployable MCVs: Disabled",
-				"C17-Stealth" => optionState.IsEnabled
-					? "Stealth Deliveries: Enabled (airfield deliveries are cloaked)"
-					: "Stealth Deliveries: Disabled",
-				"gamespeed" => $"Game Speed: {value}",
-				"separateteamspawns" => optionState.IsEnabled
-					? "Separate Team Spawns: Enabled (teammates spawn together)"
-					: "Separate Team Spawns: Disabled",
 				"timelimit" => value == "0" ? "Time Limit: None" : $"Time Limit: {value} minutes",
+				"cheats" => null, // Hide cheats setting from output
+				"gamespeed" => null, // Hide game speed setting from output
+				"separateteamspawns" => null, // Hide separate team spawns setting from output
+				"startingcash" => null, // Hide starting cash setting from output
+				"startingunits" => null, // Hide starting units setting from output
 				_ => $"{optionId.Replace('_', ' ').Replace('-', ' ')}: {value}"
 			};
 		}
