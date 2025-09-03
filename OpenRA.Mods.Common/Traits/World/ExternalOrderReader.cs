@@ -29,7 +29,7 @@ namespace OpenRA.Mods.Common.Traits
 		public override object Create(ActorInitializer init) { return new ExternalOrderReader(this); }
 	}
 
-	public class ExternalOrderReader : ITick
+	public class ExternalOrderReader : ITick, INotifyCreated
 	{
 		readonly ExternalOrderReaderInfo info;
 		readonly HashSet<string> processedFiles = new HashSet<string>();
@@ -43,6 +43,39 @@ namespace OpenRA.Mods.Common.Traits
 			this.info = info;
 		}
 
+		void INotifyCreated.Created(Actor self)
+		{
+			if (!info.Enabled)
+			{
+				Log.Write("debug", "ExternalOrderReader is disabled in configuration");
+				return;
+			}
+
+			// Announce initialization
+			TextNotificationsManager.AddSystemLine("External Order Reader", "Initializing...");
+			
+			// Ensure directory exists
+			try
+			{
+				if (!Directory.Exists(info.InputDirectory))
+				{
+					Directory.CreateDirectory(info.InputDirectory);
+					TextNotificationsManager.AddSystemLine("External Order Reader", $"Created input directory: {info.InputDirectory}");
+				}
+				else
+				{
+					TextNotificationsManager.AddSystemLine("External Order Reader", $"Monitoring: {info.InputDirectory}");
+				}
+				
+				TextNotificationsManager.AddSystemLine("External Order Reader", $"Active - checking every {info.CheckInterval / 25f:0.#} seconds");
+			}
+			catch (Exception e)
+			{
+				TextNotificationsManager.AddSystemLine("External Order Reader", $"ERROR: Failed to create directory - {e.Message}");
+				Log.Write("debug", $"ExternalOrderReader initialization error: {e}");
+			}
+		}
+
 		void ITick.Tick(Actor self)
 		{
 			if (!info.Enabled)
@@ -52,7 +85,10 @@ namespace OpenRA.Mods.Common.Traits
 
 			// Initialize parser on first tick when world is available
 			if (parser == null)
+			{
 				parser = new ExternalOrderParser(world);
+				Log.Write("debug", "ExternalOrderReader: Parser initialized");
+			}
 
 			// Check for new files at intervals
 			if (world.WorldTick - lastCheckTick >= info.CheckInterval)
@@ -83,6 +119,9 @@ namespace OpenRA.Mods.Common.Traits
 				{
 					try
 					{
+						var fileName = Path.GetFileName(file);
+						TextNotificationsManager.AddSystemLine("External Orders", $"Processing file: {fileName}");
+						
 						ReadOrderFile(file);
 						processedFiles.Add(file);
 
@@ -100,6 +139,7 @@ namespace OpenRA.Mods.Common.Traits
 					}
 					catch (Exception e)
 					{
+						TextNotificationsManager.AddSystemLine("External Orders", $"ERROR reading file: {Path.GetFileName(file)}");
 						Log.Write("debug", $"Failed to read order file {file}: {e.Message}");
 						processedFiles.Add(file); // Don't retry failed files
 					}
@@ -114,16 +154,29 @@ namespace OpenRA.Mods.Common.Traits
 		void ReadOrderFile(string filePath)
 		{
 			var lines = File.ReadAllLines(filePath);
+			var validLines = 0;
+			
 			foreach (var line in lines)
 			{
 				var trimmed = line.Trim();
 				if (!string.IsNullOrEmpty(trimmed) && !trimmed.StartsWith("#") && !trimmed.StartsWith("//"))
 				{
 					pendingOrders.Enqueue(trimmed);
+					validLines++;
 				}
 			}
 
-			Log.Write("debug", $"Read {lines.Length} lines from order file: {Path.GetFileName(filePath)}");
+			var fileName = Path.GetFileName(filePath);
+			if (validLines > 0)
+			{
+				TextNotificationsManager.AddSystemLine("External Orders", $"Queued {validLines} orders from {fileName}");
+			}
+			else
+			{
+				TextNotificationsManager.AddSystemLine("External Orders", $"No valid orders in {fileName}");
+			}
+			
+			Log.Write("debug", $"Read {lines.Length} lines ({validLines} valid) from order file: {fileName}");
 		}
 
 		void ProcessPendingOrders()
@@ -143,7 +196,8 @@ namespace OpenRA.Mods.Common.Traits
 						{
 							if (order != null)
 							{
-								Log.Write("debug", $"Issuing external order: {order.OrderString}");
+								TextNotificationsManager.AddSystemLine("External Orders", $"Executing: {order.OrderString}");
+								Log.Write("debug", $"Issuing external order: {order.OrderString} for {order.Player?.PlayerName ?? "Unknown"}");
 								world.IssueOrder(order);
 							}
 						}
@@ -152,6 +206,8 @@ namespace OpenRA.Mods.Common.Traits
 				}
 				catch (Exception e)
 				{
+					var preview = orderText.Length > 50 ? orderText.Substring(0, 50) + "..." : orderText;
+					TextNotificationsManager.AddSystemLine("External Orders", $"ERROR: {preview}");
 					Log.Write("debug", $"Failed to parse/issue order '{orderText}': {e.Message}");
 				}
 			}
