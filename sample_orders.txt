@@ -1,0 +1,18 @@
+# Sample External Orders File for OpenRA
+# Copy this to C:\OpenRATest_Orders\input\ to test
+
+# Build some infantry
+Player1: StartProduction (Item:Minigunner Count:3)
+
+# Move harvester to resources
+Player1: Move (Units:Harvester Target:100,50)
+
+# Attack with tanks (if you have any)
+Player1: Attack (Units:MediumTank Target:200,200)
+
+# Stop all infantry
+Player1: Stop (Units:Minigunner)
+
+# Build more units
+Player1: StartProduction (Building:Barracks Item:RocketSoldier Count:2)
+Player1: StartProduction (Building:WarFactory Item:MediumTank Count:1)

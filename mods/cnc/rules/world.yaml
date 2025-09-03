@@ -169,6 +169,12 @@ World:
 		OutputDirectory: C:\OpenRATest
 		SnapshotInterval: 250
 		Enabled: true
+	ExternalOrderReader:
+		InputDirectory: C:\OpenRATest_Orders\input
+		CheckInterval: 25
+		Enabled: true
+		MaxOrdersPerTick: 10
+		DeleteAfterProcessing: true
 	SmudgeLayer@SCORCH:
 		Type: Scorch
 		Sequence: scorches
