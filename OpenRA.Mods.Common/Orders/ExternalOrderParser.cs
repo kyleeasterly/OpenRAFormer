@@ -96,15 +96,26 @@ namespace OpenRA.Mods.Common.Orders
 		{
 			var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 			
-			// Split by spaces, but respect values that might contain spaces
-			var matches = Regex.Matches(paramsText, @"(\w+):([^:]+?)(?=\s+\w+:|$)");
+			// Handle multiple formats:
+			// 1. Quoted values: Item:"Power Plant" or Item:'Power Plant'
+			// 2. Non-quoted values that end at next param: Item:PowerPlant Count:1
+			// 3. Values with spaces: Item:Power Plant Count:1
+			
+			// Updated regex to handle all cases
+			// Matches: key:"quoted value" or key:'quoted value' or key:value_until_next_key_or_end
+			var pattern = @"(\w+):(?:""([^""]*)""|'([^']*)'|([^\s]+(?:\s+(?!\w+:)[^\s]+)*))";
+			var matches = Regex.Matches(paramsText, pattern);
+			
 			foreach (Match match in matches)
 			{
-				if (match.Groups.Count >= 3)
+				if (match.Groups.Count >= 2)
 				{
 					var key = match.Groups[1].Value.Trim();
-					var value = match.Groups[2].Value.Trim();
-					result[key] = value;
+					// Check which group matched (quoted with ", quoted with ', or unquoted)
+					var value = match.Groups[2].Success ? match.Groups[2].Value :
+							   match.Groups[3].Success ? match.Groups[3].Value :
+							   match.Groups[4].Value;
+					result[key] = value.Trim();
 				}
 			}
 
