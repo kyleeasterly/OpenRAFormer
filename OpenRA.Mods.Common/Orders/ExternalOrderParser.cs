@@ -522,8 +522,68 @@ namespace OpenRA.Mods.Common.Orders
 			return null;
 		}
 
+		Actor[] GetBuildingsByType(string buildingType, Player player)
+		{
+			var internalName = FriendlyNames.GetInternalActorName(buildingType);
+			
+			return world.Actors
+				.Where(a => a.Owner == player && 
+						   !a.IsDead && 
+						   string.Equals(a.Info.Name, internalName, StringComparison.OrdinalIgnoreCase) &&
+						   a.Info.HasTraitInfo<BuildingInfo>())
+				.OrderBy(a => a.ActorID) // Consistent ordering by ActorID
+				.ToArray();
+		}
+
+		Actor GetBuildingByTypeAndIndex(string buildingType, int index, Player player)
+		{
+			if (index < 1)
+				return null;
+
+			var buildings = GetBuildingsByType(buildingType, player);
+			if (index <= buildings.Length)
+				return buildings[index - 1];
+
+			return null;
+		}
+
 		Actor FindProductionBuilding(string buildingSpec, string itemToProduce, Player player)
 		{
+			// Check for Building#Index format first
+			if (buildingSpec.Contains('#'))
+			{
+				var parts = buildingSpec.Split('#');
+				if (parts.Length == 2 && int.TryParse(parts[1], out var index))
+				{
+					var building = GetBuildingByTypeAndIndex(parts[0].Trim(), index, player);
+					if (building != null)
+					{
+						// Verify it can produce the item
+						var queues = building.TraitsImplementing<ProductionQueue>();
+						foreach (var queue in queues)
+						{
+							var internalName = FriendlyNames.GetInternalActorName(itemToProduce);
+							var actorInfo = world.Map.Rules.Actors.TryGetValue(internalName, out var info) ? info : null;
+							if (actorInfo != null && queue.CanBuild(actorInfo))
+							{
+								Log.Write("debug", $"[ExternalOrderParser] Found building #{index} {building.Info.Name} that can produce {internalName}");
+								return building;
+							}
+						}
+						
+						// Building exists but can't produce this item
+						Log.Write("debug", $"[ExternalOrderParser] Building {parts[0]}#{index} exists but cannot produce {itemToProduce}");
+						return null;
+					}
+					else
+					{
+						Log.Write("debug", $"[ExternalOrderParser] Building {parts[0]}#{index} not found");
+						return null;
+					}
+				}
+			}
+			
+			// Original logic for non-indexed building specs
 			// Find a building that can produce the specified item
 			var buildings = world.Actors
 				.Where(a => a.Owner == player && !a.IsDead && a.Info.HasTraitInfo<BuildingInfo>());
