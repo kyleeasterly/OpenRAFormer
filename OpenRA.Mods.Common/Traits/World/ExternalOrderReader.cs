@@ -11,11 +11,6 @@ namespace OpenRA.Mods.Common.Traits
 	[Desc("Reads external orders from text files and injects them into the game.")]
 	public class ExternalOrderReaderInfo : TraitInfo
 	{
-		static ExternalOrderReaderInfo()
-		{
-			Log.Write("debug", "[ExternalOrderReader] Static constructor for ExternalOrderReaderInfo called!");
-			Console.WriteLine("[ExternalOrderReader] Static constructor for ExternalOrderReaderInfo called!");
-		}
 		[Desc("Directory path where order files will be read from.")]
 		public readonly string InputDirectory = @"C:\OpenRATest_Orders\input";
 
@@ -33,8 +28,6 @@ namespace OpenRA.Mods.Common.Traits
 
 		public override object Create(ActorInitializer init) 
 		{
-			Log.Write("debug", "[ExternalOrderReader] Creating trait instance...");
-			Console.WriteLine("[ExternalOrderReader] Creating trait instance...");
 			return new ExternalOrderReader(this); 
 		}
 	}
@@ -51,23 +44,19 @@ namespace OpenRA.Mods.Common.Traits
 		public ExternalOrderReader(ExternalOrderReaderInfo info)
 		{
 			this.info = info;
-			Log.Write("debug", $"[ExternalOrderReader] Constructor called. Enabled={info.Enabled}, Directory={info.InputDirectory}");
-			Console.WriteLine($"[ExternalOrderReader] Constructor called. Enabled={info.Enabled}, Directory={info.InputDirectory}");
 		}
 
 		void INotifyCreated.Created(Actor self)
 		{
-			Log.Write("debug", "[ExternalOrderReader] INotifyCreated.Created called");
-			Console.WriteLine("[ExternalOrderReader] INotifyCreated.Created called");
-			
 			if (!info.Enabled)
 			{
 				Log.Write("debug", "[ExternalOrderReader] is disabled in configuration");
 				return;
 			}
 
-			// Announce initialization
-			TextNotificationsManager.AddSystemLine("External Order Reader", "Initializing...");
+			// Announce initialization to console only
+			Console.WriteLine("[ExternalOrderReader] Initializing...");
+			Log.Write("debug", "[ExternalOrderReader] Initializing...");
 			
 			// Ensure directory exists
 			try
@@ -75,19 +64,24 @@ namespace OpenRA.Mods.Common.Traits
 				if (!Directory.Exists(info.InputDirectory))
 				{
 					Directory.CreateDirectory(info.InputDirectory);
-					TextNotificationsManager.AddSystemLine("External Order Reader", $"Created input directory: {info.InputDirectory}");
+					Console.WriteLine($"[ExternalOrderReader] Created input directory: {info.InputDirectory}");
+					Log.Write("debug", $"[ExternalOrderReader] Created input directory: {info.InputDirectory}");
 				}
 				else
 				{
-					TextNotificationsManager.AddSystemLine("External Order Reader", $"Monitoring: {info.InputDirectory}");
+					Console.WriteLine($"[ExternalOrderReader] Monitoring: {info.InputDirectory}");
+					Log.Write("debug", $"[ExternalOrderReader] Monitoring: {info.InputDirectory}");
 				}
 				
-				TextNotificationsManager.AddSystemLine("External Order Reader", $"Active - checking every {info.CheckInterval / 25f:0.#} seconds");
+				Console.WriteLine($"[ExternalOrderReader] Active - checking every {info.CheckInterval / 25f:0.#} seconds");
+				Log.Write("debug", $"[ExternalOrderReader] Active - checking every {info.CheckInterval / 25f:0.#} seconds");
 			}
 			catch (Exception e)
 			{
+				// Keep error visible in-game
 				TextNotificationsManager.AddSystemLine("External Order Reader", $"ERROR: Failed to create directory - {e.Message}");
-				Log.Write("debug", $"ExternalOrderReader initialization error: {e}");
+				Console.WriteLine($"[ExternalOrderReader] ERROR: Failed to create directory - {e.Message}");
+				Log.Write("debug", $"[ExternalOrderReader] initialization error: {e}");
 			}
 		}
 
@@ -100,10 +94,7 @@ namespace OpenRA.Mods.Common.Traits
 
 			// Initialize parser on first tick when world is available
 			if (parser == null)
-			{
 				parser = new ExternalOrderParser(world);
-				Log.Write("debug", "ExternalOrderReader: Parser initialized");
-			}
 
 			// Check for new files at intervals
 			if (world.WorldTick - lastCheckTick >= info.CheckInterval)
@@ -135,7 +126,8 @@ namespace OpenRA.Mods.Common.Traits
 					try
 					{
 						var fileName = Path.GetFileName(file);
-						TextNotificationsManager.AddSystemLine("External Orders", $"Processing file: {fileName}");
+						Console.WriteLine($"[ExternalOrderReader] Processing file: {fileName}");
+						Log.Write("debug", $"[ExternalOrderReader] Processing file: {fileName}");
 						
 						ReadOrderFile(file);
 						processedFiles.Add(file);
@@ -154,8 +146,10 @@ namespace OpenRA.Mods.Common.Traits
 					}
 					catch (Exception e)
 					{
+						// Keep error visible in-game
 						TextNotificationsManager.AddSystemLine("External Orders", $"ERROR reading file: {Path.GetFileName(file)}");
-						Log.Write("debug", $"Failed to read order file {file}: {e.Message}");
+						Console.WriteLine($"[ExternalOrderReader] ERROR reading file: {Path.GetFileName(file)} - {e.Message}");
+						Log.Write("debug", $"[ExternalOrderReader] Failed to read order file {file}: {e.Message}");
 						processedFiles.Add(file); // Don't retry failed files
 					}
 				}
@@ -184,14 +178,14 @@ namespace OpenRA.Mods.Common.Traits
 			var fileName = Path.GetFileName(filePath);
 			if (validLines > 0)
 			{
-				TextNotificationsManager.AddSystemLine("External Orders", $"Queued {validLines} orders from {fileName}");
+				Console.WriteLine($"[ExternalOrderReader] Queued {validLines} orders from {fileName}");
+				Log.Write("debug", $"[ExternalOrderReader] Queued {validLines} orders from {fileName}");
 			}
 			else
 			{
-				TextNotificationsManager.AddSystemLine("External Orders", $"No valid orders in {fileName}");
+				Console.WriteLine($"[ExternalOrderReader] No valid orders in {fileName}");
+				Log.Write("debug", $"[ExternalOrderReader] No valid orders in {fileName}");
 			}
-			
-			Log.Write("debug", $"Read {lines.Length} lines ({validLines} valid) from order file: {fileName}");
 		}
 
 		void ProcessPendingOrders()
@@ -211,8 +205,8 @@ namespace OpenRA.Mods.Common.Traits
 						{
 							if (order != null)
 							{
-								TextNotificationsManager.AddSystemLine("External Orders", $"Executing: {order.OrderString}");
-								Log.Write("debug", $"Issuing external order: {order.OrderString} for {order.Player?.PlayerName ?? "Unknown"}");
+								Console.WriteLine($"[ExternalOrderReader] Executing: {order.OrderString} for {order.Player?.PlayerName ?? "Unknown"}");
+								Log.Write("debug", $"[ExternalOrderReader] Issuing external order: {order.OrderString} for {order.Player?.PlayerName ?? "Unknown"}");
 								world.IssueOrder(order);
 							}
 						}
@@ -222,8 +216,10 @@ namespace OpenRA.Mods.Common.Traits
 				catch (Exception e)
 				{
 					var preview = orderText.Length > 50 ? orderText.Substring(0, 50) + "..." : orderText;
+					// Keep error visible in-game
 					TextNotificationsManager.AddSystemLine("External Orders", $"ERROR: {preview}");
-					Log.Write("debug", $"Failed to parse/issue order '{orderText}': {e.Message}");
+					Console.WriteLine($"[ExternalOrderReader] ERROR parsing order: {preview} - {e.Message}");
+					Log.Write("debug", $"[ExternalOrderReader] Failed to parse/issue order '{orderText}': {e.Message}");
 				}
 			}
 		}
