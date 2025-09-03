@@ -9,9 +9,7 @@
  */
 #endregion
 
-using System;
 using System.Collections.Generic;
-using System.Linq;
 
 namespace OpenRA
 {
@@ -95,13 +93,6 @@ namespace OpenRA
 			["lst"] = "Landing Craft"
 		};
 
-		// Reverse mappings for converting friendly names to internal names
-		// Built lazily on first access for performance
-		static readonly Lazy<Dictionary<string, string>> ReverseBuildingMap = new Lazy<Dictionary<string, string>>(() =>
-			BuildingNameMap.ToDictionary(kvp => kvp.Value, kvp => kvp.Key, StringComparer.OrdinalIgnoreCase));
-
-		static readonly Lazy<Dictionary<string, string>> ReverseUnitMap = new Lazy<Dictionary<string, string>>(() =>
-			UnitNameMap.ToDictionary(kvp => kvp.Value, kvp => kvp.Key, StringComparer.OrdinalIgnoreCase));
 
 		public static string GetFriendlyBuildingName(string internalName)
 		{
@@ -130,98 +121,148 @@ namespace OpenRA
 			if (string.IsNullOrWhiteSpace(input))
 				return input;
 
-			// First check if it's already a known internal name (case-insensitive)
-			var lowerInput = input.ToLowerInvariant();
+			// Simple approach - just check common mappings
+			// Use a simple switch with common variations
+			var lowerInput = input.ToLowerInvariant().Trim();
 			
-			// Check buildings
-			if (BuildingNameMap.ContainsKey(lowerInput))
-				return lowerInput.ToUpperInvariant(); // C&C uses uppercase internal names
-			
-			// Check units
-			if (UnitNameMap.ContainsKey(lowerInput))
-				return lowerInput.ToUpperInvariant(); // C&C uses uppercase internal names
-
-			// Now check if it's a friendly name that needs conversion
-			// Check building friendly names
-			if (ReverseBuildingMap.Value.TryGetValue(input, out var internalBuilding))
-				return internalBuilding.ToUpperInvariant(); // C&C uses uppercase
-			
-			// Check unit friendly names
-			if (ReverseUnitMap.Value.TryGetValue(input, out var internalUnit))
-				return internalUnit.ToUpperInvariant(); // C&C uses uppercase
-
-			// Additional common variations and shortcuts
-			var shortcuts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+			// Buildings
+			switch (lowerInput)
 			{
-				// Common abbreviations and variations
-				["PowerPlant"] = "NUKE",
-				["Power Plant"] = "NUKE",
-				["PP"] = "NUKE",
-				["AdvPowerPlant"] = "NUK2",
-				["Advanced Power Plant"] = "NUK2",
-				["APP"] = "NUK2",
-				["Refinery"] = "PROC",
-				["Ref"] = "PROC",
-				["Tiberium Refinery"] = "PROC",
-				["Barracks"] = "PYLE",
-				["Bar"] = "PYLE",
-				["GDI Barracks"] = "PYLE",
-				["Hand of Nod"] = "HAND",
-				["Hand"] = "HAND",
-				["Nod Barracks"] = "HAND",
-				["War Factory"] = "WEAP",
-				["Weapons Factory"] = "WEAP",
-				["WF"] = "WEAP",
-				["Factory"] = "WEAP",
-				["Construction Yard"] = "FACT",
-				["CY"] = "FACT",
-				["ConYard"] = "FACT",
-				["Silo"] = "SILO",
-				["Storage"] = "SILO",
-				
+				case "power plant":
+				case "powerplant":
+				case "pp":
+					return "NUKE";
+				case "advanced power plant":
+				case "advpowerplant":
+				case "app":
+					return "NUK2";
+				case "refinery":
+				case "ref":
+				case "tiberium refinery":
+					return "PROC";
+				case "barracks":
+				case "bar":
+				case "gdi barracks":
+				case "pyle":
+					return "PYLE";
+				case "hand of nod":
+				case "hand":
+				case "nod barracks":
+					return "HAND";
+				case "war factory":
+				case "weapons factory":
+				case "wf":
+				case "factory":
+				case "weap":
+					return "WEAP";
+				case "construction yard":
+				case "cy":
+				case "conyard":
+				case "fact":
+					return "FACT";
+				case "silo":
+				case "storage":
+				case "tiberium silo":
+					return "SILO";
+				case "communications center":
+				case "comm center":
+				case "hq":
+					return "HQ";
+				case "guard tower":
+				case "gtwr":
+					return "GTWR";
+				case "advanced guard tower":
+				case "atwr":
+					return "ATWR";
+				case "sam site":
+				case "sam":
+					return "SAM";
+				case "obelisk":
+				case "obelisk of light":
+				case "obli":
+					return "OBLI";
+				case "turret":
+				case "gun":
+					return "GUN";
+				case "temple":
+				case "temple of nod":
+				case "tmpl":
+					return "TMPL";
+					
 				// Units
-				["MCV"] = "MCV",
-				["Mobile Construction Vehicle"] = "MCV",
-				["Harvester"] = "HARV",
-				["Harv"] = "HARV",
-				["Minigunner"] = "E1",
-				["Rifle"] = "E1",
-				["Grenadier"] = "E2",
-				["Rocket Soldier"] = "E3",
-				["Rocket"] = "E3",
-				["Bazooka"] = "E3",
-				["Engineer"] = "E6",
-				["Engi"] = "E6",
-				["Eng"] = "E6",
-				["Commando"] = "RMBO",
-				["Humvee"] = "JEEP",
-				["Hummer"] = "JEEP",
-				["APC"] = "APC",
-				["Medium Tank"] = "MTNK",
-				["Med Tank"] = "MTNK",
-				["Light Tank"] = "LTNK",
-				["Mammoth Tank"] = "HTNK",
-				["Mammoth"] = "HTNK",
-				["Heavy Tank"] = "HTNK",
-				["Artillery"] = "ARTY",
-				["Arty"] = "ARTY",
-				["Rocket Launcher"] = "MSAM",
-				["MLRS"] = "MSAM",
-				["Buggy"] = "BGGY",
-				["Recon Bike"] = "BIKE",
-				["Bike"] = "BIKE",
-				["Flame Tank"] = "FTNK",
-				["Flamer"] = "FTNK",
-				["Stealth Tank"] = "STNK",
-				["Stealth"] = "STNK",
-				["SSM Launcher"] = "SSM",
-				["SSM"] = "SSM"
-			};
+				case "mcv":
+				case "mobile construction vehicle":
+					return "MCV";
+				case "harvester":
+				case "harv":
+					return "HARV";
+				case "minigunner":
+				case "rifle":
+				case "e1":
+					return "E1";
+				case "grenadier":
+				case "e2":
+					return "E2";
+				case "rocket soldier":
+				case "rocket":
+				case "bazooka":
+				case "e3":
+					return "E3";
+				case "engineer":
+				case "engi":
+				case "eng":
+				case "e6":
+					return "E6";
+				case "commando":
+				case "rmbo":
+					return "RMBO";
+				case "humvee":
+				case "hummer":
+				case "jeep":
+					return "JEEP";
+				case "apc":
+				case "armored personnel carrier":
+					return "APC";
+				case "medium tank":
+				case "med tank":
+				case "mtnk":
+					return "MTNK";
+				case "light tank":
+				case "ltnk":
+					return "LTNK";
+				case "mammoth tank":
+				case "mammoth":
+				case "heavy tank":
+				case "htnk":
+					return "HTNK";
+				case "artillery":
+				case "arty":
+					return "ARTY";
+				case "rocket launcher":
+				case "mlrs":
+				case "msam":
+					return "MSAM";
+				case "buggy":
+				case "nod buggy":
+				case "bggy":
+					return "BGGY";
+				case "recon bike":
+				case "bike":
+					return "BIKE";
+				case "flame tank":
+				case "flamer":
+				case "ftnk":
+					return "FTNK";
+				case "stealth tank":
+				case "stealth":
+				case "stnk":
+					return "STNK";
+				case "ssm launcher":
+				case "ssm":
+					return "SSM";
+			}
 
-			if (shortcuts.TryGetValue(input, out var shortcutResult))
-				return shortcutResult;
-
-			// If nothing matched, return the input uppercased (C&C convention)
+			// If nothing matched, just return it uppercased
 			return input.ToUpperInvariant();
 		}
 	}
