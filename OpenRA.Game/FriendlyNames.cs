@@ -125,145 +125,148 @@ namespace OpenRA
 			// Use a simple switch with common variations
 			var lowerInput = input.ToLowerInvariant().Trim();
 			
-			// Buildings
+			// Buildings - return lowercase for internal use
 			switch (lowerInput)
 			{
 				case "power plant":
 				case "powerplant":
 				case "pp":
-					return "NUKE";
+				case "nuke":
+					return "nuke";
 				case "advanced power plant":
 				case "advpowerplant":
 				case "app":
-					return "NUK2";
+				case "nuk2":
+					return "nuk2";
 				case "refinery":
 				case "ref":
 				case "tiberium refinery":
-					return "PROC";
+				case "proc":
+					return "proc";
 				case "barracks":
 				case "bar":
 				case "gdi barracks":
 				case "pyle":
-					return "PYLE";
+					return "pyle";
 				case "hand of nod":
 				case "hand":
 				case "nod barracks":
-					return "HAND";
+					return "hand";
 				case "war factory":
 				case "weapons factory":
 				case "wf":
 				case "factory":
 				case "weap":
-					return "WEAP";
+					return "weap";
 				case "construction yard":
 				case "cy":
 				case "conyard":
 				case "fact":
-					return "FACT";
+					return "fact";
 				case "silo":
 				case "storage":
 				case "tiberium silo":
-					return "SILO";
+					return "silo";
 				case "communications center":
 				case "comm center":
 				case "hq":
-					return "HQ";
+					return "hq";
 				case "guard tower":
 				case "gtwr":
-					return "GTWR";
+					return "gtwr";
 				case "advanced guard tower":
 				case "atwr":
-					return "ATWR";
+					return "atwr";
 				case "sam site":
 				case "sam":
-					return "SAM";
+					return "sam";
 				case "obelisk":
 				case "obelisk of light":
 				case "obli":
-					return "OBLI";
+					return "obli";
 				case "turret":
 				case "gun":
-					return "GUN";
+					return "gun";
 				case "temple":
 				case "temple of nod":
 				case "tmpl":
-					return "TMPL";
+					return "tmpl";
 					
-				// Units
+				// Units - return lowercase for internal use
 				case "mcv":
 				case "mobile construction vehicle":
-					return "MCV";
+					return "mcv";
 				case "harvester":
 				case "harv":
-					return "HARV";
+					return "harv";
 				case "minigunner":
 				case "rifle":
 				case "e1":
-					return "E1";
+					return "e1";
 				case "grenadier":
 				case "e2":
-					return "E2";
+					return "e2";
 				case "rocket soldier":
 				case "rocket":
 				case "bazooka":
 				case "e3":
-					return "E3";
+					return "e3";
 				case "engineer":
 				case "engi":
 				case "eng":
 				case "e6":
-					return "E6";
+					return "e6";
 				case "commando":
 				case "rmbo":
-					return "RMBO";
+					return "rmbo";
 				case "humvee":
 				case "hummer":
 				case "jeep":
-					return "JEEP";
+					return "jeep";
 				case "apc":
 				case "armored personnel carrier":
-					return "APC";
+					return "apc";
 				case "medium tank":
 				case "med tank":
 				case "mtnk":
-					return "MTNK";
+					return "mtnk";
 				case "light tank":
 				case "ltnk":
-					return "LTNK";
+					return "ltnk";
 				case "mammoth tank":
 				case "mammoth":
 				case "heavy tank":
 				case "htnk":
-					return "HTNK";
+					return "htnk";
 				case "artillery":
 				case "arty":
-					return "ARTY";
+					return "arty";
 				case "rocket launcher":
 				case "mlrs":
 				case "msam":
-					return "MSAM";
+					return "msam";
 				case "buggy":
 				case "nod buggy":
 				case "bggy":
-					return "BGGY";
+					return "bggy";
 				case "recon bike":
 				case "bike":
-					return "BIKE";
+					return "bike";
 				case "flame tank":
 				case "flamer":
 				case "ftnk":
-					return "FTNK";
+					return "ftnk";
 				case "stealth tank":
 				case "stealth":
 				case "stnk":
-					return "STNK";
+					return "stnk";
 				case "ssm launcher":
 				case "ssm":
-					return "SSM";
+					return "ssm";
 			}
 
-			// If nothing matched, just return it uppercased
-			return input.ToUpperInvariant();
+			// If nothing matched, just return it lowercased
+			return input.ToLowerInvariant();
 		}
 	}
 }
