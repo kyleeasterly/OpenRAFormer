@@ -1,30 +1,34 @@
-=== Command & Conquer Strategy Guide for OpenRA ===
+# Command & Conquer Strategy Guide
 
-This guide explains the basic mechanics and units for the C&C mod in OpenRA.
+This guide explains the basic mechanics and units for Command & Conquer.
 GDI and Nod share most basic units with faction-specific advanced units.
 
-== BUILD ORDER REQUIREMENTS ==
-
+# Build Order
 You MUST follow this exact order at game start:
 1. Deploy your MCV (Mobile Construction Vehicle) to create your Construction Yard
 2. Build a Power Plant - Cost: $500, Provides: 100 power
 3. Build a Refinery - Cost: $1500, Requires: Power Plant, Includes: 1 free Harvester
 4. Build Barracks - Cost: $500, Requires: Power Plant
-5. Build War Factory (GDI) or Airfield (Nod) - Cost: $2000, Requires: Refinery
+5. Build Weapons Factory (GDI) or Airfield (Nod) - Cost: $2000, Requires: Refinery
 6. Build Communications Center - Cost: $1000, Requires: Refinery (enables advanced units)
 
-== ECONOMY ==
-
+# Economy
 - Tiberium is your only resource, appearing as green or blue crystals on the map
 - Harvesters automatically collect Tiberium and deliver to Refineries
 - Each Refinery comes with 1 free Harvester when built
-- Additional Harvesters cost $1100 and require War Factory/Airfield
 - Build multiple Refineries on different Tiberium fields for faster income
-- Tiberium Storage Silos ($100) increase storage capacity, Requires: Refinery
+- Tiberium Storage Silos ($100) increase storage capacity, but try to avoid building them and efficiently turn your income into units instead
 
-== KEY STRUCTURES ==
+# Strategy Tips
+1. Economy First: Build order is critical - Power → Refinery → Production
+2. Multiple Refineries: One refinery per Tiberium field for max income
+4. Combined Arms: Mix infantry, vehicles, and air units
+6. Power Management: Buildings operate slowly without sufficient power
+7. Base Defense: Guard Towers vs infantry, Turrets vs vehicles
+8. Superweapons: Ion Cannon (GDI) and Nuclear Missile (Nod) require tech centers
 
-=== Basic Buildings ===
+# Buildable Structures
+## Basic Buildings
 - Construction Yard: Your command center, build from deployed MCV
 - Power Plant: $500, provides 100 power, Requires: Construction Yard
 - Advanced Power Plant: $800, provides 200 power, Requires: Communications Center
@@ -33,13 +37,14 @@ You MUST follow this exact order at game start:
 - War Factory (GDI): $2000, builds vehicles, Requires: Refinery
 - Airfield (Nod): $2000, builds vehicles via airdrop, Requires: Refinery
 
-=== Defensive Structures ===
-- Guard Tower (GDI): $600, Anti-infantry defense, Requires: Barracks
-- Turret (Nod): $600, Anti-vehicle defense, Requires: Barracks
-- SAM Site: $650, Anti-air defense, Requires: Hand of Nod
+## Defensive Structures
+- Guard Tower: $600, Anti-infantry defense, Requires: Barracks
+- Turret: $600, Anti-vehicle defense, Requires: Barracks
+- SAM Site (Nod): $650, Anti-air defense, Requires: Hand of Nod
 - Obelisk of Light (Nod): $1500, Advanced laser defense, Requires: Temple of Nod
+- Advanced Guard Tower: $1000, 00:24, -50 Power, Requires Communications Center, All-purpose defensive structure, Strong vs Aircraft and Infantry, Weak vs Tanks
 
-=== Advanced Buildings ===
+## Advanced Buildings
 - Communications Center: $1000, Provides radar minimap, Requires: Refinery
 - Temple of Nod: $2000, Nod tech center, enables Nuclear Missile, Requires: Communications Center
 - Advanced Communications Center: $1800, GDI tech center, enables Ion Cannon, Requires: Communications Center
@@ -47,8 +52,7 @@ You MUST follow this exact order at game start:
 - Repair Facility: $500, Repairs vehicles, Requires: War Factory or Airfield
 - Silo: $100, Stores extra Tiberium, Requires: Refinery
 
-== INFANTRY UNITS ==
-
+# Buildable Infantry Units
 - Minigunner: $100, basic anti-infantry, Requires: Barracks
 - Grenadier: $160, anti-infantry/building (GDI), Requires: Communications Center
 - Rocket Soldier: $300, anti-tank/air, Requires: Barracks
@@ -57,14 +61,13 @@ You MUST follow this exact order at game start:
 - Engineer: $500, captures buildings, repairs bridges, Requires: Barracks
 - Commando: $1500, sniper + C4 demolitions (GDI), Requires: Advanced Communications Center
 
-== VEHICLES ==
-
-=== Support ===
+# Buildable Vehicle Units
+## Support
 - Harvester: $1100, collects Tiberium (first one free with Refinery), Requires: Refinery
 - Mobile Construction Vehicle (MCV): $3000, deploys into Construction Yard, Requires: War Factory/Airfield
 - Armored Personnel Carrier (APC): $600, transports 5 infantry (GDI), Requires: Barracks
 
-=== Combat Vehicles ===
+## Combat Vehicles
 - Nod Buggy: $300, fast scout with machine gun, Requires: Airfield
 - Recon Bike: $500, fast rocket scout, Requires: Airfield
 - Humvee: $400, light vehicle (GDI), Requires: War Factory
@@ -77,20 +80,7 @@ You MUST follow this exact order at game start:
 - Rocket Launcher: $900, mobile SAM (GDI), Requires: Communications Center
 - Mobile Rocket Launch System (MLRS): $600, anti-air (Nod), Requires: Communications Center
 
-== AIRCRAFT ==
-
+# Buildable Aircraft Units
+- Chinook Transport: $750, transport helicopter, Requires: Helipad
 - Orca VTOL: $1200, gunship with missiles (GDI), Requires: Helipad and Communications Center
 - Apache Attack Helicopter: $1200, gunship (Nod), Requires: Helipad and Communications Center
-- Chinook Transport: $750, transport helicopter, Requires: Helipad
-
-== STRATEGY TIPS ==
-
-1. Economy First: Build order is critical - Power → Refinery → Production
-2. Multiple Refineries: Better than multiple Harvesters early game
-3. Scout with cheap units: Use Minigunners or Buggies, NOT transports
-4. Combined Arms: Mix infantry, vehicles, and air units
-5. Engineers: Can capture enemy buildings for tech stealing
-6. Power Management: Buildings operate slowly without sufficient power
-7. Base Defense: Guard Towers vs infantry, Turrets vs vehicles
-8. Superweapons: Ion Cannon (GDI) and Nuclear Missile (Nod) require tech centers
-
