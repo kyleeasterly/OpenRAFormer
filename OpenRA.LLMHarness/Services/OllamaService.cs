@@ -576,14 +576,15 @@ namespace OpenRA.LLMHarness.Services
 					await LogToFileAsync("\n=== EXTRACTED ORDERS ===");
 					await LogToFileAsync(orders);
 					await LogToFileAsync("=== END OF EXTRACTED ORDERS ===\n");
-					
-					// Write order files
-					await WriteOrderFiles(orders);
 				}
 				else
 				{
-					await LogToFileAsync("[ORDERS] No orders found in LLM response");
+					await LogToFileAsync("[ORDERS] No orders found in LLM response - writing empty orders file");
+					orders = ""; // Ensure empty string rather than null
 				}
+				
+				// Always write order files (even if empty) to maintain the request-response loop
+				await WriteOrderFiles(orders);
 
 				// Notify completion
 				if (OnResponseComplete != null)
