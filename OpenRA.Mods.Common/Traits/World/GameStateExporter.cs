@@ -28,11 +28,16 @@ namespace OpenRA.Mods.Common.Traits
 	{
 		readonly GameStateExporterInfo info;
 		World world;
-		int lastSnapshotTime = 0; // in seconds
+		bool shouldExportNextTick = false;
 
 		public GameStateExporter(GameStateExporterInfo info)
 		{
 			this.info = info;
+		}
+
+		public void RequestSnapshot()
+		{
+			shouldExportNextTick = true;
 		}
 
 		void ITick.Tick(Actor self)
@@ -42,10 +47,21 @@ namespace OpenRA.Mods.Common.Traits
 
 			world = self.World;
 
-			var currentGameTimeSeconds = world.WorldTick / 25;
-			if (currentGameTimeSeconds - lastSnapshotTime >= (info.SnapshotInterval / 25))
+			// Skip if in menu (Blank Shellmap)
+			if (world.Map.Title == "Blank Shellmap")
+				return;
+
+			// Initial snapshot on tick 2
+			if (world.WorldTick == 2)
 			{
-				lastSnapshotTime = currentGameTimeSeconds;
+				ExportGameState();
+				return;
+			}
+
+			// After initial, only export when requested
+			if (shouldExportNextTick)
+			{
+				shouldExportNextTick = false;
 				ExportGameState();
 			}
 		}

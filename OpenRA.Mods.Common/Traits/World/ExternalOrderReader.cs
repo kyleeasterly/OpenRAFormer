@@ -143,6 +143,10 @@ namespace OpenRA.Mods.Common.Traits
 								Log.Write("debug", $"Failed to delete processed order file {file}: {e.Message}");
 							}
 						}
+
+						// Trigger next game state snapshot
+						var gameStateExporter = world.WorldActor.TraitOrDefault<GameStateExporter>();
+						gameStateExporter?.RequestSnapshot();
 					}
 					catch (Exception e)
 					{
