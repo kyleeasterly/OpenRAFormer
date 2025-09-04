@@ -663,8 +663,8 @@ namespace OpenRA.LLMHarness.Services
 			sb.AppendLine("Consider the economy, military strength, map control, and immediate threats.");
 			sb.AppendLine();
 			sb.AppendLine("IMPORTANT: Your response must have two parts:");
-			sb.AppendLine("1. FIRST, provide strategic advice about what the player should do next.");
-			sb.AppendLine("2. THEN, provide specific production orders in a section marked with <orders> tags.");
+			sb.AppendLine("1. FIRST, provide strategic advice about what the player should do next. Keep it concise and only use a simple single-level Markdown bullet list.");
+			sb.AppendLine("2. THEN, provide specific production orders in a section marked with <orders> tags. Only follow the given order format, do not improvise things like XML comments.");
 			sb.AppendLine();
 			sb.AppendLine("For the orders section:");
 			sb.AppendLine("- Issue StartProduction orders for constructing buildings AND training units.");
@@ -692,7 +692,7 @@ namespace OpenRA.LLMHarness.Services
 			sb.AppendLine("Player1: StartProduction (Building:\"Barracks#1\" Item:\"Minigunner\" Count:2)");
 			sb.AppendLine("Player1: StartProduction (Building:\"Barracks#2\" Item:\"Rocket Soldier\" Count:2)");
 			sb.AppendLine();
-			sb.AppendLine("Place your orders between <orders> and </orders> tags.");
+			sb.AppendLine("Place your orders between <orders> and </orders> tags. ONLY write orders following this format. These are not XML and should not be indented.");
 			sb.AppendLine();
 
 			sb.AppendLine("<game_knowledge>");
