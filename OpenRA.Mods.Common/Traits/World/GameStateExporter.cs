@@ -28,7 +28,8 @@ namespace OpenRA.Mods.Common.Traits
 	{
 		readonly GameStateExporterInfo info;
 		World world;
-		bool shouldExportNextTick = false;
+		int exportRequestedAtTick = -1;
+		const int ExportDelayTicks = 5; // Wait 5 ticks after request to allow orders to propagate
 
 		public GameStateExporter(GameStateExporterInfo info)
 		{
@@ -37,7 +38,8 @@ namespace OpenRA.Mods.Common.Traits
 
 		public void RequestSnapshot()
 		{
-			shouldExportNextTick = true;
+			if (world != null)
+				exportRequestedAtTick = world.WorldTick;
 		}
 
 		void ITick.Tick(Actor self)
@@ -58,10 +60,10 @@ namespace OpenRA.Mods.Common.Traits
 				return;
 			}
 
-			// After initial, only export when requested
-			if (shouldExportNextTick)
+			// After initial, export after delay when requested
+			if (exportRequestedAtTick >= 0 && world.WorldTick >= exportRequestedAtTick + ExportDelayTicks)
 			{
-				shouldExportNextTick = false;
+				exportRequestedAtTick = -1;
 				ExportGameState();
 			}
 		}
