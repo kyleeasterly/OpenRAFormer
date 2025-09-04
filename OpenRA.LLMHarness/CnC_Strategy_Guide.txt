@@ -42,11 +42,11 @@ You MUST follow this exact order at game start:
 - Sandbags (GDI): $25, 00:01, 0 Power, Requires: Construction Yard, Basic wall
 - Chain Link Fence (Nod): $25, 00:01, 0 Power, Requires: Construction Yard, Basic wall
 - Concrete Wall: $150, 00:09, 0 Power, Requires: War Factory/Airfield, Heavy wall
-- Guard Tower: $600, 00:39, -10 Power, Requires: Barracks, Anti-infantry defense
-- Gun Turret: $600, 00:39, -20 Power, Requires: Barracks, Anti-vehicle defense
-- SAM Site (Nod): $650, 00:46, -20 Power, Requires: Hand of Nod, Anti-air defense
+- Guard Tower: $600, 00:38, -10 Power, Requires: Barracks, Anti-infantry defense
+- Gun Turret: $600, 00:38, -20 Power, Requires: Barracks, Anti-vehicle defense
+- SAM Site (Nod): $650, 00:45, -20 Power, Requires: Hand of Nod, Anti-air defense
 - Advanced Guard Tower (GDI): $1000, 01:17, -50 Power, Requires: Communications Center, All-purpose defense, Strong vs Aircraft and Infantry
-- Obelisk of Light (Nod): $1500, 01:24, -90 Power, Requires: Temple of Nod, Advanced laser defense
+- Obelisk of Light (Nod): $1500, 01:23, -90 Power, Requires: Temple of Nod, Advanced laser defense
 
 ## Advanced Buildings
 - Communications Center: $1000, 00:40, -50 Power, Requires: Refinery, Provides radar minimap and airstrike support power
@@ -58,7 +58,7 @@ You MUST follow this exact order at game start:
 
 # Buildable Infantry Units
 - Minigunner: $100, 00:04, Requires: Barracks/Hand of Nod, Basic anti-infantry
-- Grenadier (GDI): $160, 00:07, Requires: Communications Center, Anti-infantry/building, throws grenades
+- Grenadier (GDI): $160, 00:06, Requires: Communications Center, Anti-infantry/building, throws grenades
 - Rocket Soldier: $300, 00:12, Requires: Barracks/Hand of Nod, Anti-tank/air
 - Flamethrower Infantry (Nod): $200, 00:08, Requires: Communications Center, Anti-infantry/building
 - Chemical Warrior (Nod): $300, 00:12, Requires: Temple of Nod, Advanced anti-infantry, immune to Tiberium
