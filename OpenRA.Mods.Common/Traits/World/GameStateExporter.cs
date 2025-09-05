@@ -182,10 +182,9 @@ namespace OpenRA.Mods.Common.Traits
 					{
 						sb.AppendLine();
 						sb.AppendLine("### Power Status");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Power Provided: {power.PowerProvided}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Power Consumed: {power.PowerDrained}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Power Balance: {power.PowerProvided - power.PowerDrained}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Power State: {power.PowerState}");
+						var balance = power.PowerProvided - power.PowerDrained;
+						var statusText = balance >= 0 ? $"{balance} available" : "under powered";
+						sb.AppendLine(CultureInfo.InvariantCulture, $"Power: {power.PowerProvided} / {power.PowerDrained} ({statusText})");
 					}
 
 					// Units and Buildings
@@ -199,116 +198,94 @@ namespace OpenRA.Mods.Common.Traits
 					sb.AppendLine();
 					sb.AppendLine(CultureInfo.InvariantCulture, $"### Unit Summary: {units.Count} units, {buildings.Count} buildings");
 
-					// Group units by type
-					var unitGroups = units.GroupBy(a => a.Info.Name).OrderByDescending(g => g.Count());
-					sb.AppendLine("#### Units by Type:");
-					foreach (var group in unitGroups)
+					// Individual unit positions
+					if (units.Count > 0)
 					{
-						var firstUnit = group.First();
-						var valued = firstUnit.Info.TraitInfoOrDefault<ValuedInfo>();
-						var cost = valued?.Cost ?? 0;
-						var friendlyName = FriendlyNames.GetFriendlyUnitName(group.Key);
-						sb.AppendLine(CultureInfo.InvariantCulture, $"{friendlyName}: {group.Count()} units (${cost} each, ${cost * group.Count()} total)");
+						sb.AppendLine();
+						sb.AppendLine("#### Unit Positions:");
+						foreach (var unit in units.OrderBy(u => FriendlyNames.GetFriendlyUnitName(u.Info.Name)))
+						{
+							var pos = unit.CenterPosition;
+							var cell = world.Map.CellContaining(pos);
+							var friendlyName = FriendlyNames.GetFriendlyUnitName(unit.Info.Name);
+							sb.AppendLine(CultureInfo.InvariantCulture, $"{friendlyName} at ({cell.X}, {cell.Y})");
+						}
 					}
 
-					// Group buildings by type
+					// Group buildings by type for summary
 					var buildingGroups = buildings.GroupBy(a => a.Info.Name).OrderByDescending(g => g.Count());
 					sb.AppendLine();
 					sb.AppendLine("#### Buildings by Type:");
 					foreach (var group in buildingGroups)
 					{
-						var firstBuilding = group.First();
-						var valued = firstBuilding.Info.TraitInfoOrDefault<ValuedInfo>();
-						var cost = valued?.Cost ?? 0;
 						var friendlyName = FriendlyNames.GetFriendlyBuildingName(group.Key);
-						sb.AppendLine(CultureInfo.InvariantCulture, $"{friendlyName}: {group.Count()} buildings (${cost} each, ${cost * group.Count()} total)");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"{friendlyName}: {group.Count()} buildings");
 					}
 
-					// Building positions
+					// Building positions with production info
 					if (buildings.Count > 0)
 					{
 						sb.AppendLine();
 						sb.AppendLine("#### Building Positions:");
 						
-						// Track unique positions to avoid duplicates (e.g., oil pumps)
-						var buildingPositions = new Dictionary<string, HashSet<(int X, int Y)>>();
-						
+						// Create a map of buildings to their production queues
+						var buildingProduction = new Dictionary<Actor, List<string>>();
 						foreach (var building in buildings)
+						{
+							buildingProduction[building] = new List<string>();
+							var queues = building.TraitsImplementing<ProductionQueue>();
+							foreach (var queue in queues)
+							{
+								var items = queue.AllQueued().ToList();
+								if (items.Count > 0)
+								{
+									// Group items by type and status
+									var itemGroups = items.GroupBy(item => new 
+									{ 
+										Name = item.Item,
+										Status = item.Paused ? "PAUSED" : item.Done ? "READY" : "IN_PROGRESS"
+									});
+									
+									foreach (var group in itemGroups)
+									{
+										var firstItem = group.First();
+										var progress = firstItem.RemainingCost == 0 ? 100 :
+											(100 * (firstItem.TotalCost - firstItem.RemainingCost) / firstItem.TotalCost);
+										var friendlyName = world.Map.Rules.Actors[group.Key.Name].TraitInfoOrDefault<BuildingInfo>() != null
+											? FriendlyNames.GetFriendlyBuildingName(group.Key.Name)
+											: FriendlyNames.GetFriendlyUnitName(group.Key.Name);
+										
+										var count = group.Count();
+										var countStr = count > 1 ? $" x{count}" : "";
+										
+										var itemStatus = group.Key.Status switch
+										{
+											"PAUSED" => " (PAUSED)",
+											"READY" => " (READY)",
+											_ => $" ({progress}% complete)"
+										};
+										
+										buildingProduction[building].Add($"{friendlyName}{countStr}{itemStatus}");
+									}
+								}
+							}
+						}
+						
+						// Output buildings with positions and production
+						foreach (var building in buildings.OrderBy(b => FriendlyNames.GetFriendlyBuildingName(b.Info.Name)))
 						{
 							var pos = building.CenterPosition;
 							var cell = world.Map.CellContaining(pos);
 							var friendlyName = FriendlyNames.GetFriendlyBuildingName(building.Info.Name);
 							
-							if (!buildingPositions.ContainsKey(friendlyName))
-								buildingPositions[friendlyName] = new HashSet<(int, int)>();
-							
-							buildingPositions[friendlyName].Add((cell.X, cell.Y));
-						}
-						
-						// Output unique positions only
-						foreach (var kvp in buildingPositions.OrderBy(kv => kv.Key))
-						{
-							foreach (var position in kvp.Value.OrderBy(p => p.X).ThenBy(p => p.Y))
-							{
-								sb.AppendLine(CultureInfo.InvariantCulture, $"{kvp.Key} at ({position.X}, {position.Y})");
-							}
+							var productionInfo = buildingProduction[building].Count > 0 
+								? $" - {string.Join(", ", buildingProduction[building])}"
+								: "";
+								
+							sb.AppendLine(CultureInfo.InvariantCulture, $"{friendlyName} at ({cell.X}, {cell.Y}){productionInfo}");
 						}
 					}
 
-					// Production queues - check all buildings for production queues
-					var allQueues = new List<ProductionQueue>(player.PlayerActor.TraitsImplementing<ProductionQueue>());
-					
-					// Then check all buildings for queues
-					foreach (var building in buildings)
-					{
-						allQueues.AddRange(building.TraitsImplementing<ProductionQueue>());
-					}
-					
-					var hasProduction = false;
-					foreach (var queue in allQueues)
-					{
-						var items = queue.AllQueued().ToList();
-						if (items.Count > 0)
-						{
-							if (!hasProduction)
-							{
-								sb.AppendLine();
-								sb.AppendLine("### Production Queues");
-								hasProduction = true;
-							}
-							
-							sb.AppendLine(CultureInfo.InvariantCulture, $"#### {queue.Info.Type} Queue:");
-							
-							// Group items by type and status
-							var itemGroups = items.GroupBy(item => new 
-							{ 
-								Name = item.Item,
-								Status = item.Paused ? "PAUSED" : item.Done ? "READY" : "IN_PROGRESS"
-							});
-							
-							foreach (var group in itemGroups)
-							{
-								var firstItem = group.First();
-								var progress = firstItem.RemainingCost == 0 ? 100 :
-									(100 * (firstItem.TotalCost - firstItem.RemainingCost) / firstItem.TotalCost);
-								var friendlyName = world.Map.Rules.Actors[group.Key.Name].TraitInfoOrDefault<BuildingInfo>() != null
-									? FriendlyNames.GetFriendlyBuildingName(group.Key.Name)
-									: FriendlyNames.GetFriendlyUnitName(group.Key.Name);
-								
-								var count = group.Count();
-								var countStr = count > 1 ? $" x{count}" : "";
-								
-								var itemStatus = group.Key.Status switch
-								{
-									"PAUSED" => " (PAUSED)",
-									"READY" => " (READY)",
-									_ => $" ({progress}% complete)"
-								};
-								
-								sb.AppendLine(CultureInfo.InvariantCulture, $"{friendlyName}{countStr}{itemStatus}");
-							}
-						}
-					}
 
 					// Special units (harvesters, MCVs)
 					var harvesters = world.ActorsWithTrait<Harvester>()
