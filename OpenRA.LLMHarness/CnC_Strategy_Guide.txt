@@ -21,11 +21,12 @@ You MUST follow this exact order at game start:
 
 # Strategy Tips
 1. Economy First: Build order is critical - Power → Refinery → Production
-2. Multiple Refineries: One refinery per Tiberium field for max income
+2. Manage Queues: Pay attention to your current building and unit queues and think carefully before deciding which buildings and units to produce
+3. Multiple Refineries: One refinery per Tiberium field for max income
 4. Combined Arms: Mix infantry, vehicles, and air units
-6. Power Management: Buildings operate slowly without sufficient power
-7. Base Defense: Guard Towers vs infantry, Turrets vs vehicles
-8. Superweapons: Ion Cannon (GDI) and Nuclear Missile (Nod) require tech centers
+5. Power Management: Buildings operate slowly without sufficient power
+6. Base Defense: Guard Towers vs infantry, Turrets vs vehicles
+7. Superweapons: Ion Cannon (GDI) and Nuclear Missile (Nod) require tech centers
 
 # Buildable Structures
 ## Basic Buildings

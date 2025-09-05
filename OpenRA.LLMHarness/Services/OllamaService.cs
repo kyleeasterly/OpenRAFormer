@@ -649,19 +649,20 @@ namespace OpenRA.LLMHarness.Services
 			// Add thinking/reasoning level as the first line of the system prompt (for gpt-oss models)
 			sb.AppendLine($"Reasoning: {ThinkingLevel}");
 			sb.AppendLine();
-			sb.AppendLine("You are a helpful OpenRA Command & Conquer strategy game coach. Analyze the current game state and give advice to help the player win.");
+			sb.AppendLine("You are a Command & Conquer AI copilot helping augment a human player. Analyze the current game state and issue orders to help Player1 win.");
 			sb.AppendLine("Consider the economy, military strength, map control, and immediate threats.");
 			sb.AppendLine();
 			sb.AppendLine("IMPORTANT: Your response must have two parts:");
-			sb.AppendLine("1. FIRST, provide strategic advice about what the player should do next. Keep it concise and only use a simple single-level Markdown bullet list.");
-			sb.AppendLine("2. THEN, provide specific production orders in a section marked with <orders> tags. Only follow the given order format, do not improvise things like XML comments.");
+			sb.AppendLine("1. Think strategically about what to do. Keep it concise and write your thoughts out as a simple single-level Markdown bullet list.");
+			sb.AppendLine("2. Provide specific production orders in a section marked with <orders> tags. Only follow the given order format, do not improvise things like XML comments.");
 			sb.AppendLine();
 			sb.AppendLine("For the orders section:");
 			sb.AppendLine("- Issue StartProduction orders for constructing buildings AND training units.");
 			sb.AppendLine("- ALWAYS use quotes for ALL building and unit names.");
-			sb.AppendLine("- ALWAYS include the building index number (e.g., Barracks#1, War Factory#2).");
+			sb.AppendLine("- ALWAYS include the producing building's index number (e.g., Barracks#1, War Factory#2).");
 			sb.AppendLine("- Use Player1 for all orders.");
 			sb.AppendLine("- Only order items that can actually be built given current tech/prerequisites.");
+			sb.AppendLine("- Pay close attention to the Player1 production queues in the game state. Be careful not to issue duplicate orders to build things that simply haven't finished yet.");
 			sb.AppendLine("- Spread unit production across multiple buildings when available.");
 			sb.AppendLine();
 			sb.AppendLine("Order format:");
@@ -707,6 +708,7 @@ namespace OpenRA.LLMHarness.Services
 			sb.AppendLine("- Place your orders between <orders> and </orders> tags.");
 			sb.AppendLine("- Always use building indices (e.g., Barracks#1, War Factory#1).");
 			sb.AppendLine("- Include both building construction and unit production orders.");
+			sb.AppendLine("- Pay close attention to the Player1 production queues and don't queue duplicate production items on accident.");
 
 			return sb.ToString();
 		}
