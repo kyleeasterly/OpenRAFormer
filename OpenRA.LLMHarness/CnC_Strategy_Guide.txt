@@ -1,96 +1,90 @@
-=== Command & Conquer Strategy Guide for OpenRA ===
+# Command & Conquer Strategy Guide
 
-This guide explains the basic mechanics and units for the C&C mod in OpenRA.
+This guide explains the basic mechanics and units for Command & Conquer.
 GDI and Nod share most basic units with faction-specific advanced units.
 
-== BUILD ORDER REQUIREMENTS ==
-
+# Build Order
 You MUST follow this exact order at game start:
 1. Deploy your MCV (Mobile Construction Vehicle) to create your Construction Yard
 2. Build a Power Plant - Cost: $500, Provides: 100 power
 3. Build a Refinery - Cost: $1500, Requires: Power Plant, Includes: 1 free Harvester
 4. Build Barracks - Cost: $500, Requires: Power Plant
-5. Build War Factory (GDI) or Airfield (Nod) - Cost: $2000, Requires: Refinery
+5. Build Weapons Factory (GDI) or Airfield (Nod) - Cost: $2000, Requires: Refinery
 6. Build Communications Center - Cost: $1000, Requires: Refinery (enables advanced units)
 
-== ECONOMY ==
-
+# Economy
 - Tiberium is your only resource, appearing as green or blue crystals on the map
 - Harvesters automatically collect Tiberium and deliver to Refineries
 - Each Refinery comes with 1 free Harvester when built
-- Additional Harvesters cost $1100 and require War Factory/Airfield
 - Build multiple Refineries on different Tiberium fields for faster income
-- Tiberium Storage Silos ($100) increase storage capacity, Requires: Refinery
+- Tiberium Storage Silos ($100) increase storage capacity, but try to avoid building them and efficiently turn your income into units instead
 
-== KEY STRUCTURES ==
-
-=== Basic Buildings ===
-- Construction Yard: Your command center, build from deployed MCV
-- Power Plant: $500, provides 100 power, Requires: Construction Yard
-- Advanced Power Plant: $800, provides 200 power, Requires: Communications Center
-- Refinery: $1500, processes Tiberium, includes 1 Harvester, Requires: Power Plant
-- Barracks: $500, trains infantry, Requires: Power Plant
-- War Factory (GDI): $2000, builds vehicles, Requires: Refinery
-- Airfield (Nod): $2000, builds vehicles via airdrop, Requires: Refinery
-
-=== Defensive Structures ===
-- Guard Tower (GDI): $600, Anti-infantry defense, Requires: Barracks
-- Turret (Nod): $600, Anti-vehicle defense, Requires: Barracks
-- SAM Site: $650, Anti-air defense, Requires: Hand of Nod
-- Obelisk of Light (Nod): $1500, Advanced laser defense, Requires: Temple of Nod
-
-=== Advanced Buildings ===
-- Communications Center: $1000, Provides radar minimap, Requires: Refinery
-- Temple of Nod: $2000, Nod tech center, enables Nuclear Missile, Requires: Communications Center
-- Advanced Communications Center: $1800, GDI tech center, enables Ion Cannon, Requires: Communications Center
-- Helipad: $1000, Builds and rearms aircraft, Requires: Refinery
-- Repair Facility: $500, Repairs vehicles, Requires: War Factory or Airfield
-- Silo: $100, Stores extra Tiberium, Requires: Refinery
-
-== INFANTRY UNITS ==
-
-- Minigunner: $100, basic anti-infantry, Requires: Barracks
-- Grenadier: $160, anti-infantry/building (GDI), Requires: Communications Center
-- Rocket Soldier: $300, anti-tank/air, Requires: Barracks
-- Flamethrower Infantry: $200, anti-infantry/building (Nod), Requires: Communications Center
-- Chemical Warrior: $300, advanced anti-infantry (Nod), Requires: Temple of Nod
-- Engineer: $500, captures buildings, repairs bridges, Requires: Barracks
-- Commando: $1500, sniper + C4 demolitions (GDI), Requires: Advanced Communications Center
-
-== VEHICLES ==
-
-=== Support ===
-- Harvester: $1100, collects Tiberium (first one free with Refinery), Requires: Refinery
-- Mobile Construction Vehicle (MCV): $3000, deploys into Construction Yard, Requires: War Factory/Airfield
-- Armored Personnel Carrier (APC): $600, transports 5 infantry (GDI), Requires: Barracks
-
-=== Combat Vehicles ===
-- Nod Buggy: $300, fast scout with machine gun, Requires: Airfield
-- Recon Bike: $500, fast rocket scout, Requires: Airfield
-- Humvee: $400, light vehicle (GDI), Requires: War Factory
-- Light Tank: $750, basic tank (Nod), Requires: Communications Center
-- Medium Tank: $900, main battle tank (GDI), Requires: Communications Center
-- Flame Tank: $600, anti-infantry (Nod), Requires: Communications Center
-- Artillery: $600, long-range support (Nod), Requires: Communications Center
-- Mammoth Tank: $1800, heavy dual-cannon tank (GDI), Requires: Advanced Communications Center
-- Stealth Tank: $900, cloaked missile tank (Nod), Requires: Temple of Nod
-- Rocket Launcher: $900, mobile SAM (GDI), Requires: Communications Center
-- Mobile Rocket Launch System (MLRS): $600, anti-air (Nod), Requires: Communications Center
-
-== AIRCRAFT ==
-
-- Orca VTOL: $1200, gunship with missiles (GDI), Requires: Helipad and Communications Center
-- Apache Attack Helicopter: $1200, gunship (Nod), Requires: Helipad and Communications Center
-- Chinook Transport: $750, transport helicopter, Requires: Helipad
-
-== STRATEGY TIPS ==
-
+# Strategy Tips
 1. Economy First: Build order is critical - Power → Refinery → Production
-2. Multiple Refineries: Better than multiple Harvesters early game
-3. Scout with cheap units: Use Minigunners or Buggies, NOT transports
+2. Multiple Refineries: One refinery per Tiberium field for max income
 4. Combined Arms: Mix infantry, vehicles, and air units
-5. Engineers: Can capture enemy buildings for tech stealing
 6. Power Management: Buildings operate slowly without sufficient power
 7. Base Defense: Guard Towers vs infantry, Turrets vs vehicles
 8. Superweapons: Ion Cannon (GDI) and Nuclear Missile (Nod) require tech centers
 
+# Buildable Structures
+## Basic Buildings
+- Construction Yard: $3000, 01:12, 0 Power, Base building deployed from MCV
+- Power Plant: $500, 00:12, +100 Power, Requires: Construction Yard
+- Advanced Power Plant: $800, 00:19, +200 Power, Requires: Communications Center
+- Refinery: $1500, 00:36, -40 Power, Requires: Power Plant, Processes Tiberium, includes 1 free Harvester
+- Barracks (GDI): $500, 00:12, -15 Power, Requires: Power Plant, Trains infantry
+- Hand of Nod: $500, 00:12, -15 Power, Requires: Power Plant, Trains infantry  
+- War Factory (GDI): $2000, 00:48, -40 Power, Requires: Refinery, Builds vehicles
+- Airfield (Nod): $2000, 00:48, -40 Power, Requires: Refinery, Airdrops vehicles
+
+## Defensive Structures
+- Sandbags (GDI): $25, 00:01, 0 Power, Requires: Construction Yard, Basic wall
+- Chain Link Fence (Nod): $25, 00:01, 0 Power, Requires: Construction Yard, Basic wall
+- Concrete Wall: $150, 00:06, 0 Power, Requires: War Factory/Airfield, Heavy wall
+- Guard Tower: $600, 00:23, -10 Power, Requires: Barracks, Anti-infantry defense
+- Gun Turret: $600, 00:23, -20 Power, Requires: Barracks, Anti-vehicle defense
+- SAM Site (Nod): $650, 00:27, -20 Power, Requires: Hand of Nod, Anti-air defense
+- Advanced Guard Tower (GDI): $1000, 00:46, -50 Power, Requires: Communications Center, All-purpose defense, Strong vs Aircraft and Infantry
+- Obelisk of Light (Nod): $1500, 00:50, -90 Power, Requires: Temple of Nod, Advanced laser defense
+
+## Advanced Buildings
+- Communications Center: $1000, 00:24, -50 Power, Requires: Refinery, Provides radar minimap and airstrike support power
+- Advanced Communications Center (GDI): $1800, 00:43, -200 Power, Requires: Communications Center, GDI tech center, enables Ion Cannon
+- Temple of Nod: $2000, 00:48, -150 Power, Requires: Communications Center, Nod tech center, enables Nuclear Missile
+- Helipad: $1000, 00:24, -20 Power, Requires: Refinery, Builds and rearms aircraft
+- Repair Facility: $500, 00:12, -20 Power, Requires: War Factory/Airfield, Repairs vehicles
+- Tiberium Silo: $100, 00:02, -10 Power, Requires: Refinery, Stores 3000 extra Tiberium
+
+# Buildable Infantry Units
+- Minigunner: $100, 00:02, Requires: Barracks/Hand of Nod, Basic anti-infantry
+- Grenadier (GDI): $160, 00:04, Requires: Communications Center, Anti-infantry/building, throws grenades
+- Rocket Soldier: $300, 00:07, Requires: Barracks/Hand of Nod, Anti-tank/air
+- Flamethrower Infantry (Nod): $200, 00:05, Requires: Communications Center, Anti-infantry/building
+- Chemical Warrior (Nod): $300, 00:07, Requires: Temple of Nod, Advanced anti-infantry, immune to Tiberium
+- Engineer: $500, 00:12, Requires: Barracks/Hand of Nod, Captures buildings, repairs bridges
+- Commando (GDI): $1500, 00:36, Requires: Advanced Communications Center, Sniper + C4 demolitions
+
+# Buildable Vehicle Units
+## Support
+- Harvester: $1100, 00:26, Requires: Refinery, Collects Tiberium (first one free with Refinery)
+- Mobile Construction Vehicle (MCV): $3000, 01:12, Requires: War Factory/Airfield, Deploys into Construction Yard
+- Armored Personnel Carrier (GDI): $600, 00:14, Requires: Barracks, Transports 5 infantry, armed with MG
+
+## Combat Vehicles
+- Nod Buggy (Nod): $300, 00:07, Requires: Airfield, Fast scout with machine gun
+- Recon Bike (Nod): $500, 00:12, Requires: Airfield, Fast rocket scout
+- Humvee (GDI): $400, 00:10, Requires: War Factory, Light vehicle with machine gun
+- Light Tank (Nod): $750, 00:18, Requires: Communications Center, Basic tank
+- Medium Tank (GDI): $900, 00:22, Requires: Communications Center, Main battle tank
+- Flame Tank (Nod): $600, 00:14, Requires: Communications Center, Anti-infantry
+- Artillery (Nod): $600, 00:14, Requires: Communications Center, Long-range support
+- Mammoth Tank (GDI): $1800, 00:43, Requires: Advanced Communications Center, Heavy dual-cannon tank with missiles, self-repairs
+- Stealth Tank (Nod): $900, 00:22, Requires: Temple of Nod, Cloaked missile tank
+- Rocket Launcher (GDI): $900, 00:22, Requires: Communications Center, Mobile rocket artillery
+- Mobile Rocket Launch System (Nod): $600, 00:14, Requires: Communications Center, Anti-air missile launcher
+
+# Buildable Aircraft Units
+- Chinook Transport: $750, 00:18, Requires: Helipad, Transport helicopter (10 infantry capacity)
+- Orca (GDI): $1200, 00:29, Requires: Helipad and Communications Center, VTOL gunship with missiles
+- Apache (Nod): $1200, 00:29, Requires: Helipad and Communications Center, Attack helicopter with chain gun

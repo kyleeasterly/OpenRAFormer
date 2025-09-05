@@ -16,7 +16,7 @@ namespace OpenRA.Mods.Common.Traits
 		public readonly string OutputDirectory = @"C:\OpenRATest";
 
 		[Desc("Interval between snapshots in game ticks (25 ticks = 1 second).")]
-		public readonly int SnapshotInterval = 250; // 10 seconds
+		public readonly int SnapshotInterval = 500; // 20 seconds
 
 		[Desc("Enable or disable the exporter.")]
 		public readonly bool Enabled = true;
@@ -28,11 +28,18 @@ namespace OpenRA.Mods.Common.Traits
 	{
 		readonly GameStateExporterInfo info;
 		World world;
-		int lastSnapshotTime = 0; // in seconds
+		int exportRequestedAtTick = -1;
+		const int ExportDelayTicks = 5; // Wait 5 ticks after request to allow orders to propagate
 
 		public GameStateExporter(GameStateExporterInfo info)
 		{
 			this.info = info;
+		}
+
+		public void RequestSnapshot()
+		{
+			if (world != null)
+				exportRequestedAtTick = world.WorldTick;
 		}
 
 		void ITick.Tick(Actor self)
@@ -42,10 +49,21 @@ namespace OpenRA.Mods.Common.Traits
 
 			world = self.World;
 
-			var currentGameTimeSeconds = world.WorldTick / 25;
-			if (currentGameTimeSeconds - lastSnapshotTime >= (info.SnapshotInterval / 25))
+			// Skip if in menu (Blank Shellmap)
+			if (world.Map.Title == "Blank Shellmap")
+				return;
+
+			// Initial snapshot on tick 2
+			if (world.WorldTick == 2)
 			{
-				lastSnapshotTime = currentGameTimeSeconds;
+				ExportGameState();
+				return;
+			}
+
+			// After initial, export after delay when requested
+			if (exportRequestedAtTick >= 0 && world.WorldTick >= exportRequestedAtTick + ExportDelayTicks)
+			{
+				exportRequestedAtTick = -1;
 				ExportGameState();
 			}
 		}

@@ -93,6 +93,7 @@ namespace OpenRA
 			["lst"] = "Landing Craft"
 		};
 
+
 		public static string GetFriendlyBuildingName(string internalName)
 		{
 			// No need for ToUpperInvariant since names are already lowercase
@@ -111,6 +112,161 @@ namespace OpenRA
 				return friendlyName;
 			
 			return internalName;
+		}
+
+		// Convert friendly name or internal name to the proper internal name for use in orders
+		public static string GetInternalActorName(string input)
+		{
+			// Handle null/empty
+			if (string.IsNullOrWhiteSpace(input))
+				return input;
+
+			// Simple approach - just check common mappings
+			// Use a simple switch with common variations
+			var lowerInput = input.ToLowerInvariant().Trim();
+			
+			// Buildings - return lowercase for internal use
+			switch (lowerInput)
+			{
+				case "power plant":
+				case "powerplant":
+				case "pp":
+				case "nuke":
+					return "nuke";
+				case "advanced power plant":
+				case "advpowerplant":
+				case "app":
+				case "nuk2":
+					return "nuk2";
+				case "refinery":
+				case "ref":
+				case "tiberium refinery":
+				case "proc":
+					return "proc";
+				case "barracks":
+				case "bar":
+				case "gdi barracks":
+				case "pyle":
+					return "pyle";
+				case "hand of nod":
+				case "hand":
+				case "nod barracks":
+					return "hand";
+				case "war factory":
+				case "weapons factory":
+				case "wf":
+				case "factory":
+				case "weap":
+					return "weap";
+				case "construction yard":
+				case "cy":
+				case "conyard":
+				case "fact":
+					return "fact";
+				case "silo":
+				case "storage":
+				case "tiberium silo":
+					return "silo";
+				case "communications center":
+				case "comm center":
+				case "hq":
+					return "hq";
+				case "guard tower":
+				case "gtwr":
+					return "gtwr";
+				case "advanced guard tower":
+				case "atwr":
+					return "atwr";
+				case "sam site":
+				case "sam":
+					return "sam";
+				case "obelisk":
+				case "obelisk of light":
+				case "obli":
+					return "obli";
+				case "turret":
+				case "gun":
+					return "gun";
+				case "temple":
+				case "temple of nod":
+				case "tmpl":
+					return "tmpl";
+					
+				// Units - return lowercase for internal use
+				case "mcv":
+				case "mobile construction vehicle":
+					return "mcv";
+				case "harvester":
+				case "harv":
+					return "harv";
+				case "minigunner":
+				case "rifle":
+				case "e1":
+					return "e1";
+				case "grenadier":
+				case "e2":
+					return "e2";
+				case "rocket soldier":
+				case "rocket":
+				case "bazooka":
+				case "e3":
+					return "e3";
+				case "engineer":
+				case "engi":
+				case "eng":
+				case "e6":
+					return "e6";
+				case "commando":
+				case "rmbo":
+					return "rmbo";
+				case "humvee":
+				case "hummer":
+				case "jeep":
+					return "jeep";
+				case "apc":
+				case "armored personnel carrier":
+					return "apc";
+				case "medium tank":
+				case "med tank":
+				case "mtnk":
+					return "mtnk";
+				case "light tank":
+				case "ltnk":
+					return "ltnk";
+				case "mammoth tank":
+				case "mammoth":
+				case "heavy tank":
+				case "htnk":
+					return "htnk";
+				case "artillery":
+				case "arty":
+					return "arty";
+				case "rocket launcher":
+				case "mlrs":
+				case "msam":
+					return "msam";
+				case "buggy":
+				case "nod buggy":
+				case "bggy":
+					return "bggy";
+				case "recon bike":
+				case "bike":
+					return "bike";
+				case "flame tank":
+				case "flamer":
+				case "ftnk":
+					return "ftnk";
+				case "stealth tank":
+				case "stealth":
+				case "stnk":
+					return "stnk";
+				case "ssm launcher":
+				case "ssm":
+					return "ssm";
+			}
+
+			// If nothing matched, just return it lowercased
+			return input.ToLowerInvariant();
 		}
 	}
 }

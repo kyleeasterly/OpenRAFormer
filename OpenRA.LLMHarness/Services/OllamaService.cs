@@ -9,6 +9,8 @@ namespace OpenRA.LLMHarness.Services
 	{
 		const string WatchDirectory = @"C:\OpenRATest";
 		const string LogDirectory = @"C:\OpenRATest\LLM_Coach_Logs";
+		const string OrderInputDirectory = @"C:\OpenRATest_Orders\input";
+		const string OrderArchiveDirectory = @"C:\OpenRATest_Orders\archive";
 		const string OllamaApiUrl = "http://localhost:11434/v1";
 		const string ModelName = "gpt-oss:20b";
 		const string ApiKey = "ollama"; // Dummy key for Ollama
@@ -18,14 +20,15 @@ namespace OpenRA.LLMHarness.Services
 
 		public bool VerboseMode { get; set; } = false;
 		public string ThinkingLevel { get; set; } = "medium";
+		public bool WriteOrdersToGame { get; set; } = false; // Start disabled for testing
 
 		string? currentLogFile;
 
-		// Queue management for LLM processing
+		// LLM processing management
 		bool isProcessingLLM = false;
-		string? pendingFile = null;
 		readonly object processLock = new();
 		CancellationTokenSource? shutdownCts;
+		CancellationTokenSource? currentRequestCts;
 
 		// File watcher management
 		FileSystemWatcher? fileWatcher;
@@ -67,6 +70,17 @@ namespace OpenRA.LLMHarness.Services
 				Directory.CreateDirectory(LogDirectory);
 			}
 
+			// Create order directories if they don't exist
+			if (!Directory.Exists(OrderInputDirectory))
+			{
+				Directory.CreateDirectory(OrderInputDirectory);
+			}
+
+			if (!Directory.Exists(OrderArchiveDirectory))
+			{
+				Directory.CreateDirectory(OrderArchiveDirectory);
+			}
+
 			// Initialize log file for this session
 			var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
 			currentLogFile = Path.Combine(LogDirectory, $"llm_coach_log_{timestamp}.txt");
@@ -75,6 +89,9 @@ namespace OpenRA.LLMHarness.Services
 			await LogToFileAsync($"=== OpenRA LLM Coach Session Started at {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
 			await LogToFileAsync($"Model: {ModelName}");
 			await LogToFileAsync($"Watch Directory: {WatchDirectory}");
+			await LogToFileAsync($"Order Input Directory: {OrderInputDirectory}");
+			await LogToFileAsync($"Order Archive Directory: {OrderArchiveDirectory}");
+			await LogToFileAsync($"Write Orders To Game: {WriteOrdersToGame}");
 			await LogToFileAsync($"Thinking Level: {ThinkingLevel}");
 			await LogToFileAsync($"Ollama API URL: {OllamaApiUrl}");
 			await LogToFileAsync("");
@@ -336,11 +353,10 @@ namespace OpenRA.LLMHarness.Services
 			{
 				if (isProcessingLLM)
 				{
-					var oldPending = pendingFile;
-					// Queue this file as the latest pending
-					pendingFile = filePath;
-					_ = NotifyStatusAsync($"LLM is busy. Queued file: {Path.GetFileName(filePath)}");
-					_ = LogToFileAsync($"[LOCK] LLM is busy. Replacing pending file: {(oldPending != null ? Path.GetFileName(oldPending) : "none")} -> {Path.GetFileName(filePath)}");
+					// Cancel current request to process new file immediately
+					_ = NotifyStatusAsync($"Canceling current LLM request to process: {Path.GetFileName(filePath)}");
+					_ = LogToFileAsync($"[LOCK] Canceling current request to process new file: {Path.GetFileName(filePath)}");
+					currentRequestCts?.Cancel();
 					return;
 				}
 
@@ -351,7 +367,7 @@ namespace OpenRA.LLMHarness.Services
 					processedFiles.Add(filePath);
 					_ = LogToFileAsync($"[PROCESS_FILE] Added {Path.GetFileName(filePath)} to processedFiles set (total: {processedFiles.Count})");
 				}
-				_ = LogToFileAsync($"[LOCK] Acquired processing lock for: {Path.GetFileName(filePath)}");
+				_ = LogToFileAsync($"[LOCK] Starting processing for: {Path.GetFileName(filePath)}");
 			}
 
 			try
@@ -393,7 +409,6 @@ namespace OpenRA.LLMHarness.Services
 						_ = LogToFileAsync($"[LOCK] Released processing lock due to read failure");
 					}
 
-					await ProcessPendingFileAsync();
 					return;
 				}
 
@@ -409,7 +424,6 @@ namespace OpenRA.LLMHarness.Services
 						_ = LogToFileAsync($"[LOCK] Released processing lock due to menu/lobby state");
 					}
 
-					await ProcessPendingFileAsync();
 					return;
 				}
 
@@ -434,9 +448,12 @@ namespace OpenRA.LLMHarness.Services
 					await NotifyStatusAsync("Full prompts logged to file.");
 				}
 
+				// Create new cancellation token for this request
+				currentRequestCts = new CancellationTokenSource();
+				
 				// Send to OpenAI-compatible API with streaming
 				await LogToFileAsync($"[LLM] Starting OpenAI API request for: {Path.GetFileName(filePath)}");
-				await StreamOpenAIResponseAsync(systemPrompt, userPrompt, gameState);
+				await StreamOpenAIResponseAsync(systemPrompt, userPrompt, gameState, currentRequestCts.Token);
 				await LogToFileAsync($"[LLM] Completed OpenAI API request for: {Path.GetFileName(filePath)}");
 			}
 			catch (Exception ex)
@@ -447,45 +464,18 @@ namespace OpenRA.LLMHarness.Services
 			}
 			finally
 			{
-				// Always release the processing lock and check for pending files
+				// Always release the processing lock
 				lock (processLock)
 				{
 					isProcessingLLM = false;
-					_ = LogToFileAsync($"[LOCK] Released processing lock in finally block for: {Path.GetFileName(filePath)}");
+					currentRequestCts?.Dispose();
+					currentRequestCts = null;
+					_ = LogToFileAsync($"[LOCK] Released processing lock for: {Path.GetFileName(filePath)}");
 				}
-
-				await LogToFileAsync($"[PROCESS_FILE] Checking for pending files after completing: {Path.GetFileName(filePath)}");
-				await ProcessPendingFileAsync();
 			}
 		}
 
-		private async Task ProcessPendingFileAsync()
-		{
-			string? fileToProcess = null;
-
-			lock (processLock)
-			{
-				if (pendingFile != null && !isProcessingLLM)
-				{
-					fileToProcess = pendingFile;
-					pendingFile = null;
-					_ = LogToFileAsync($"[PENDING] Retrieved pending file: {Path.GetFileName(fileToProcess)} (isProcessingLLM={isProcessingLLM})");
-				}
-				else
-				{
-					_ = LogToFileAsync($"[PENDING] No pending file to process (pendingFile={(pendingFile != null ? Path.GetFileName(pendingFile) : "null")}, isProcessingLLM={isProcessingLLM})");
-				}
-			}
-
-			if (fileToProcess != null)
-			{
-				await NotifyStatusAsync($"Processing pending file: {Path.GetFileName(fileToProcess)}");
-				await LogToFileAsync($"[PENDING] Starting processing of pending file: {Path.GetFileName(fileToProcess)}");
-				await ProcessFileAsync(fileToProcess);
-			}
-		}
-
-		private async Task StreamOpenAIResponseAsync(string systemPrompt, string userPrompt, string gameState)
+		private async Task StreamOpenAIResponseAsync(string systemPrompt, string userPrompt, string gameState, CancellationToken cancellationToken)
 		{
 			try
 			{
@@ -510,16 +500,20 @@ namespace OpenRA.LLMHarness.Services
 
 				await LogToFileAsync($"[HTTP] Sending request to OpenAI-compatible API at {DateTime.Now:HH:mm:ss.fff}");
 
-				// Stream the response
-				var streamingResponse = chatClient.CompleteChatStreamingAsync(messages);
+				// Stream the response with cancellation support
+				var streamingResponse = chatClient.CompleteChatStreamingAsync(messages, cancellationToken: cancellationToken);
 				
 				await LogToFileAsync($"[HTTP] Starting to receive streaming response at {DateTime.Now:HH:mm:ss.fff}");
 
 				await foreach (var chunk in streamingResponse)
 				{
-					// Check for shutdown
-					if (shutdownCts?.Token.IsCancellationRequested ?? true)
+					// Check for shutdown or cancellation
+					if ((shutdownCts?.Token.IsCancellationRequested ?? true) || cancellationToken.IsCancellationRequested)
+					{
+						if (cancellationToken.IsCancellationRequested)
+							await LogToFileAsync("[HTTP] Stream canceled due to new game state");
 						break;
+					}
 
 					// Process content updates
 					// Note: The gpt-oss model includes reasoning in its output when configured via system prompt
@@ -552,6 +546,31 @@ namespace OpenRA.LLMHarness.Services
 				var seconds = (DateTime.Now - startTime).TotalSeconds;
 				await LogToFileAsync($"Generation completed in {seconds:F2} seconds");
 
+				// Only process orders if not canceled
+				if (!cancellationToken.IsCancellationRequested)
+				{
+					// Extract and process orders
+					var orders = ExtractOrders(fullResponse);
+					if (!string.IsNullOrEmpty(orders))
+					{
+						await LogToFileAsync("\n=== EXTRACTED ORDERS ===");
+						await LogToFileAsync(orders);
+						await LogToFileAsync("=== END OF EXTRACTED ORDERS ===\n");
+					}
+					else
+					{
+						await LogToFileAsync("[ORDERS] No orders found in LLM response - writing empty orders file");
+						orders = ""; // Ensure empty string rather than null
+					}
+					
+					// Always write order files (even if empty) to maintain the request-response loop
+					await WriteOrderFiles(orders);
+				}
+				else
+				{
+					await LogToFileAsync("[ORDERS] Skipping order extraction - request was canceled");
+				}
+
 				// Notify completion
 				if (OnResponseComplete != null)
 				{
@@ -566,6 +585,11 @@ namespace OpenRA.LLMHarness.Services
 					};
 					await OnResponseComplete(llmResponse);
 				}
+			}
+			catch (OperationCanceledException)
+			{
+				await LogToFileAsync("[ERROR] Request was canceled");
+				await NotifyStatusAsync("Request canceled for new game state");
 			}
 			catch (ClientResultException ex)
 			{
@@ -627,8 +651,38 @@ namespace OpenRA.LLMHarness.Services
 			sb.AppendLine();
 			sb.AppendLine("You are a helpful OpenRA Command & Conquer strategy game coach. Analyze the current game state and give advice to help the player win.");
 			sb.AppendLine("Consider the economy, military strength, map control, and immediate threats.");
-			sb.AppendLine("Give specific, actionable advice about what to do next.");
-			sb.AppendLine("Keep your response concise and focused on the most important next steps.");
+			sb.AppendLine();
+			sb.AppendLine("IMPORTANT: Your response must have two parts:");
+			sb.AppendLine("1. FIRST, provide strategic advice about what the player should do next. Keep it concise and only use a simple single-level Markdown bullet list.");
+			sb.AppendLine("2. THEN, provide specific production orders in a section marked with <orders> tags. Only follow the given order format, do not improvise things like XML comments.");
+			sb.AppendLine();
+			sb.AppendLine("For the orders section:");
+			sb.AppendLine("- Issue StartProduction orders for constructing buildings AND training units.");
+			sb.AppendLine("- ALWAYS use quotes for ALL building and unit names.");
+			sb.AppendLine("- ALWAYS include the building index number (e.g., Barracks#1, War Factory#2).");
+			sb.AppendLine("- Use Player1 for all orders.");
+			sb.AppendLine("- Only order items that can actually be built given current tech/prerequisites.");
+			sb.AppendLine("- Spread unit production across multiple buildings when available.");
+			sb.AppendLine();
+			sb.AppendLine("Order format:");
+			sb.AppendLine("Player1: StartProduction (Building:\"BuildingType#Index\" Item:\"ItemName\" Count:Number)");
+			sb.AppendLine();
+			sb.AppendLine("Example building construction orders:");
+			sb.AppendLine("Player1: StartProduction (Building:\"Construction Yard#1\" Item:\"Power Plant\" Count:1)");
+			sb.AppendLine("Player1: StartProduction (Building:\"Construction Yard#1\" Item:\"Refinery\" Count:1)");
+			sb.AppendLine("Player1: StartProduction (Building:\"Construction Yard#1\" Item:\"Barracks\" Count:1)");
+			sb.AppendLine();
+			sb.AppendLine("Example unit production orders:");
+			sb.AppendLine("Player1: StartProduction (Building:\"Barracks#1\" Item:\"Minigunner\" Count:3)");
+			sb.AppendLine("Player1: StartProduction (Building:\"Barracks#1\" Item:\"Rocket Soldier\" Count:2)");
+			sb.AppendLine("Player1: StartProduction (Building:\"War Factory#1\" Item:\"Medium Tank\" Count:1)");
+			sb.AppendLine("Player1: StartProduction (Building:\"War Factory#1\" Item:\"Harvester\" Count:1)");
+			sb.AppendLine();
+			sb.AppendLine("If multiple production buildings exist, distribute the load:");
+			sb.AppendLine("Player1: StartProduction (Building:\"Barracks#1\" Item:\"Minigunner\" Count:2)");
+			sb.AppendLine("Player1: StartProduction (Building:\"Barracks#2\" Item:\"Rocket Soldier\" Count:2)");
+			sb.AppendLine();
+			sb.AppendLine("Place your orders between <orders> and </orders> tags. ONLY write orders following this format. These are not XML and should not be indented.");
 			sb.AppendLine();
 
 			sb.AppendLine("<game_knowledge>");
@@ -645,9 +699,82 @@ namespace OpenRA.LLMHarness.Services
 			sb.AppendLine(gameState);
 			sb.AppendLine("</game_state>");
 			sb.AppendLine();
-			sb.AppendLine("Based on the game knowledge above and current state, what should the player do next?");
+			sb.AppendLine("Based on the game knowledge above and current state:");
+			sb.AppendLine("1. First, provide strategic advice about what the player should do next.");
+			sb.AppendLine("2. Then, provide production orders for buildings to construct and units to train.");
+			sb.AppendLine();
+			sb.AppendLine("Remember to:");
+			sb.AppendLine("- Place your orders between <orders> and </orders> tags.");
+			sb.AppendLine("- Always use building indices (e.g., Barracks#1, War Factory#1).");
+			sb.AppendLine("- Include both building construction and unit production orders.");
 
 			return sb.ToString();
+		}
+
+		private string? ExtractOrders(string llmResponse)
+		{
+			// Find content between <orders> and </orders> tags
+			var startTag = "<orders>";
+			var endTag = "</orders>";
+			
+			var startIndex = llmResponse.IndexOf(startTag, StringComparison.OrdinalIgnoreCase);
+			if (startIndex == -1)
+			{
+				Console.WriteLine("[OllamaService] No <orders> tag found in LLM response");
+				return null;
+			}
+			
+			startIndex += startTag.Length;
+			var endIndex = llmResponse.IndexOf(endTag, startIndex, StringComparison.OrdinalIgnoreCase);
+			if (endIndex == -1)
+			{
+				Console.WriteLine("[OllamaService] No closing </orders> tag found in LLM response");
+				return null;
+			}
+			
+			var orders = llmResponse.Substring(startIndex, endIndex - startIndex).Trim();
+			if (string.IsNullOrWhiteSpace(orders))
+			{
+				Console.WriteLine("[OllamaService] Empty orders section in LLM response");
+				return null;
+			}
+			
+			return orders;
+		}
+
+		private async Task WriteOrderFiles(string orders)
+		{
+			try
+			{
+				var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+				var filename = $"order_{timestamp}.txt";
+				
+				// ALWAYS write to archive
+				var archivePath = Path.Combine(OrderArchiveDirectory, filename);
+				await File.WriteAllTextAsync(archivePath, orders);
+				await LogToFileAsync($"[ORDERS] Archived orders to: {archivePath}");
+				await NotifyStatusAsync($"Orders archived: {filename}");
+				
+				// Conditionally write to input (for game processing)
+				if (WriteOrdersToGame)
+				{
+					var inputPath = Path.Combine(OrderInputDirectory, filename);
+					await File.WriteAllTextAsync(inputPath, orders);
+					await LogToFileAsync($"[ORDERS] Wrote orders for game processing to: {inputPath}");
+					await NotifyStatusAsync($"Orders sent to game: {filename}");
+				}
+				else
+				{
+					await LogToFileAsync("[ORDERS] Orders NOT sent to game (WriteOrdersToGame=false)");
+					await NotifyStatusAsync("Orders archived only (not sent to game)");
+				}
+			}
+			catch (Exception ex)
+			{
+				Console.WriteLine($"[ERROR] Failed to write order files: {ex.Message}\n{ex.StackTrace}");
+				await LogToFileAsync($"[ERROR] Failed to write order files: {ex.Message}\n{ex.StackTrace}");
+				await NotifyStatusAsync($"Failed to write order files: {ex.Message}");
+			}
 		}
 
 		private async Task LogToFileAsync(string message)

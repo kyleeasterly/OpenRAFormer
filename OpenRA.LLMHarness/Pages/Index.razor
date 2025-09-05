@@ -75,10 +75,13 @@
             
             <!-- Controls -->
             <MudGrid>
-                <MudItem xs="12" sm="6">
-                    <MudSwitch @bind-Value="@verboseMode" Label="Verbose Mode" Color="Color.Primary" />
+                <MudItem xs="12" sm="4">
+                    <MudSwitch Value="@verboseMode" Label="Verbose Mode" Color="Color.Primary" ValueChanged="@((bool val) => { verboseMode = val; OllamaService.VerboseMode = val; })" />
                 </MudItem>
-                <MudItem xs="12" sm="6">
+                <MudItem xs="12" sm="4">
+                    <MudSwitch Value="@writeOrdersToGame" Label="Send Orders to Game" Color="Color.Primary" ValueChanged="@((bool val) => { writeOrdersToGame = val; OllamaService.WriteOrdersToGame = val; })" />
+                </MudItem>
+                <MudItem xs="12" sm="4">
                     <MudText Typo="Typo.subtitle2">Thinking Level:</MudText>
                     <MudRadioGroup Value="@thinkingLevel" T="string" ValueChanged="OnThinkingLevelChanged">
                         <MudRadio Value="@("low")" Color="Color.Primary" Size="Size.Small">Low</MudRadio>
@@ -187,6 +190,7 @@
     private bool isConnected = false;
     private bool isProcessing = false;
     private bool verboseMode = false;
+    private bool writeOrdersToGame = false;
     private string statusMessage = "Initializing...";
     private string selectedResponseId = "";
     private string currentStreamingResponse = "";
@@ -208,6 +212,7 @@
         // Set initial settings
         OllamaService.VerboseMode = verboseMode;
         OllamaService.ThinkingLevel = thinkingLevel;
+        OllamaService.WriteOrdersToGame = writeOrdersToGame;
         
         await base.OnInitializedAsync();
     }
@@ -287,12 +292,6 @@
     private LLMResponse? GetSelectedResponse()
     {
         return sessionHistory.FirstOrDefault(r => r.Id == selectedResponseId);
-    }
-
-    private void OnVerboseModeChanged(bool newValue)
-    {
-        verboseMode = newValue;
-        OllamaService.VerboseMode = verboseMode;
     }
 
     public void Dispose()
