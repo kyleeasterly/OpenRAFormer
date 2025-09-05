@@ -92,6 +92,75 @@
             </MudGrid>
             <MudDivider Class="my-4" />
             
+            <!-- Human message input -->
+            <MudCard Class="mb-4">
+                <MudCardContent>
+                    <MudText Typo="Typo.h6" Class="mb-2">Message to LLM</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-3">
+                        Provide important information to guide the LLM's strategy
+                    </MudText>
+                    @if (isEditingHumanMessage)
+                    {
+                        <MudTextField @bind-Value="humanMessageDraft" 
+                                      Label="Your strategic input" 
+                                      Variant="Variant.Outlined"
+                                      Lines="3"
+                                      Class="mb-2" />
+                        <MudGrid>
+                            <MudItem xs="6">
+                                <MudButton Variant="Variant.Filled" 
+                                           Color="Color.Primary" 
+                                           OnClick="CommitHumanMessage"
+                                           StartIcon="@Icons.Material.Filled.Check">
+                                    Commit Message
+                                </MudButton>
+                            </MudItem>
+                            <MudItem xs="6">
+                                <MudButton Variant="Variant.Outlined" 
+                                           Color="Color.Secondary" 
+                                           OnClick="CancelHumanMessage"
+                                           StartIcon="@Icons.Material.Filled.Cancel">
+                                    Cancel
+                                </MudButton>
+                            </MudItem>
+                        </MudGrid>
+                    }
+                    else
+                    {
+                        @if (!string.IsNullOrEmpty(committedHumanMessage))
+                        {
+                            <MudAlert Severity="Severity.Info" Class="mb-2">
+                                <MudText Typo="Typo.body2">
+                                    Current Message: @committedHumanMessage
+                                </MudText>
+                            </MudAlert>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-2">
+                                No message set
+                            </MudText>
+                        }
+                        <MudButton Variant="Variant.Filled" 
+                                   Color="Color.Primary" 
+                                   OnClick="StartEditingHumanMessage"
+                                   StartIcon="@Icons.Material.Filled.Edit">
+                            @(string.IsNullOrEmpty(committedHumanMessage) ? "Add Message" : "Edit Message")
+                        </MudButton>
+                        @if (!string.IsNullOrEmpty(committedHumanMessage))
+                        {
+                            <MudButton Variant="Variant.Outlined" 
+                                       Color="Color.Error" 
+                                       OnClick="ClearHumanMessage"
+                                       StartIcon="@Icons.Material.Filled.Clear"
+                                       Class="ml-2">
+                                Clear Message
+                            </MudButton>
+                        }
+                    }
+                </MudCardContent>
+            </MudCard>
+            
             <!-- Current response display -->
             <MudCard>
                 <MudCardContent>
@@ -199,6 +268,11 @@
     private bool showThinking = false;
     private string thinkingLevel = "medium";
     
+    // Human message state
+    private bool isEditingHumanMessage = false;
+    private string humanMessageDraft = "";
+    private string committedHumanMessage = "";
+    
     private List<LLMResponse> sessionHistory = new();
 
     protected override async Task OnInitializedAsync()
@@ -292,6 +366,34 @@
     private LLMResponse? GetSelectedResponse()
     {
         return sessionHistory.FirstOrDefault(r => r.Id == selectedResponseId);
+    }
+
+    // Human message methods
+    private void StartEditingHumanMessage()
+    {
+        isEditingHumanMessage = true;
+        humanMessageDraft = committedHumanMessage;
+    }
+
+    private void CommitHumanMessage()
+    {
+        committedHumanMessage = humanMessageDraft;
+        OllamaService.HumanMessage = committedHumanMessage;
+        isEditingHumanMessage = false;
+    }
+
+    private void CancelHumanMessage()
+    {
+        humanMessageDraft = "";
+        isEditingHumanMessage = false;
+    }
+
+    private void ClearHumanMessage()
+    {
+        committedHumanMessage = "";
+        humanMessageDraft = "";
+        OllamaService.HumanMessage = "";
+        isEditingHumanMessage = false;
     }
 
     public void Dispose()

@@ -21,6 +21,7 @@ namespace OpenRA.LLMHarness.Services
 		public bool VerboseMode { get; set; } = false;
 		public string ThinkingLevel { get; set; } = "medium";
 		public bool WriteOrdersToGame { get; set; } = false; // Start disabled for testing
+		public string HumanMessage { get; set; } = "";
 
 		string? currentLogFile;
 
@@ -434,6 +435,14 @@ namespace OpenRA.LLMHarness.Services
 				var userPrompt = BuildUserPrompt(gameState);
 				await NotifyStatusAsync($"Built system prompt: {systemPrompt.Length} chars, user prompt: {userPrompt.Length} chars.");
 
+				// Log human message if present
+				if (!string.IsNullOrWhiteSpace(HumanMessage))
+				{
+					await LogToFileAsync($"\n=== HUMAN MESSAGE ===");
+					await LogToFileAsync(HumanMessage);
+					await LogToFileAsync("=== END OF HUMAN MESSAGE ===\n");
+				}
+
 				// Always log the full prompts to file
 				await LogToFileAsync("\n=== SYSTEM PROMPT TO LLM ===");
 				await LogToFileAsync(systemPrompt);
@@ -709,6 +718,15 @@ namespace OpenRA.LLMHarness.Services
 			sb.AppendLine("- Always use building indices (e.g., Barracks#1, War Factory#1).");
 			sb.AppendLine("- Include both building construction and unit production orders.");
 			sb.AppendLine("- Pay close attention to the Player1 production queues and don't queue duplicate production items on accident.");
+			
+			// Include human message if provided
+			if (!string.IsNullOrWhiteSpace(HumanMessage))
+			{
+				sb.AppendLine();
+				sb.AppendLine("## IMPORTANT EMERGENT INFORMATION FROM HUMAN PLAYER:");
+				sb.AppendLine(HumanMessage);
+				sb.AppendLine("(Take this information into account when making your strategic decisions)");
+			}
 
 			return sb.ToString();
 		}
