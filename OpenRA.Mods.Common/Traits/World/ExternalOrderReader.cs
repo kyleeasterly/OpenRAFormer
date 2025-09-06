@@ -41,6 +41,7 @@ namespace OpenRA.Mods.Common.Traits
 		int lastCheckTick = 0;
 		ExternalOrderParser parser;
 		bool isActuallyEnabled = true;
+		bool hasCheckedGameStateExporter = false;
 
 		public ExternalOrderReader(ExternalOrderReaderInfo info)
 		{
@@ -56,47 +57,9 @@ namespace OpenRA.Mods.Common.Traits
 				return;
 			}
 
-			// Check if GameStateExporter is in interval mode
-			var gameStateExporter = self.World.WorldActor.TraitOrDefault<GameStateExporter>();
-			var gameStateExporterInfo = self.World.WorldActor.Info.TraitInfoOrDefault<GameStateExporterInfo>();
-			
-			if (gameStateExporterInfo != null && gameStateExporterInfo.UseIntervalMode)
-			{
-				isActuallyEnabled = false;
-				Console.WriteLine("[ExternalOrderReader] Disabled - GameStateExporter is in interval mode");
-				Log.Write("debug", "[ExternalOrderReader] Disabled - GameStateExporter is in interval mode");
-				return;
-			}
-
-			// Announce initialization to console only
+			// Initial setup - GameStateExporter check will be done in first tick when WorldActor is available
 			Console.WriteLine("[ExternalOrderReader] Initializing...");
 			Log.Write("debug", "[ExternalOrderReader] Initializing...");
-			
-			// Ensure directory exists
-			try
-			{
-				if (!Directory.Exists(info.InputDirectory))
-				{
-					Directory.CreateDirectory(info.InputDirectory);
-					Console.WriteLine($"[ExternalOrderReader] Created input directory: {info.InputDirectory}");
-					Log.Write("debug", $"[ExternalOrderReader] Created input directory: {info.InputDirectory}");
-				}
-				else
-				{
-					Console.WriteLine($"[ExternalOrderReader] Monitoring: {info.InputDirectory}");
-					Log.Write("debug", $"[ExternalOrderReader] Monitoring: {info.InputDirectory}");
-				}
-				
-				Console.WriteLine($"[ExternalOrderReader] Active - checking every {info.CheckInterval / 25f:0.#} seconds");
-				Log.Write("debug", $"[ExternalOrderReader] Active - checking every {info.CheckInterval / 25f:0.#} seconds");
-			}
-			catch (Exception e)
-			{
-				// Keep error visible in-game
-				TextNotificationsManager.AddSystemLine("External Order Reader", $"ERROR: Failed to create directory - {e.Message}");
-				Console.WriteLine($"[ExternalOrderReader] ERROR: Failed to create directory - {e.Message}");
-				Log.Write("debug", $"[ExternalOrderReader] initialization error: {e}");
-			}
 		}
 
 		void ITick.Tick(Actor self)
@@ -105,6 +68,47 @@ namespace OpenRA.Mods.Common.Traits
 				return;
 
 			world = self.World;
+
+			// Check GameStateExporter interval mode on first tick when WorldActor is available
+			if (!hasCheckedGameStateExporter)
+			{
+				hasCheckedGameStateExporter = true;
+				
+				var gameStateExporterInfo = world.WorldActor.Info.TraitInfoOrDefault<GameStateExporterInfo>();
+				if (gameStateExporterInfo != null && gameStateExporterInfo.UseIntervalMode)
+				{
+					isActuallyEnabled = false;
+					Console.WriteLine("[ExternalOrderReader] Disabled - GameStateExporter is in interval mode");
+					Log.Write("debug", "[ExternalOrderReader] Disabled - GameStateExporter is in interval mode");
+					return;
+				}
+
+				// Complete initialization now that we know we're enabled
+				try
+				{
+					if (!Directory.Exists(info.InputDirectory))
+					{
+						Directory.CreateDirectory(info.InputDirectory);
+						Console.WriteLine($"[ExternalOrderReader] Created input directory: {info.InputDirectory}");
+						Log.Write("debug", $"[ExternalOrderReader] Created input directory: {info.InputDirectory}");
+					}
+					else
+					{
+						Console.WriteLine($"[ExternalOrderReader] Monitoring: {info.InputDirectory}");
+						Log.Write("debug", $"[ExternalOrderReader] Monitoring: {info.InputDirectory}");
+					}
+					
+					Console.WriteLine($"[ExternalOrderReader] Active - checking every {info.CheckInterval / 25f:0.#} seconds");
+					Log.Write("debug", $"[ExternalOrderReader] Active - checking every {info.CheckInterval / 25f:0.#} seconds");
+				}
+				catch (Exception e)
+				{
+					// Keep error visible in-game
+					TextNotificationsManager.AddSystemLine("External Order Reader", $"ERROR: Failed to create directory - {e.Message}");
+					Console.WriteLine($"[ExternalOrderReader] ERROR: Failed to create directory - {e.Message}");
+					Log.Write("debug", $"[ExternalOrderReader] initialization error: {e}");
+				}
+			}
 
 			// Initialize parser on first tick when world is available
 			if (parser == null)
