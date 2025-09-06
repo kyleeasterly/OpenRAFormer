@@ -139,6 +139,31 @@ namespace OpenRA.Mods.Common.Traits
 					sb.AppendLine();
 					sb.AppendLine("# YOUR PLAYER STATE (Player 1 - The Human Player You Are Advising)");
 					sb.AppendLine("*This is the player you should provide strategy advice for*");
+					
+					// Add Player 1's economic status once at the beginning
+					var player1Resources = player1.PlayerActor.TraitOrDefault<PlayerResources>();
+					if (player1Resources != null)
+					{
+						sb.AppendLine();
+						sb.AppendLine("### Economic Status");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"Cash: ${player1Resources.Cash}");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"Stored Resources: {player1Resources.Resources}/{player1Resources.ResourceCapacity}");
+					}
+					
+					// Add Player 1's military statistics once at the beginning
+					var player1Stats = player1.PlayerActor.TraitOrDefault<PlayerStatistics>();
+					if (player1Stats != null)
+					{
+						sb.AppendLine();
+						sb.AppendLine("### Military Statistics");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"Army Value: ${player1Stats.ArmyValue}");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"Total Assets Value: ${player1Stats.AssetsValue}");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"Units Killed: {player1Stats.UnitsKilled} (${player1Stats.KillsCost} value)");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"Units Lost: {player1Stats.UnitsDead} (${player1Stats.DeathsCost} value)");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"Buildings Destroyed: {player1Stats.BuildingsKilled}");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"Buildings Lost: {player1Stats.BuildingsDead}");
+						sb.AppendLine(CultureInfo.InvariantCulture, $"Income Rate: ${player1Stats.DisplayIncome}/min");
+					}
 				}
 				
 				var isFirstOtherPlayer = true;
@@ -167,31 +192,7 @@ namespace OpenRA.Mods.Common.Traits
 							var status = player.WinState == WinState.Won ? "Won" : player.WinState == WinState.Lost ? "Lost" : "Playing";
 					sb.AppendLine(CultureInfo.InvariantCulture, $"Status: {status}");
 
-					// Resources
-					var resources = player.PlayerActor.TraitOrDefault<PlayerResources>();
-					if (resources != null)
-					{
-						sb.AppendLine();
-						sb.AppendLine("### Economic Status");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Cash: ${resources.Cash}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Stored Resources: {resources.Resources}/{resources.ResourceCapacity}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Total Value: ${resources.GetCashAndResources()}");
-					}
 
-					// Statistics
-					var stats = player.PlayerActor.TraitOrDefault<PlayerStatistics>();
-					if (stats != null)
-					{
-						sb.AppendLine();
-						sb.AppendLine("### Military Statistics");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Army Value: ${stats.ArmyValue}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Total Assets Value: ${stats.AssetsValue}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Units Killed: {stats.UnitsKilled} (${stats.KillsCost} value)");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Units Lost: {stats.UnitsDead} (${stats.DeathsCost} value)");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Buildings Destroyed: {stats.BuildingsKilled}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Buildings Lost: {stats.BuildingsDead}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Income Rate: ${stats.DisplayIncome}/min");
-					}
 
 					// Power
 					var power = player.PlayerActor.TraitOrDefault<PowerManager>();
@@ -212,8 +213,6 @@ namespace OpenRA.Mods.Common.Traits
 						!string.Equals(a.Info.Name, "C17", StringComparison.OrdinalIgnoreCase) &&
 						!string.Equals(a.Info.Name, "player", StringComparison.OrdinalIgnoreCase)).ToList();
 
-					sb.AppendLine();
-					sb.AppendLine(CultureInfo.InvariantCulture, $"### Unit Summary: {units.Count} units, {buildings.Count} buildings");
 
 					// Individual unit positions
 					if (units.Count > 0)
@@ -229,15 +228,6 @@ namespace OpenRA.Mods.Common.Traits
 						}
 					}
 
-					// Group buildings by type for summary
-					var buildingGroups = buildings.GroupBy(a => a.Info.Name).OrderByDescending(g => g.Count());
-					sb.AppendLine();
-					sb.AppendLine("#### Buildings by Type:");
-					foreach (var group in buildingGroups)
-					{
-						var friendlyName = FriendlyNames.GetFriendlyBuildingName(group.Key);
-						sb.AppendLine(CultureInfo.InvariantCulture, $"{friendlyName}: {group.Count()} buildings");
-					}
 
 					// Building positions with production info
 					if (buildings.Count > 0)
@@ -304,23 +294,6 @@ namespace OpenRA.Mods.Common.Traits
 					}
 
 
-					// Special units (harvesters, MCVs)
-					var harvesters = world.ActorsWithTrait<Harvester>()
-						.Where(tp => tp.Actor.Owner == player && !tp.Actor.IsDead)
-						.Select(tp => tp.Actor).ToList();
-					// Only count mobile MCVs, not deployed Construction Yards
-					// MCVs have BaseBuildingInfo but not BuildingInfo
-					// Construction Yards have both BaseBuildingInfo and BuildingInfo
-					var mcvs = world.Actors
-						.Where(a => a.Owner == player && !a.IsDead && 
-							a.Info.HasTraitInfo<BaseBuildingInfo>() && 
-							!a.Info.HasTraitInfo<BuildingInfo>())
-						.ToList();
-
-					sb.AppendLine();
-					sb.AppendLine("### Special Units");
-					sb.AppendLine(CultureInfo.InvariantCulture, $"Harvesters: {harvesters.Count}");
-					sb.AppendLine(CultureInfo.InvariantCulture, $"MCVs: {mcvs.Count}");
 
 					sb.AppendLine();
 				}
