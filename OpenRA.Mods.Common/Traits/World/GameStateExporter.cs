@@ -21,6 +21,9 @@ namespace OpenRA.Mods.Common.Traits
 		[Desc("Enable or disable the exporter.")]
 		public readonly bool Enabled = true;
 
+		[Desc("If true, export snapshots at regular intervals. If false, use request-based mode triggered by external orders.")]
+		public readonly bool UseIntervalMode = false;
+
 		public override object Create(ActorInitializer init) { return new GameStateExporter(this); }
 	}
 
@@ -29,6 +32,7 @@ namespace OpenRA.Mods.Common.Traits
 		readonly GameStateExporterInfo info;
 		World world;
 		int exportRequestedAtTick = -1;
+		int lastIntervalExportTick = 0;
 		const int ExportDelayTicks = 5; // Wait 5 ticks after request to allow orders to propagate
 
 		public GameStateExporter(GameStateExporterInfo info)
@@ -57,14 +61,27 @@ namespace OpenRA.Mods.Common.Traits
 			if (world.WorldTick == 2)
 			{
 				ExportGameState();
+				lastIntervalExportTick = world.WorldTick;
 				return;
 			}
 
-			// After initial, export after delay when requested
-			if (exportRequestedAtTick >= 0 && world.WorldTick >= exportRequestedAtTick + ExportDelayTicks)
+			if (info.UseIntervalMode)
 			{
-				exportRequestedAtTick = -1;
-				ExportGameState();
+				// Interval-based mode: export at regular intervals
+				if (world.WorldTick - lastIntervalExportTick >= info.SnapshotInterval)
+				{
+					lastIntervalExportTick = world.WorldTick;
+					ExportGameState();
+				}
+			}
+			else
+			{
+				// Request-based mode: export after delay when requested
+				if (exportRequestedAtTick >= 0 && world.WorldTick >= exportRequestedAtTick + ExportDelayTicks)
+				{
+					exportRequestedAtTick = -1;
+					ExportGameState();
+				}
 			}
 		}
 

@@ -17,7 +17,7 @@ namespace OpenRA.Mods.Common.Traits
 		[Desc("Check for new order files every N game ticks (25 ticks = 1 second).")]
 		public readonly int CheckInterval = 25; // Check every second
 
-		[Desc("Enable or disable the external order reader.")]
+		[Desc("Enable or disable the external order reader. Automatically disabled if GameStateExporter is in interval mode.")]
 		public readonly bool Enabled = true;
 
 		[Desc("Maximum number of orders to process per tick to avoid freezing.")]
@@ -40,6 +40,7 @@ namespace OpenRA.Mods.Common.Traits
 		World world;
 		int lastCheckTick = 0;
 		ExternalOrderParser parser;
+		bool isActuallyEnabled = true;
 
 		public ExternalOrderReader(ExternalOrderReaderInfo info)
 		{
@@ -50,7 +51,20 @@ namespace OpenRA.Mods.Common.Traits
 		{
 			if (!info.Enabled)
 			{
+				isActuallyEnabled = false;
 				Log.Write("debug", "[ExternalOrderReader] is disabled in configuration");
+				return;
+			}
+
+			// Check if GameStateExporter is in interval mode
+			var gameStateExporter = self.World.WorldActor.TraitOrDefault<GameStateExporter>();
+			var gameStateExporterInfo = self.World.WorldActor.Info.TraitInfoOrDefault<GameStateExporterInfo>();
+			
+			if (gameStateExporterInfo != null && gameStateExporterInfo.UseIntervalMode)
+			{
+				isActuallyEnabled = false;
+				Console.WriteLine("[ExternalOrderReader] Disabled - GameStateExporter is in interval mode");
+				Log.Write("debug", "[ExternalOrderReader] Disabled - GameStateExporter is in interval mode");
 				return;
 			}
 
@@ -87,7 +101,7 @@ namespace OpenRA.Mods.Common.Traits
 
 		void ITick.Tick(Actor self)
 		{
-			if (!info.Enabled)
+			if (!isActuallyEnabled)
 				return;
 
 			world = self.World;
