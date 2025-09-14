@@ -771,6 +771,11 @@ namespace OpenRA.LLMHarness.Services
 				return null;
 			}
 			
+			// Clean up each line - remove indentation while preserving the order format
+			var lines = orders.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+			var cleanedLines = lines.Select(line => line.TrimStart()).Where(line => !string.IsNullOrWhiteSpace(line));
+			orders = string.Join(Environment.NewLine, cleanedLines);
+			
 			return orders;
 		}
 
