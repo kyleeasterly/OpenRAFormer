@@ -21,6 +21,9 @@ namespace OpenRA.Mods.Common.Traits
 		[Desc("Enable or disable the exporter.")]
 		public readonly bool Enabled = true;
 
+		[Desc("If true, export snapshots at regular intervals. If false, use request-based mode triggered by external orders.")]
+		public readonly bool UseIntervalMode = false;
+
 		public override object Create(ActorInitializer init) { return new GameStateExporter(this); }
 	}
 
@@ -29,6 +32,7 @@ namespace OpenRA.Mods.Common.Traits
 		readonly GameStateExporterInfo info;
 		World world;
 		int exportRequestedAtTick = -1;
+		int lastIntervalExportTick = 0;
 		const int ExportDelayTicks = 5; // Wait 5 ticks after request to allow orders to propagate
 
 		public GameStateExporter(GameStateExporterInfo info)
@@ -57,14 +61,173 @@ namespace OpenRA.Mods.Common.Traits
 			if (world.WorldTick == 2)
 			{
 				ExportGameState();
+				lastIntervalExportTick = world.WorldTick;
 				return;
 			}
 
-			// After initial, export after delay when requested
-			if (exportRequestedAtTick >= 0 && world.WorldTick >= exportRequestedAtTick + ExportDelayTicks)
+			if (info.UseIntervalMode)
 			{
-				exportRequestedAtTick = -1;
-				ExportGameState();
+				// Interval-based mode: export at regular intervals
+				if (world.WorldTick - lastIntervalExportTick >= info.SnapshotInterval)
+				{
+					lastIntervalExportTick = world.WorldTick;
+					ExportGameState();
+				}
+			}
+			else
+			{
+				// Request-based mode: export after delay when requested
+				if (exportRequestedAtTick >= 0 && world.WorldTick >= exportRequestedAtTick + ExportDelayTicks)
+				{
+					exportRequestedAtTick = -1;
+					ExportGameState();
+				}
+			}
+		}
+
+		void ExportPlayerState(StringBuilder sb, Player player, World world, bool isHumanPlayer)
+		{
+			var factionName = player.Faction.Name.Replace("faction-", "").Replace(".name", "");
+			// Proper case for faction names
+			if (factionName.Equals("nod", StringComparison.OrdinalIgnoreCase))
+				factionName = "Nod";
+			else if (factionName.Equals("gdi", StringComparison.OrdinalIgnoreCase))
+				factionName = "GDI";
+			
+			var cleanPlayerName = player.PlayerName.Replace("bot-", "").Replace(".name", "");
+			
+			if (!isHumanPlayer)
+			{
+				sb.AppendLine();
+				sb.AppendLine(CultureInfo.InvariantCulture, $"## Player: {cleanPlayerName} ({factionName})");
+			}
+
+			// Show allies and status
+			var players = world.Players.Where(p => !p.NonCombatant && p.Playable).ToList();
+			var allies = players.Where(p => p != player && player.IsAlliedWith(p)).Select(p => p.PlayerName).ToList();
+			if (!isHumanPlayer)
+			{
+				sb.AppendLine("Allies: " + (allies.Count > 0 ? string.Join(", ", allies) : "None"));
+				var status = player.WinState == WinState.Won ? "Won" : player.WinState == WinState.Lost ? "Lost" : "Playing";
+				sb.AppendLine(CultureInfo.InvariantCulture, $"Status: {status}");
+			}
+
+			// Economic status for human player
+			if (isHumanPlayer)
+			{
+				var playerResources = player.PlayerActor.TraitOrDefault<PlayerResources>();
+				if (playerResources != null)
+				{
+					sb.AppendLine();
+					sb.AppendLine("### Economic Status");
+					sb.AppendLine(CultureInfo.InvariantCulture, $"Cash: ${playerResources.Cash}, Resources: {playerResources.Resources}/{playerResources.ResourceCapacity}");
+				}
+				
+				// Military statistics for human player
+				var playerStats = player.PlayerActor.TraitOrDefault<PlayerStatistics>();
+				if (playerStats != null)
+				{
+					sb.AppendLine();
+					sb.AppendLine("### Military Statistics");
+					sb.AppendLine(CultureInfo.InvariantCulture, $"Army: ${playerStats.ArmyValue}, Killed: {playerStats.UnitsKilled}, Lost: {playerStats.UnitsDead}");
+				}
+			}
+
+			// Power Status
+			var power = player.PlayerActor.TraitOrDefault<PowerManager>();
+			if (power != null)
+			{
+				sb.AppendLine();
+				sb.AppendLine("### Power Status");
+				var balance = power.PowerProvided - power.PowerDrained;
+				var status = balance >= 0 ? $"+{balance}" : $"{balance}";
+				sb.AppendLine(CultureInfo.InvariantCulture, $"{power.PowerProvided}/{power.PowerDrained} ({status})");
+			}
+
+			// Get actors for this player
+			var playerActors = world.Actors.Where(a => a.Owner == player && !a.IsDead).ToList();
+			var buildings = playerActors.Where(a => a.Info.HasTraitInfo<BuildingInfo>()).ToList();
+			// Filter out C17 cargo planes and player actors as they're not player-controllable units
+			var units = playerActors.Where(a => !a.Info.HasTraitInfo<BuildingInfo>() && 
+				!string.Equals(a.Info.Name, "C17", StringComparison.OrdinalIgnoreCase) &&
+				!string.Equals(a.Info.Name, "player", StringComparison.OrdinalIgnoreCase)).ToList();
+
+			// Building Positions
+			if (buildings.Count > 0)
+			{
+				sb.AppendLine();
+				sb.AppendLine("#### Building Positions:");
+				
+				// Create a map of buildings to their production queues
+				var buildingProduction = new Dictionary<Actor, List<string>>();
+				foreach (var building in buildings)
+				{
+					buildingProduction[building] = new List<string>();
+					var queues = building.TraitsImplementing<ProductionQueue>();
+					foreach (var queue in queues)
+					{
+						var items = queue.AllQueued().ToList();
+						if (items.Count > 0)
+						{
+							// Group items by type and status
+							var itemGroups = items.GroupBy(item => new 
+							{ 
+								Name = item.Item,
+								Status = item.Paused ? "PAUSED" : item.Done ? "READY" : "IN_PROGRESS"
+							});
+							
+							foreach (var group in itemGroups)
+							{
+								var firstItem = group.First();
+								var progress = firstItem.RemainingCost == 0 ? 100 :
+									(100 * (firstItem.TotalCost - firstItem.RemainingCost) / firstItem.TotalCost);
+								var friendlyName = world.Map.Rules.Actors[group.Key.Name].TraitInfoOrDefault<BuildingInfo>() != null
+									? FriendlyNames.GetFriendlyBuildingName(group.Key.Name)
+									: FriendlyNames.GetFriendlyUnitName(group.Key.Name);
+								
+								var count = group.Count();
+								var countStr = count > 1 ? $" x{count}" : "";
+								
+								var itemStatus = group.Key.Status switch
+								{
+									"PAUSED" => " (PAUSED)",
+									"READY" => " (READY)",
+									_ => $" ({progress}% complete)"
+								};
+								
+								buildingProduction[building].Add($"{friendlyName}{countStr}{itemStatus}");
+							}
+						}
+					}
+				}
+				
+				// Output buildings with positions and production
+				foreach (var building in buildings.OrderBy(b => FriendlyNames.GetFriendlyBuildingName(b.Info.Name)))
+				{
+					var pos = building.CenterPosition;
+					var cell = world.Map.CellContaining(pos);
+					var friendlyName = FriendlyNames.GetFriendlyBuildingName(building.Info.Name);
+					
+					var productionInfo = buildingProduction[building].Count > 0 
+						? $" [{string.Join(", ", buildingProduction[building])}]"
+						: "";
+						
+					sb.AppendLine(CultureInfo.InvariantCulture, $"{friendlyName} ({cell.X},{cell.Y}){productionInfo}");
+				}
+			}
+
+			// Unit Positions
+			if (units.Count > 0)
+			{
+				sb.AppendLine();
+				sb.AppendLine("#### Unit Positions:");
+				foreach (var unit in units.OrderBy(u => FriendlyNames.GetFriendlyUnitName(u.Info.Name)))
+				{
+					var pos = unit.CenterPosition;
+					var cell = world.Map.CellContaining(pos);
+					var friendlyName = FriendlyNames.GetFriendlyUnitName(unit.Info.Name);
+					sb.AppendLine(CultureInfo.InvariantCulture, $"{friendlyName} ({cell.X},{cell.Y})");
+				}
 			}
 		}
 
@@ -82,12 +245,8 @@ namespace OpenRA.Mods.Common.Traits
 			var filename = Path.Combine(info.OutputDirectory, $"gamestate_{timestamp}_{minutes:D2}m{seconds:D2}s.txt");
 
 				var sb = new StringBuilder();
-				sb.AppendLine("# OpenRA Game State Snapshot");
-				sb.AppendLine("## IMPORTANT: This report is for advising Player 1 (the human player)");
-				sb.AppendLine();
-				sb.AppendLine(CultureInfo.InvariantCulture, $"**Game Time:** {minutes:D2}:{seconds:D2}");
-				sb.AppendLine(CultureInfo.InvariantCulture, $"**Map:** {world.Map.Title}");
-				sb.AppendLine("**Game Type:** " + (world.LobbyInfo?.GlobalSettings?.ServerName ?? "Unknown"));
+				sb.AppendLine("# Game State Snapshot");
+				sb.AppendLine(CultureInfo.InvariantCulture, $"Time: {minutes:D2}:{seconds:D2}, Map: {world.Map.Title}");
 				
 				// Export game settings
 				if (world.LobbyInfo?.GlobalSettings != null)
@@ -120,328 +279,27 @@ namespace OpenRA.Mods.Common.Traits
 				if (player1 != null)
 				{
 					sb.AppendLine();
-					sb.AppendLine("# YOUR PLAYER STATE (Player 1 - The Human Player You Are Advising)");
-					sb.AppendLine("*This is the player you should provide strategy advice for*");
+					sb.AppendLine("# Player 1 (Human)");
+					
+					// Export Player 1's complete state first
+					ExportPlayerState(sb, player1, world, true);
 				}
 				
-				var isFirstOtherPlayer = true;
-				foreach (var player in players)
+				// Export other players' states
+				var otherPlayers = players.Where(p => p != player1).ToList();
+				if (otherPlayers.Count > 0)
 				{
-					// Add section header for other players
-					if (player != player1 && isFirstOtherPlayer)
-					{
-						sb.AppendLine();
-						sb.AppendLine("# OTHER PLAYERS (Opponents and Allies)");
-						isFirstOtherPlayer = false;
-					}
-					var factionName = player.Faction.Name.Replace("faction-", "").Replace(".name", "");
-					// Proper case for faction names
-					if (factionName.Equals("nod", StringComparison.OrdinalIgnoreCase))
-						factionName = "Nod";
-					else if (factionName.Equals("gdi", StringComparison.OrdinalIgnoreCase))
-						factionName = "GDI";
+					sb.AppendLine();
+					sb.AppendLine("# Other Players");
 					
-					var cleanPlayerName = player.PlayerName.Replace("bot-", "").Replace(".name", "");
-					sb.AppendLine(CultureInfo.InvariantCulture, $"## Player: {cleanPlayerName} ({factionName})");
-
-					// Show allies instead of teams
-					var allies = players.Where(p => p != player && player.IsAlliedWith(p)).Select(p => p.PlayerName).ToList();
-					sb.AppendLine("Allies: " + (allies.Count > 0 ? string.Join(", ", allies) : "None"));
-							var status = player.WinState == WinState.Won ? "Won" : player.WinState == WinState.Lost ? "Lost" : "Playing";
-					sb.AppendLine(CultureInfo.InvariantCulture, $"Status: {status}");
-
-					// Resources
-					var resources = player.PlayerActor.TraitOrDefault<PlayerResources>();
-					if (resources != null)
+					foreach (var player in otherPlayers)
 					{
-						sb.AppendLine();
-						sb.AppendLine("### Economic Status");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Cash: ${resources.Cash}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Stored Resources: {resources.Resources}/{resources.ResourceCapacity}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Total Value: ${resources.GetCashAndResources()}");
-					}
-
-					// Statistics
-					var stats = player.PlayerActor.TraitOrDefault<PlayerStatistics>();
-					if (stats != null)
-					{
-						sb.AppendLine();
-						sb.AppendLine("### Military Statistics");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Army Value: ${stats.ArmyValue}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Total Assets Value: ${stats.AssetsValue}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Units Killed: {stats.UnitsKilled} (${stats.KillsCost} value)");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Units Lost: {stats.UnitsDead} (${stats.DeathsCost} value)");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Buildings Destroyed: {stats.BuildingsKilled}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Buildings Lost: {stats.BuildingsDead}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Income Rate: ${stats.DisplayIncome}/min");
-					}
-
-					// Power
-					var power = player.PlayerActor.TraitOrDefault<PowerManager>();
-					if (power != null)
-					{
-						sb.AppendLine();
-						sb.AppendLine("### Power Status");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Power Provided: {power.PowerProvided}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Power Consumed: {power.PowerDrained}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Power Balance: {power.PowerProvided - power.PowerDrained}");
-						sb.AppendLine(CultureInfo.InvariantCulture, $"Power State: {power.PowerState}");
-					}
-
-					// Units and Buildings
-					var playerActors = world.Actors.Where(a => a.Owner == player && !a.IsDead).ToList();
-					var buildings = playerActors.Where(a => a.Info.HasTraitInfo<BuildingInfo>()).ToList();
-					// Filter out C17 cargo planes and player actors as they're not player-controllable units
-					var units = playerActors.Where(a => !a.Info.HasTraitInfo<BuildingInfo>() && 
-						!string.Equals(a.Info.Name, "C17", StringComparison.OrdinalIgnoreCase) &&
-						!string.Equals(a.Info.Name, "player", StringComparison.OrdinalIgnoreCase)).ToList();
-
-					sb.AppendLine();
-					sb.AppendLine(CultureInfo.InvariantCulture, $"### Unit Summary: {units.Count} units, {buildings.Count} buildings");
-
-					// Group units by type
-					var unitGroups = units.GroupBy(a => a.Info.Name).OrderByDescending(g => g.Count());
-					sb.AppendLine("#### Units by Type:");
-					foreach (var group in unitGroups)
-					{
-						var firstUnit = group.First();
-						var valued = firstUnit.Info.TraitInfoOrDefault<ValuedInfo>();
-						var cost = valued?.Cost ?? 0;
-						var friendlyName = FriendlyNames.GetFriendlyUnitName(group.Key);
-						sb.AppendLine(CultureInfo.InvariantCulture, $"{friendlyName}: {group.Count()} units (${cost} each, ${cost * group.Count()} total)");
-					}
-
-					// Group buildings by type
-					var buildingGroups = buildings.GroupBy(a => a.Info.Name).OrderByDescending(g => g.Count());
-					sb.AppendLine();
-					sb.AppendLine("#### Buildings by Type:");
-					foreach (var group in buildingGroups)
-					{
-						var firstBuilding = group.First();
-						var valued = firstBuilding.Info.TraitInfoOrDefault<ValuedInfo>();
-						var cost = valued?.Cost ?? 0;
-						var friendlyName = FriendlyNames.GetFriendlyBuildingName(group.Key);
-						sb.AppendLine(CultureInfo.InvariantCulture, $"{friendlyName}: {group.Count()} buildings (${cost} each, ${cost * group.Count()} total)");
-					}
-
-					// Building positions
-					if (buildings.Count > 0)
-					{
-						sb.AppendLine();
-						sb.AppendLine("#### Building Positions:");
-						
-						// Track unique positions to avoid duplicates (e.g., oil pumps)
-						var buildingPositions = new Dictionary<string, HashSet<(int X, int Y)>>();
-						
-						foreach (var building in buildings)
-						{
-							var pos = building.CenterPosition;
-							var cell = world.Map.CellContaining(pos);
-							var friendlyName = FriendlyNames.GetFriendlyBuildingName(building.Info.Name);
-							
-							if (!buildingPositions.ContainsKey(friendlyName))
-								buildingPositions[friendlyName] = new HashSet<(int, int)>();
-							
-							buildingPositions[friendlyName].Add((cell.X, cell.Y));
-						}
-						
-						// Output unique positions only
-						foreach (var kvp in buildingPositions.OrderBy(kv => kv.Key))
-						{
-							foreach (var position in kvp.Value.OrderBy(p => p.X).ThenBy(p => p.Y))
-							{
-								sb.AppendLine(CultureInfo.InvariantCulture, $"{kvp.Key} at ({position.X}, {position.Y})");
-							}
-						}
-					}
-
-					// Production queues - check all buildings for production queues
-					var allQueues = new List<ProductionQueue>(player.PlayerActor.TraitsImplementing<ProductionQueue>());
-					
-					// Then check all buildings for queues
-					foreach (var building in buildings)
-					{
-						allQueues.AddRange(building.TraitsImplementing<ProductionQueue>());
-					}
-					
-					var hasProduction = false;
-					foreach (var queue in allQueues)
-					{
-						var items = queue.AllQueued().ToList();
-						if (items.Count > 0)
-						{
-							if (!hasProduction)
-							{
-								sb.AppendLine();
-								sb.AppendLine("### Production Queues");
-								hasProduction = true;
-							}
-							
-							sb.AppendLine(CultureInfo.InvariantCulture, $"#### {queue.Info.Type} Queue:");
-							
-							// Group items by type and status
-							var itemGroups = items.GroupBy(item => new 
-							{ 
-								Name = item.Item,
-								Status = item.Paused ? "PAUSED" : item.Done ? "READY" : "IN_PROGRESS"
-							});
-							
-							foreach (var group in itemGroups)
-							{
-								var firstItem = group.First();
-								var progress = firstItem.RemainingCost == 0 ? 100 :
-									(100 * (firstItem.TotalCost - firstItem.RemainingCost) / firstItem.TotalCost);
-								var friendlyName = world.Map.Rules.Actors[group.Key.Name].TraitInfoOrDefault<BuildingInfo>() != null
-									? FriendlyNames.GetFriendlyBuildingName(group.Key.Name)
-									: FriendlyNames.GetFriendlyUnitName(group.Key.Name);
-								
-								var count = group.Count();
-								var countStr = count > 1 ? $" x{count}" : "";
-								
-								var itemStatus = group.Key.Status switch
-								{
-									"PAUSED" => " (PAUSED)",
-									"READY" => " (READY)",
-									_ => $" ({progress}% complete)"
-								};
-								
-								sb.AppendLine(CultureInfo.InvariantCulture, $"{friendlyName}{countStr}{itemStatus}");
-							}
-						}
-					}
-
-					// Special units (harvesters, MCVs)
-					var harvesters = world.ActorsWithTrait<Harvester>()
-						.Where(tp => tp.Actor.Owner == player && !tp.Actor.IsDead)
-						.Select(tp => tp.Actor).ToList();
-					// Only count mobile MCVs, not deployed Construction Yards
-					// MCVs have BaseBuildingInfo but not BuildingInfo
-					// Construction Yards have both BaseBuildingInfo and BuildingInfo
-					var mcvs = world.Actors
-						.Where(a => a.Owner == player && !a.IsDead && 
-							a.Info.HasTraitInfo<BaseBuildingInfo>() && 
-							!a.Info.HasTraitInfo<BuildingInfo>())
-						.ToList();
-
-					sb.AppendLine();
-					sb.AppendLine("### Special Units");
-					sb.AppendLine(CultureInfo.InvariantCulture, $"Harvesters: {harvesters.Count}");
-					sb.AppendLine(CultureInfo.InvariantCulture, $"MCVs: {mcvs.Count}");
-
-					sb.AppendLine();
-				}
-
-				// Control groups for Player 1
-				if (player1 != null)
-				{
-					var controlGroups = world.ControlGroups;
-					if (controlGroups != null)
-					{
-						sb.AppendLine();
-						sb.AppendLine("## Player 1 Control Groups");
-						
-						var hasGroups = false;
-						for (var groupIndex = 0; groupIndex < controlGroups.Groups.Length; groupIndex++)
-						{
-							var actors = controlGroups.GetActorsInControlGroup(groupIndex)
-								.Where(a => a.Owner == player1)
-								.ToList();
-							
-							if (actors.Count > 0)
-							{
-								hasGroups = true;
-								var composition = actors.GroupBy(a => a.Info.Name)
-									.Select(g => 
-									{
-										var friendlyName = g.First().Info.HasTraitInfo<BuildingInfo>() 
-											? FriendlyNames.GetFriendlyBuildingName(g.Key)
-											: FriendlyNames.GetFriendlyUnitName(g.Key);
-										return g.Count() > 1 ? $"{g.Count()} {friendlyName}s" : friendlyName;
-									})
-									.ToList();
-								
-								// Calculate center position
-								var centerX = actors.Average(a => a.CenterPosition.X);
-								var centerY = actors.Average(a => a.CenterPosition.Y);
-								var mapCell = world.Map.CellContaining(new WPos((int)centerX, (int)centerY, 0));
-								
-								sb.AppendLine(CultureInfo.InvariantCulture, $"**Control Group {groupIndex + 1}:** {string.Join(", ", composition)}");
-								sb.AppendLine(CultureInfo.InvariantCulture, $"  Position: Center at ({mapCell.X}, {mapCell.Y})");
-							}
-						}
-						
-						if (!hasGroups)
-						{
-							sb.AppendLine("*No control groups currently assigned*");
-						}
+						ExportPlayerState(sb, player, world, false);
 					}
 				}
 
-				// Visible enemy structures
-				if (player1 != null)
-				{
-					var enemyBuildings = world.Actors
-						.Where(a => a.Owner != player1 && 
-								   !a.Owner.NonCombatant && 
-								   a.Owner.Playable &&
-								   !a.IsDead && 
-								   a.Info.HasTraitInfo<BuildingInfo>() &&
-								   a.CanBeViewedByPlayer(player1))
-						.ToList();
 
-					if (enemyBuildings.Count > 0)
-					{
-						sb.AppendLine();
-						sb.AppendLine("## Enemy Structures Visible to Player 1");
-						sb.AppendLine("*These are enemy buildings that Player 1 can currently see on the map*");
-						
-						var enemyBuildingsByPlayer = enemyBuildings.GroupBy(b => b.Owner);
-						foreach (var playerGroup in enemyBuildingsByPlayer)
-						{
-							var enemyFactionName = playerGroup.Key.Faction.Name.Replace("faction-", "").Replace(".name", "");
-							// Proper case for faction names
-							if (enemyFactionName.Equals("nod", StringComparison.OrdinalIgnoreCase))
-								enemyFactionName = "Nod";
-							else if (enemyFactionName.Equals("gdi", StringComparison.OrdinalIgnoreCase))
-								enemyFactionName = "GDI";
-							
-							sb.AppendLine(CultureInfo.InvariantCulture, $"### {playerGroup.Key.ResolvedPlayerName} ({enemyFactionName})");
-							
-							foreach (var building in playerGroup.OrderBy(b => FriendlyNames.GetFriendlyBuildingName(b.Info.Name)))
-							{
-								var pos = building.CenterPosition;
-								var cell = world.Map.CellContaining(pos);
-								var friendlyName = FriendlyNames.GetFriendlyBuildingName(building.Info.Name);
-								sb.AppendLine(CultureInfo.InvariantCulture, $"{friendlyName} at ({cell.X}, {cell.Y})");
-							}
-						}
-					}
-				}
-
-				// Map control analysis
-				sb.AppendLine();
-				sb.AppendLine("## Map Control Analysis");
-
-				// Count resource cells on the map
-				var resourceLayer = world.WorldActor.TraitOrDefault<IResourceLayer>();
-				if (resourceLayer != null)
-				{
-					var totalResourceCells = 0;
-					var bounds = world.Map.Bounds;
-					for (var x = bounds.Left; x < bounds.Right; x++)
-					{
-						for (var y = bounds.Top; y < bounds.Bottom; y++)
-						{
-							var cell = new CPos(x, y);
-							if (resourceLayer.GetResource(cell).Type != null)
-								totalResourceCells++;
-						}
-					}
-
-					sb.AppendLine(CultureInfo.InvariantCulture, $"Total Resource Cells: {totalResourceCells}");
-				}
-
-				// Include orders since last snapshot
+				// Include orders since last snapshot as separate section
 				var recentOrders = Network.HumanReadableOrderLogger.GetAndClearOrderBuffer();
 				if (recentOrders.Count > 0)
 				{
@@ -449,7 +307,9 @@ namespace OpenRA.Mods.Common.Traits
 					if (consolidatedOrders.Count > 0)
 					{
 						sb.AppendLine();
+						sb.AppendLine("# Recent Orders");
 						sb.AppendLine("## Production Orders Since Last Snapshot");
+						sb.AppendLine();
 						
 						var productionCount = recentOrders.Count(IsProductionOrder);
 						sb.AppendLine(CultureInfo.InvariantCulture, $"*{productionCount} production orders shown (filtered from {recentOrders.Count} total orders)*");
