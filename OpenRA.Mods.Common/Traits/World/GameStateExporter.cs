@@ -303,13 +303,22 @@ namespace OpenRA.Mods.Common.Traits
 				var recentOrders = Network.HumanReadableOrderLogger.GetAndClearOrderBuffer();
 				if (recentOrders.Count > 0)
 				{
-					sb.AppendLine();
-					sb.AppendLine("# Recent Orders");
-					
 					var consolidatedOrders = ConsolidateOrders(recentOrders);
-					foreach (var order in consolidatedOrders)
+					if (consolidatedOrders.Count > 0)
 					{
-						sb.AppendLine(order);
+						sb.AppendLine();
+						sb.AppendLine("# Recent Orders");
+						sb.AppendLine("## Production Orders Since Last Snapshot");
+						sb.AppendLine();
+						
+						var productionCount = recentOrders.Count(IsProductionOrder);
+						sb.AppendLine(CultureInfo.InvariantCulture, $"*{productionCount} production orders shown (filtered from {recentOrders.Count} total orders)*");
+						sb.AppendLine();
+						
+						foreach (var order in consolidatedOrders)
+						{
+							sb.AppendLine(order);
+						}
 					}
 				}
 
@@ -416,12 +425,15 @@ namespace OpenRA.Mods.Common.Traits
 
 		List<string> ConsolidateOrders(List<string> orders)
 		{
+			// First, filter to only production-related orders
+			var productionOrders = orders.Where(IsProductionOrder).ToList();
+			
 			var result = new List<string>();
 			var i = 0;
 			
-			while (i < orders.Count)
+			while (i < productionOrders.Count)
 			{
-				var current = orders[i];
+				var current = productionOrders[i];
 				
 				// Check if this is a CreateGroup order
 				if (current.Contains("CreateGroup") && current.Contains("ExtraActors:"))
@@ -434,9 +446,9 @@ namespace OpenRA.Mods.Common.Traits
 						var j = i + 1;
 						
 						// Collect all orders with same timestamp and player
-						while (j < orders.Count && groupedOrders.Count < createGroupInfo.ExtraActors)
+						while (j < productionOrders.Count && groupedOrders.Count < createGroupInfo.ExtraActors)
 						{
-							var next = orders[j];
+							var next = productionOrders[j];
 							if (next.Contains("CreateGroup"))
 								break; // Hit another CreateGroup, stop here
 							
@@ -612,6 +624,29 @@ namespace OpenRA.Mods.Common.Traits
 			
 			// Format consolidated output
 			return $"[{createGroup.Timestamp}] {createGroup.Player}: Control Group {orderType} ({string.Join(", ", unitGroups)}){targetStr}";
+		}
+		
+		bool IsProductionOrder(string orderLine)
+		{
+			if (string.IsNullOrEmpty(orderLine))
+				return false;
+			
+			// Check if the order contains production-related commands
+			// Format is typically: "[HH:MM] PlayerName: OrderType (params)"
+			// We want to keep: StartProduction, CancelProduction, PauseProduction, PlaceBuilding
+			
+			// Extract the order type from the line
+			var colonIndex = orderLine.IndexOf(']');
+			if (colonIndex < 0)
+				return false;
+			
+			var afterTimestamp = orderLine.Substring(colonIndex + 1);
+			
+			// Check for production-related order types
+			return afterTimestamp.Contains(": StartProduction ") ||
+			       afterTimestamp.Contains(": CancelProduction ") ||
+			       afterTimestamp.Contains(": PauseProduction ") ||
+			       afterTimestamp.Contains(": PlaceBuilding ");
 		}
 	}
 }

@@ -21,6 +21,7 @@ namespace OpenRA.LLMHarness.Services
 		public bool VerboseMode { get; set; } = false;
 		public string ThinkingLevel { get; set; } = "medium";
 		public bool WriteOrdersToGame { get; set; } = false; // Start disabled for testing
+		public string HumanMessage { get; set; } = "";
 
 		string? currentLogFile;
 
@@ -434,6 +435,14 @@ namespace OpenRA.LLMHarness.Services
 				var userPrompt = BuildUserPrompt(gameState);
 				await NotifyStatusAsync($"Built system prompt: {systemPrompt.Length} chars, user prompt: {userPrompt.Length} chars.");
 
+				// Log human message if present
+				if (!string.IsNullOrWhiteSpace(HumanMessage))
+				{
+					await LogToFileAsync($"\n=== HUMAN MESSAGE ===");
+					await LogToFileAsync(HumanMessage);
+					await LogToFileAsync("=== END OF HUMAN MESSAGE ===\n");
+				}
+
 				// Always log the full prompts to file
 				await LogToFileAsync("\n=== SYSTEM PROMPT TO LLM ===");
 				await LogToFileAsync(systemPrompt);
@@ -654,7 +663,7 @@ namespace OpenRA.LLMHarness.Services
 			sb.AppendLine();
 			sb.AppendLine("IMPORTANT: Your response must have two parts:");
 			sb.AppendLine("1. Think strategically about what to do. Keep it concise and write your thoughts out as a simple single-level Markdown bullet list.");
-			sb.AppendLine("2. Provide specific production orders in a section marked with <orders> tags. Only follow the given order format, do not improvise things like XML comments.");
+			sb.AppendLine("2. Provide specific production orders in a section marked with <orders> tags. Only follow the given order format.");
 			sb.AppendLine();
 			sb.AppendLine("For the orders section:");
 			sb.AppendLine("- Issue StartProduction orders for constructing buildings AND training units.");
@@ -663,27 +672,39 @@ namespace OpenRA.LLMHarness.Services
 			sb.AppendLine("- Use Player1 for all orders.");
 			sb.AppendLine("- Only order items that can actually be built given current tech/prerequisites.");
 			sb.AppendLine("- Pay close attention to the Player1 production queues in the game state. Be careful not to issue duplicate orders to build things that simply haven't finished yet.");
-			sb.AppendLine("- Spread unit production across multiple buildings when available.");
+			sb.AppendLine("- Spread unit production across multiple buildings when available. Ensure you are respecting the rules about \"what builds what\" and not issuing impossible orders like trying to construct a building *from* a Power Plant or Refinery.");
 			sb.AppendLine();
 			sb.AppendLine("Order format:");
 			sb.AppendLine("Player1: StartProduction (Building:\"BuildingType#Index\" Item:\"ItemName\" Count:Number)");
 			sb.AppendLine();
 			sb.AppendLine("Example building construction orders:");
-			sb.AppendLine("Player1: StartProduction (Building:\"Construction Yard#1\" Item:\"Power Plant\" Count:1)");
-			sb.AppendLine("Player1: StartProduction (Building:\"Construction Yard#1\" Item:\"Refinery\" Count:1)");
-			sb.AppendLine("Player1: StartProduction (Building:\"Construction Yard#1\" Item:\"Barracks\" Count:1)");
+			sb.AppendLine("IMPORTANT: Buildings are only produced by the Construction Yard. Never attempt to produce buildings from any other building than the Construction Yard.");
+			sb.AppendLine("<orders>");
+			sb.AppendLine("Player1: StartProduction (Building:\"Construction Yard#1\" Item:\"Advanced Power Plant\" Count:1)");
+			sb.AppendLine("Player1: StartProduction (Building:\"Construction Yard#1\" Item:\"Advanced Communications Center\" Count:1)");
+			sb.AppendLine("Player1: StartProduction (Building:\"Construction Yard#1\" Item:\"War Factory\" Count:1)");
+			sb.AppendLine("</orders>");
 			sb.AppendLine();
 			sb.AppendLine("Example unit production orders:");
+			sb.AppendLine("<orders>");
 			sb.AppendLine("Player1: StartProduction (Building:\"Barracks#1\" Item:\"Minigunner\" Count:3)");
 			sb.AppendLine("Player1: StartProduction (Building:\"Barracks#1\" Item:\"Rocket Soldier\" Count:2)");
 			sb.AppendLine("Player1: StartProduction (Building:\"War Factory#1\" Item:\"Medium Tank\" Count:1)");
 			sb.AppendLine("Player1: StartProduction (Building:\"War Factory#1\" Item:\"Harvester\" Count:1)");
+			sb.AppendLine("</orders>");
 			sb.AppendLine();
 			sb.AppendLine("If multiple production buildings exist, distribute the load:");
+			sb.AppendLine("<orders>");
 			sb.AppendLine("Player1: StartProduction (Building:\"Barracks#1\" Item:\"Minigunner\" Count:2)");
 			sb.AppendLine("Player1: StartProduction (Building:\"Barracks#2\" Item:\"Rocket Soldier\" Count:2)");
+			sb.AppendLine("</orders>");
 			sb.AppendLine();
-			sb.AppendLine("Place your orders between <orders> and </orders> tags. ONLY write orders following this format. These are not XML and should not be indented.");
+			sb.AppendLine("Most of the time, you should be using multiple types of production buildings:");
+			sb.AppendLine("<orders>");
+			sb.AppendLine("Player1: StartProduction (Building:\"Construction Yard#1\" Item:\"Power Plant\" Count:1)");
+			sb.AppendLine("Player1: StartProduction (Building:\"Barracks#1\" Item:\"Minigunner\" Count:3)");
+			sb.AppendLine("Player1: StartProduction (Building:\"War Factory#1\" Item:\"Medium Tank\" Count:2)");
+			sb.AppendLine("</orders>");
 			sb.AppendLine();
 
 			sb.AppendLine("<game_knowledge>");
@@ -709,6 +730,15 @@ namespace OpenRA.LLMHarness.Services
 			sb.AppendLine("- Always use building indices (e.g., Barracks#1, War Factory#1).");
 			sb.AppendLine("- Include both building construction and unit production orders.");
 			sb.AppendLine("- Pay close attention to the Player1 production queues and don't queue duplicate production items on accident.");
+			
+			// Include human message if provided
+			if (!string.IsNullOrWhiteSpace(HumanMessage))
+			{
+				sb.AppendLine();
+				sb.AppendLine("## IMPORTANT EMERGENT INFORMATION FROM HUMAN PLAYER:");
+				sb.AppendLine(HumanMessage);
+				sb.AppendLine("(Take this information into account when making your strategic decisions)");
+			}
 
 			return sb.ToString();
 		}
@@ -740,6 +770,11 @@ namespace OpenRA.LLMHarness.Services
 				Console.WriteLine("[OllamaService] Empty orders section in LLM response");
 				return null;
 			}
+			
+			// Clean up each line - remove indentation while preserving the order format
+			var lines = orders.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+			var cleanedLines = lines.Select(line => line.TrimStart()).Where(line => !string.IsNullOrWhiteSpace(line));
+			orders = string.Join(Environment.NewLine, cleanedLines);
 			
 			return orders;
 		}
