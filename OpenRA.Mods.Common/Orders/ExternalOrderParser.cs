@@ -21,6 +21,11 @@ namespace OpenRA.Mods.Common.Orders
 		{
 			try
 			{
+				// Trim leading/trailing whitespace from the entire order line
+				orderText = orderText?.Trim();
+				if (string.IsNullOrWhiteSpace(orderText))
+					return null;
+
 				// Format: "Player1: OrderType (Params)"
 				// Examples:
 				// "Player1: Move (Units:Tank,Infantry Target:50,75)"
