@@ -12,8 +12,7 @@ namespace OpenRA.LLMHarness.Services
 		const string OrderInputDirectory = @"C:\OpenRATest_Orders\input";
 		const string OrderArchiveDirectory = @"C:\OpenRATest_Orders\archive";
 		const string OllamaApiUrl = "http://localhost:11434/v1";
-		const string ModelName = "gpt-oss:20b";
-		const string ApiKey = "ollama"; // Dummy key for Ollama
+		const string ModelName = "llama3.1:8b"; // "gemma3:27b"; // "gpt-oss:20b"; // try out different models from https://ollama.com/search?o=newest
 
 		readonly ChatClient chatClient;
 		readonly HashSet<string> processedFiles = [];
@@ -44,9 +43,9 @@ namespace OpenRA.LLMHarness.Services
 
 		public OllamaService(HttpClient httpClient)
 		{
-			// Create OpenAI client with custom endpoint for Ollama
+			// Create OpenAI client with custom endpoint for Ollama and a dummy API key
 			var openAiClient = new OpenAIClient(
-				new ApiKeyCredential(ApiKey),
+				new ApiKeyCredential("ollama"),
 				new OpenAIClientOptions
 				{
 					Endpoint = new Uri(OllamaApiUrl),
@@ -508,8 +507,13 @@ namespace OpenRA.LLMHarness.Services
 
 				await LogToFileAsync($"[HTTP] Sending request to OpenAI-compatible API at {DateTime.Now:HH:mm:ss.fff}");
 
+				var chatCompletionOptions = new ChatCompletionOptions
+				{
+					Temperature = 0
+				};
+
 				// Stream the response with cancellation support
-				var streamingResponse = chatClient.CompleteChatStreamingAsync(messages, cancellationToken: cancellationToken);
+				var streamingResponse = chatClient.CompleteChatStreamingAsync(messages, chatCompletionOptions, cancellationToken: cancellationToken);
 				
 				await LogToFileAsync($"[HTTP] Starting to receive streaming response at {DateTime.Now:HH:mm:ss.fff}");
 
