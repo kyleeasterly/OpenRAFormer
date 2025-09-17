@@ -413,8 +413,7 @@ namespace OpenRA.LLMHarness.Services
 				}
 
 				// Skip menu/lobby states
-				if (gameState.Contains("Blank Shellmap") || gameState.Contains("Map: Shellmap") ||
-					!gameState.Contains("Resource Cells:"))
+				if (gameState.Contains("Blank Shellmap") || gameState.Contains("Map: Shellmap"))
 				{
 					await NotifyStatusAsync("Skipping menu/lobby state.");
 					await LogToFileAsync($"[SKIP] Skipping menu/lobby state in: {Path.GetFileName(filePath)}");
