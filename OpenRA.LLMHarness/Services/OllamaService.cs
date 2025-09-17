@@ -12,7 +12,9 @@ namespace OpenRA.LLMHarness.Services
 		const string OrderInputDirectory = @"C:\OpenRATest_Orders\input";
 		const string OrderArchiveDirectory = @"C:\OpenRATest_Orders\archive";
 		const string OllamaApiUrl = "http://localhost:11434/v1";
-		const string ModelName = "llama3.1:8b"; // "gemma3:27b"; // "gpt-oss:20b"; // try out different models from https://ollama.com/search?o=newest
+
+		// Note: phi4:14b and llama3.1:8b work very well, 5 to 10 seconds per response and they produce the correct order format more consistently.
+		const string ModelName = "phi4:14b"; // "llama3.1:8b"; // "gemma3:27b"; // "gpt-oss:20b"; // try out different models from https://ollama.com/search?o=newest
 
 		readonly ChatClient chatClient;
 		readonly HashSet<string> processedFiles = [];
