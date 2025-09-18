@@ -186,16 +186,22 @@ namespace OpenRA.Mods.Common.Traits
 									: FriendlyNames.GetFriendlyUnitName(group.Key.Name);
 								
 								var count = group.Count();
-								var countStr = count > 1 ? $" x{count}" : "";
-								
-								var itemStatus = group.Key.Status switch
+								var additionalCount = Math.Max(0, count - 1);
+
+								var statusDescription = group.Key.Status switch
 								{
-									"PAUSED" => " (PAUSED)",
-									"READY" => " (READY)",
-									_ => $" ({progress}% complete)"
+									"READY" => "READY",
+									_ => $"{progress}% complete"
 								};
-								
-								buildingProduction[building].Add($"{friendlyName}{countStr}{itemStatus}");
+
+								if (group.Key.Status == "PAUSED")
+									statusDescription += " (PAUSED)";
+
+								var description = $"{friendlyName} {statusDescription}";
+								if (additionalCount > 0)
+									description = string.Format(CultureInfo.InvariantCulture, "{0} (+{1})", description, additionalCount);
+
+								buildingProduction[building].Add(description);
 							}
 						}
 					}
