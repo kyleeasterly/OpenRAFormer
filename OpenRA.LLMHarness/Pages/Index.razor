@@ -75,10 +75,10 @@
             
             <!-- Controls -->
             <MudGrid>
-                <MudItem xs="12" sm="4">
+                <MudItem xs="12" sm="6">
                     <MudSwitch Value="@verboseMode" Label="Verbose Mode" Color="Color.Primary" ValueChanged="@((bool val) => { verboseMode = val; OllamaService.VerboseMode = val; })" />
                 </MudItem>
-                <MudItem xs="12" sm="4">
+                <MudItem xs="12" sm="6">
                     <MudSwitch Value="@writeOrdersToGame" Label="Send Orders to Game" Color="Color.Primary" ValueChanged="@((bool val) => { writeOrdersToGame = val; OllamaService.WriteOrdersToGame = val; })" />
                 </MudItem>
                 <MudItem xs="12" sm="4">
@@ -88,6 +88,26 @@
                         <MudRadio Value="@("medium")" Color="Color.Primary" Size="Size.Small">Medium</MudRadio>
                         <MudRadio Value="@("high")" Color="Color.Primary" Size="Size.Small">High</MudRadio>
                     </MudRadioGroup>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudTextField @bind-Value="modelName"
+                                  Label="Model Name"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  OnBlur="OnModelNameChanged" />
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        e.g., phi4:14b, llama3.1:8b
+                    </MudText>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudTextField @bind-Value="apiUrl"
+                                  Label="API URL"
+                                  Variant="Variant.Outlined"
+                                  Margin="Margin.Dense"
+                                  OnBlur="OnApiUrlChanged" />
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        Ollama API endpoint
+                    </MudText>
                 </MudItem>
             </MudGrid>
             <MudDivider Class="my-4" />
@@ -259,7 +279,7 @@
     private bool isConnected = false;
     private bool isProcessing = false;
     private bool verboseMode = false;
-    private bool writeOrdersToGame = false;
+    private bool writeOrdersToGame = true;
     private string statusMessage = "Initializing...";
     private string selectedResponseId = "";
     private string currentStreamingResponse = "";
@@ -267,6 +287,8 @@
     private string lastThinkingTrace = "";
     private bool showThinking = false;
     private string thinkingLevel = "medium";
+    private string modelName = "phi4:14b";
+    private string apiUrl = "http://localhost:11434/v1";
     
     // Human message state
     private bool isEditingHumanMessage = false;
@@ -284,6 +306,8 @@
         OllamaService.OnStatusUpdate += HandleStatusUpdate;
         
         // Set initial settings
+        modelName = OllamaService.ModelName;
+        apiUrl = OllamaService.OllamaApiUrl;
         OllamaService.VerboseMode = verboseMode;
         OllamaService.ThinkingLevel = thinkingLevel;
         OllamaService.WriteOrdersToGame = writeOrdersToGame;
@@ -334,6 +358,24 @@
     {
         thinkingLevel = newLevel;
         OllamaService.ThinkingLevel = thinkingLevel;
+    }
+
+    private void OnModelNameChanged()
+    {
+        if (!string.IsNullOrWhiteSpace(modelName) && modelName != OllamaService.ModelName)
+        {
+            OllamaService.ModelName = modelName;
+            OllamaService.UpdateConfiguration();
+        }
+    }
+
+    private void OnApiUrlChanged()
+    {
+        if (!string.IsNullOrWhiteSpace(apiUrl) && apiUrl != OllamaService.OllamaApiUrl)
+        {
+            OllamaService.OllamaApiUrl = apiUrl;
+            OllamaService.UpdateConfiguration();
+        }
     }
 
     private async Task HandleStatusUpdate(string status)

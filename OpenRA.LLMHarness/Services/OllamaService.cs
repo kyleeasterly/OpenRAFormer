@@ -11,17 +11,16 @@ namespace OpenRA.LLMHarness.Services
 		const string LogDirectory = @"C:\OpenRATest\LLM_Coach_Logs";
 		const string OrderInputDirectory = @"C:\OpenRATest_Orders\input";
 		const string OrderArchiveDirectory = @"C:\OpenRATest_Orders\archive";
-		const string OllamaApiUrl = "http://localhost:11434/v1";
-
 		// Note: phi4:14b and llama3.1:8b work very well, 5 to 10 seconds per response and they produce the correct order format more consistently.
-		const string ModelName = "phi4:14b"; // "llama3.1:8b"; // "gemma3:27b"; // "gpt-oss:20b"; // try out different models from https://ollama.com/search?o=newest
+		public string OllamaApiUrl { get; set; } = "http://localhost:11434/v1";
+		public string ModelName { get; set; } = "phi4:14b"; // try out different models from https://ollama.com/search?o=newest
 
-		readonly ChatClient chatClient;
+		ChatClient chatClient;
 		readonly HashSet<string> processedFiles = [];
 
 		public bool VerboseMode { get; set; } = false;
 		public string ThinkingLevel { get; set; } = "medium";
-		public bool WriteOrdersToGame { get; set; } = false; // Start disabled for testing
+		public bool WriteOrdersToGame { get; set; } = true;
 		public string HumanMessage { get; set; } = "";
 
 		string? currentLogFile;
@@ -45,6 +44,11 @@ namespace OpenRA.LLMHarness.Services
 
 		public OllamaService(HttpClient httpClient)
 		{
+			InitializeChatClient();
+		}
+
+		void InitializeChatClient()
+		{
 			// Create OpenAI client with custom endpoint for Ollama and a dummy API key
 			var openAiClient = new OpenAIClient(
 				new ApiKeyCredential("ollama"),
@@ -55,6 +59,11 @@ namespace OpenRA.LLMHarness.Services
 				});
 
 			chatClient = openAiClient.GetChatClient(ModelName);
+		}
+
+		public void UpdateConfiguration()
+		{
+			InitializeChatClient();
 		}
 
 		public async Task<bool> InitializeAsync()
