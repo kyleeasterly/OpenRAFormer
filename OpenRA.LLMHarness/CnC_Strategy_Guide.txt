@@ -9,7 +9,7 @@ You MUST follow this exact order at game start:
 2. Build a Power Plant - Cost: $500, Provides: 100 power
 3. Build a Refinery - Cost: $1500, Requires: Power Plant, Includes: 1 free Harvester
 4. Build Barracks - Cost: $500, Requires: Power Plant
-5. Build Weapons Factory (GDI) or Airfield (Nod) - Cost: $2000, Requires: Refinery
+5. Build War Factory (GDI) or Airfield (Nod) - Cost: $2000, Requires: Refinery
 6. Build Communications Center - Cost: $1000, Requires: Refinery (enables advanced units)
 
 # Economy
