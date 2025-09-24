@@ -33,6 +33,7 @@ namespace OpenRA.Mods.Common.Traits
 		World world;
 		int exportRequestedAtTick = -1;
 		int lastIntervalExportTick = 0;
+		bool hasArchivedForThisGame = false;
 		const int ExportDelayTicks = 5; // Wait 5 ticks after request to allow orders to propagate
 
 		public GameStateExporter(GameStateExporterInfo info)
@@ -57,9 +58,14 @@ namespace OpenRA.Mods.Common.Traits
 			if (world.Map.Title == "Blank Shellmap")
 				return;
 
-			// Initial snapshot on tick 2
+			// Archive previous game files and take initial snapshot on tick 2
 			if (world.WorldTick == 2)
 			{
+				if (!hasArchivedForThisGame)
+				{
+					ArchivePreviousGameFiles();
+					hasArchivedForThisGame = true;
+				}
 				ExportGameState();
 				lastIntervalExportTick = world.WorldTick;
 				return;
@@ -82,6 +88,40 @@ namespace OpenRA.Mods.Common.Traits
 					exportRequestedAtTick = -1;
 					ExportGameState();
 				}
+			}
+		}
+
+		void ArchivePreviousGameFiles()
+		{
+			try
+			{
+				if (!Directory.Exists(info.OutputDirectory))
+					return;
+
+				var gameStateFiles = Directory.GetFiles(info.OutputDirectory, "gamestate_*.txt");
+				if (gameStateFiles.Length == 0)
+					return;
+
+				var archiveDirectory = Path.Combine(info.OutputDirectory, "archive");
+				if (!Directory.Exists(archiveDirectory))
+					Directory.CreateDirectory(archiveDirectory);
+
+				var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
+				var gameArchiveDirectory = Path.Combine(archiveDirectory, $"game_{timestamp}");
+				Directory.CreateDirectory(gameArchiveDirectory);
+
+				foreach (var file in gameStateFiles)
+				{
+					var fileName = Path.GetFileName(file);
+					var destinationPath = Path.Combine(gameArchiveDirectory, fileName);
+					File.Move(file, destinationPath);
+				}
+
+				Log.Write("debug", $"Archived {gameStateFiles.Length} gamestate files to {gameArchiveDirectory}");
+			}
+			catch (Exception e)
+			{
+				Log.Write("debug", $"Failed to archive previous game files: {e.Message}");
 			}
 		}
 
