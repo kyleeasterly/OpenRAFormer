@@ -33,7 +33,7 @@ namespace OpenRA.Mods.Common.Traits
 		World world;
 		int exportRequestedAtTick = -1;
 		int lastIntervalExportTick = 0;
-		bool hasArchivedForThisGame = false;
+		string currentMapTitle = "";
 		const int ExportDelayTicks = 5; // Wait 5 ticks after request to allow orders to propagate
 
 		public GameStateExporter(GameStateExporterInfo info)
@@ -61,10 +61,11 @@ namespace OpenRA.Mods.Common.Traits
 			// Archive previous game files and take initial snapshot on tick 2
 			if (world.WorldTick == 2)
 			{
-				if (!hasArchivedForThisGame)
+				// Check if this is a new map/game
+				if (currentMapTitle != world.Map.Title)
 				{
 					ArchivePreviousGameFiles();
-					hasArchivedForThisGame = true;
+					currentMapTitle = world.Map.Title;
 				}
 				ExportGameState();
 				lastIntervalExportTick = world.WorldTick;
