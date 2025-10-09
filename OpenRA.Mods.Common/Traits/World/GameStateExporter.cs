@@ -278,10 +278,133 @@ namespace OpenRA.Mods.Common.Traits
 			}
 		}
 
+		void AutoPlaceReadyBuildings()
+		{
+			try
+			{
+				// Find Player 1 (the human player)
+				var player1 = world.Players.FirstOrDefault(p => p.PlayerName == "Player1" && !p.NonCombatant && p.Playable);
+				if (player1 == null)
+					return;
+
+				// Find all buildings with production queues
+				var buildings = world.Actors
+					.Where(a => a.Owner == player1 && !a.IsDead && a.Info.HasTraitInfo<BuildingInfo>())
+					.ToList();
+
+				// Check each building's production queues for ready items
+				foreach (var building in buildings)
+				{
+					var queues = building.TraitsImplementing<ProductionQueue>();
+					foreach (var queue in queues)
+					{
+						var readyItems = queue.AllQueued()
+							.Where(item => item.Done && !item.Paused)
+							.ToList();
+
+						foreach (var item in readyItems)
+						{
+							// Only auto-place buildings, not units
+							var actorInfo = world.Map.Rules.Actors[item.Item];
+							var buildingInfo = actorInfo.TraitInfoOrDefault<BuildingInfo>();
+							if (buildingInfo == null)
+								continue; // Skip units
+
+							// Try to find a valid placement location
+							var placementLocation = FindValidPlacementLocation(actorInfo, buildingInfo, player1);
+							if (placementLocation.HasValue)
+							{
+								// Create the PlaceBuilding order
+								var order = new Order("PlaceBuilding", player1.PlayerActor, Target.FromCell(world, placementLocation.Value), false)
+								{
+									TargetString = item.Item,
+									ExtraData = queue.Actor.ActorID,
+									ExtraLocation = new CPos(0, 0), // No variant
+									SuppressVisualFeedback = true
+								};
+
+								// Issue the order
+				world.IssueOrder(order);
+								Log.Write("debug", $"[GameStateExporter] Auto-placed {item.Item} at {placementLocation.Value}");
+							}
+							else
+							{
+								Log.Write("debug", $"[GameStateExporter] Could not find valid placement for {item.Item}");
+							}
+						}
+					}
+				}
+			}
+			catch (Exception e)
+			{
+				Log.Write("debug", $"[GameStateExporter] Failed to auto-place buildings: {e.Message}");
+			}
+		}
+
+		CPos? FindValidPlacementLocation(ActorInfo actorInfo, BuildingInfo buildingInfo, Player player)
+		{
+			// Start near the player's base
+			var baseCenter = FindBaseCenter(player);
+			if (baseCenter == null)
+				return null;
+
+			// Search in expanding circles around base center
+			var searchRadius = 1;
+			while (searchRadius < 50) // Max search radius
+			{
+				for (var dx = -searchRadius; dx <= searchRadius; dx++)
+				{
+					for (var dy = -searchRadius; dy <= searchRadius; dy++)
+					{
+						// Only check cells on the perimeter of the current radius
+						if (Math.Abs(dx) != searchRadius && Math.Abs(dy) != searchRadius)
+							continue;
+
+						var candidate = new CPos(baseCenter.Value.X + dx, baseCenter.Value.Y + dy);
+
+						// Check if this location is valid
+						if (world.CanPlaceBuilding(candidate, actorInfo, buildingInfo, null) &&
+							buildingInfo.IsCloseEnoughToBase(world, player, actorInfo, candidate))
+						{
+							return candidate;
+						}
+					}
+				}
+				searchRadius++;
+			}
+
+			return null;
+		}
+
+		CPos? FindBaseCenter(Player player)
+		{
+			// Find the Construction Yard or any building as base center
+			var constructionYard = world.Actors
+				.FirstOrDefault(a => a.Owner == player &&
+									!a.IsDead &&
+									a.Info.HasTraitInfo<BuildingInfo>() &&
+									a.Info.Name.Contains("mcv", StringComparison.OrdinalIgnoreCase));
+
+			if (constructionYard != null)
+				return world.Map.CellContaining(constructionYard.CenterPosition);
+
+			// Fall back to any building
+			var anyBuilding = world.Actors
+				.FirstOrDefault(a => a.Owner == player && !a.IsDead && a.Info.HasTraitInfo<BuildingInfo>());
+
+			if (anyBuilding != null)
+				return world.Map.CellContaining(anyBuilding.CenterPosition);
+
+			return null;
+		}
+
 		void ExportGameState()
 		{
 			try
 			{
+				// Auto-place any ready buildings before exporting state
+				AutoPlaceReadyBuildings();
+
 				if (!Directory.Exists(info.OutputDirectory))
 					Directory.CreateDirectory(info.OutputDirectory);
 
