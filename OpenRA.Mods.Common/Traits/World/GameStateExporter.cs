@@ -284,7 +284,7 @@ namespace OpenRA.Mods.Common.Traits
 			try
 			{
 				// Find Player 1 (the human player)
-				var player1 = world.Players.FirstOrDefault(p => p.PlayerName == "Player1" && !p.NonCombatant && p.Playable);
+				var player1 = world.Players.FirstOrDefault(p => !p.IsBot && !p.NonCombatant && p.Playable);
 				if (player1 == null)
 					return;
 
