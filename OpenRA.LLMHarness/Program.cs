@@ -1,4 +1,5 @@
 using MudBlazor.Services;
+using OpenRA.LLMHarness;
 using OpenRA.LLMHarness.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -7,6 +8,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
 builder.Services.AddMudServices();
+
+// Configure LLMHarness options from appsettings.json
+builder.Services.Configure<LLMHarnessOptions>(
+	builder.Configuration.GetSection("LLMHarness"));
 
 // Add HttpClient for OllamaService
 builder.Services.AddHttpClient<OllamaService>();

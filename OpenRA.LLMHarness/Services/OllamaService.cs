@@ -1,5 +1,6 @@
 using System.ClientModel;
 using System.Text;
+using Microsoft.Extensions.Options;
 using OpenAI;
 using OpenAI.Chat;
 
@@ -7,13 +8,13 @@ namespace OpenRA.LLMHarness.Services
 {
 	public sealed class OllamaService
 	{
-		const string WatchDirectory = @"C:\OpenRATest";
-		const string LogDirectory = @"C:\OpenRATest\LLM_Coach_Logs";
-		const string OrderInputDirectory = @"C:\OpenRATest_Orders\input";
-		const string OrderArchiveDirectory = @"C:\OpenRATest_Orders\archive";
+		readonly string watchDirectory;
+		readonly string logDirectory;
+		readonly string orderInputDirectory;
+		readonly string orderArchiveDirectory;
 		// Note: phi4:14b and llama3.1:8b work very well, 5 to 10 seconds per response and they produce the correct order format more consistently.
-		public string OllamaApiUrl { get; set; } = "http://localhost:11434/v1";
-		public string ModelName { get; set; } = "phi4:14b"; // try out different models from https://ollama.com/search?o=newest
+		public string OllamaApiUrl { get; set; }
+		public string ModelName { get; set; }
 
 		ChatClient chatClient;
 		readonly HashSet<string> processedFiles = [];
@@ -42,8 +43,16 @@ namespace OpenRA.LLMHarness.Services
 		public event Func<LLMResponse, Task>? OnResponseComplete;
 		public event Func<string, Task>? OnStatusUpdate;
 
-		public OllamaService(HttpClient httpClient)
+		public OllamaService(HttpClient httpClient, IOptions<LLMHarnessOptions> options)
 		{
+			var config = options.Value;
+			watchDirectory = config.WatchDirectory;
+			logDirectory = config.LogDirectory;
+			orderInputDirectory = config.OrderInputDirectory;
+			orderArchiveDirectory = config.OrderArchiveDirectory;
+			OllamaApiUrl = config.OllamaApiUrl;
+			ModelName = config.ModelName;
+
 			InitializeChatClient();
 		}
 
@@ -71,37 +80,37 @@ namespace OpenRA.LLMHarness.Services
 			shutdownCts = new CancellationTokenSource();
 
 			// Create directories if they don't exist
-			if (!Directory.Exists(WatchDirectory))
+			if (!Directory.Exists(watchDirectory))
 			{
-				Directory.CreateDirectory(WatchDirectory);
+				Directory.CreateDirectory(watchDirectory);
 			}
 
-			if (!Directory.Exists(LogDirectory))
+			if (!Directory.Exists(logDirectory))
 			{
-				Directory.CreateDirectory(LogDirectory);
+				Directory.CreateDirectory(logDirectory);
 			}
 
 			// Create order directories if they don't exist
-			if (!Directory.Exists(OrderInputDirectory))
+			if (!Directory.Exists(orderInputDirectory))
 			{
-				Directory.CreateDirectory(OrderInputDirectory);
+				Directory.CreateDirectory(orderInputDirectory);
 			}
 
-			if (!Directory.Exists(OrderArchiveDirectory))
+			if (!Directory.Exists(orderArchiveDirectory))
 			{
-				Directory.CreateDirectory(OrderArchiveDirectory);
+				Directory.CreateDirectory(orderArchiveDirectory);
 			}
 
 			// Initialize log file for this session
 			var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-			currentLogFile = Path.Combine(LogDirectory, $"llm_coach_log_{timestamp}.txt");
+			currentLogFile = Path.Combine(logDirectory, $"llm_coach_log_{timestamp}.txt");
 
 			await NotifyStatusAsync($"Logging to: {currentLogFile}");
 			await LogToFileAsync($"=== OpenRA LLM Coach Session Started at {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
 			await LogToFileAsync($"Model: {ModelName}");
-			await LogToFileAsync($"Watch Directory: {WatchDirectory}");
-			await LogToFileAsync($"Order Input Directory: {OrderInputDirectory}");
-			await LogToFileAsync($"Order Archive Directory: {OrderArchiveDirectory}");
+			await LogToFileAsync($"Watch Directory: {watchDirectory}");
+			await LogToFileAsync($"Order Input Directory: {orderInputDirectory}");
+			await LogToFileAsync($"Order Archive Directory: {orderArchiveDirectory}");
 			await LogToFileAsync($"Write Orders To Game: {WriteOrdersToGame}");
 			await LogToFileAsync($"Thinking Level: {ThinkingLevel}");
 			await LogToFileAsync($"Ollama API URL: {OllamaApiUrl}");
@@ -114,19 +123,19 @@ namespace OpenRA.LLMHarness.Services
 		public void StartWatching()
 		{
 			// Set up file watcher with increased buffer and error handling
-			fileWatcher = new FileSystemWatcher(WatchDirectory);
+			fileWatcher = new FileSystemWatcher(watchDirectory);
 			fileWatcher.Filter = "*.txt";
 			fileWatcher.NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite;
 			fileWatcher.Created += OnNewFile;
 			fileWatcher.Changed += OnNewFile;
 			fileWatcher.Error += OnWatcherError;
-			
+
 			// Increase internal buffer to prevent overflow (default is 8KB, max is 64KB)
 			fileWatcher.InternalBufferSize = 65536; // 64KB max buffer
-			
+
 			fileWatcher.EnableRaisingEvents = true;
 
-			_ = NotifyStatusAsync($"Monitoring directory: {WatchDirectory}");
+			_ = NotifyStatusAsync($"Monitoring directory: {watchDirectory}");
 			_ = LogToFileAsync($"[WATCHER] File watcher started with buffer size: {fileWatcher.InternalBufferSize} bytes");
 
 			// Set up fallback timer to scan for new files every 15 seconds
@@ -211,7 +220,7 @@ namespace OpenRA.LLMHarness.Services
 		{
 			try
 			{
-				var files = Directory.GetFiles(WatchDirectory, "*.txt");
+				var files = Directory.GetFiles(watchDirectory, "*.txt");
 				await LogToFileAsync($"[INIT] Found {files.Length} existing files in watch directory");
 				if (files.Length > 0)
 				{
@@ -297,7 +306,7 @@ namespace OpenRA.LLMHarness.Services
 				await LogToFileAsync($"[FALLBACK] Running fallback file scan (no activity for {timeSinceLastFile.TotalSeconds:F0} seconds)");
 
 				// Get all txt files in the directory
-				var files = Directory.GetFiles(WatchDirectory, "*.txt")
+				var files = Directory.GetFiles(watchDirectory, "*.txt")
 					.OrderByDescending(File.GetLastWriteTime)
 					.ToArray();
 
@@ -799,17 +808,17 @@ namespace OpenRA.LLMHarness.Services
 			{
 				var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
 				var filename = $"order_{timestamp}.txt";
-				
+
 				// ALWAYS write to archive
-				var archivePath = Path.Combine(OrderArchiveDirectory, filename);
+				var archivePath = Path.Combine(orderArchiveDirectory, filename);
 				await File.WriteAllTextAsync(archivePath, orders);
 				await LogToFileAsync($"[ORDERS] Archived orders to: {archivePath}");
 				await NotifyStatusAsync($"Orders archived: {filename}");
-				
+
 				// Conditionally write to input (for game processing)
 				if (WriteOrdersToGame)
 				{
-					var inputPath = Path.Combine(OrderInputDirectory, filename);
+					var inputPath = Path.Combine(orderInputDirectory, filename);
 					await File.WriteAllTextAsync(inputPath, orders);
 					await LogToFileAsync($"[ORDERS] Wrote orders for game processing to: {inputPath}");
 					await NotifyStatusAsync($"Orders sent to game: {filename}");
