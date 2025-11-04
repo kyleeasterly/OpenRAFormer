@@ -12,6 +12,7 @@ namespace OpenRA.LLMHarness.Services
 		readonly string logDirectory;
 		readonly string orderInputDirectory;
 		readonly string orderArchiveDirectory;
+		readonly SessionManager sessionManager;
 		// Note: phi4:14b and llama3.1:8b work very well, 5 to 10 seconds per response and they produce the correct order format more consistently.
 		public string OllamaApiUrl { get; set; }
 		public string ModelName { get; set; }
@@ -43,7 +44,7 @@ namespace OpenRA.LLMHarness.Services
 		public event Func<LLMResponse, Task>? OnResponseComplete;
 		public event Func<string, Task>? OnStatusUpdate;
 
-		public OllamaService(HttpClient httpClient, IOptions<LLMHarnessOptions> options)
+		public OllamaService(HttpClient httpClient, IOptions<LLMHarnessOptions> options, SessionManager sessionManager)
 		{
 			var config = options.Value;
 			watchDirectory = config.WatchDirectory;
@@ -52,6 +53,7 @@ namespace OpenRA.LLMHarness.Services
 			orderArchiveDirectory = config.OrderArchiveDirectory;
 			OllamaApiUrl = config.OllamaApiUrl;
 			ModelName = config.ModelName;
+			this.sessionManager = sessionManager;
 
 			InitializeChatClient();
 		}
@@ -346,11 +348,19 @@ namespace OpenRA.LLMHarness.Services
 		private async Task ProcessFileAsync(string filePath)
 		{
 			await LogToFileAsync($"[PROCESS_FILE] Starting ProcessFileAsync for: {Path.GetFileName(filePath)}");
-			
+
 			// Check if we're shutting down
 			if (shutdownCts?.Token.IsCancellationRequested ?? true)
 			{
 				await LogToFileAsync($"[PROCESS_FILE] Skipping {Path.GetFileName(filePath)} - shutdown requested");
+				return;
+			}
+
+			// Check if a session is active
+			if (!sessionManager.IsSessionActive)
+			{
+				await LogToFileAsync($"[PROCESS_FILE] Skipping {Path.GetFileName(filePath)} - no active session");
+				await NotifyStatusAsync("No active session - please start a session to process game states");
 				return;
 			}
 
@@ -616,6 +626,28 @@ namespace OpenRA.LLMHarness.Services
 						DurationSeconds = seconds
 					};
 					await OnResponseComplete(llmResponse);
+				}
+
+				// Save turn artifacts to session
+				if (sessionManager.IsSessionActive)
+				{
+					try
+					{
+						var turnPath = sessionManager.SaveTurn(
+							systemPrompt,
+							userPrompt,
+							fullResponse,
+							ModelName,
+							ThinkingLevel,
+							seconds,
+							seconds); // Use same value for total pipeline time for now
+
+						await LogToFileAsync($"[SESSION] Saved turn artifacts to: {turnPath}");
+					}
+					catch (Exception ex)
+					{
+						await LogToFileAsync($"[SESSION] Failed to save turn artifacts: {ex.Message}\n{ex.StackTrace}");
+					}
 				}
 			}
 			catch (OperationCanceledException)

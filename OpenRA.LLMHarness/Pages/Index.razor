@@ -1,6 +1,7 @@
 @page "/"
 @using OpenRA.LLMHarness.Services
 @inject OllamaService OllamaService
+@inject SessionManager SessionManager
 @inject IJSRuntime JSRuntime
 @implements IDisposable
 
@@ -111,7 +112,40 @@
                 </MudItem>
             </MudGrid>
             <MudDivider Class="my-4" />
-            
+
+            <!-- Session Control -->
+            <MudCard Class="mb-4">
+                <MudCardContent>
+                    <MudText Typo="Typo.h6" Class="mb-2">Session Management</MudText>
+                    @if (SessionManager.IsSessionActive)
+                    {
+                        <MudAlert Severity="Severity.Success" Class="mb-3">
+                            <strong>Session Active:</strong> @SessionManager.CurrentSessionId
+                            <br/>
+                            Turns: @SessionManager.TurnCount | Duration: @FormatDuration(SessionManager.SessionDuration)
+                        </MudAlert>
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Error"
+                                   OnClick="StopSession"
+                                   StartIcon="@Icons.Material.Filled.Stop">
+                            Stop Session
+                        </MudButton>
+                    }
+                    else
+                    {
+                        <MudAlert Severity="Severity.Warning" Class="mb-3">
+                            No active session. Start a session before beginning a match.
+                        </MudAlert>
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Success"
+                                   OnClick="StartSession"
+                                   StartIcon="@Icons.Material.Filled.PlayArrow">
+                            Start New Session
+                        </MudButton>
+                    }
+                </MudCardContent>
+            </MudCard>
+
             <!-- Human message input -->
             <MudCard Class="mb-4">
                 <MudCardContent>
@@ -436,6 +470,47 @@
         humanMessageDraft = "";
         OllamaService.HumanMessage = "";
         isEditingHumanMessage = false;
+    }
+
+    // Session management methods
+    private void StartSession()
+    {
+        try
+        {
+            SessionManager.StartSession();
+            statusMessage = $"Session started: {SessionManager.CurrentSessionId}";
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Failed to start session: {ex.Message}";
+        }
+    }
+
+    private void StopSession()
+    {
+        try
+        {
+            SessionManager.StopSession();
+            statusMessage = "Session stopped";
+        }
+        catch (Exception ex)
+        {
+            statusMessage = $"Failed to stop session: {ex.Message}";
+        }
+    }
+
+    private string FormatDuration(TimeSpan? duration)
+    {
+        if (!duration.HasValue)
+            return "N/A";
+
+        var d = duration.Value;
+        if (d.TotalMinutes < 1)
+            return $"{d.Seconds}s";
+        else if (d.TotalHours < 1)
+            return $"{d.Minutes}m {d.Seconds}s";
+        else
+            return $"{d.Hours}h {d.Minutes}m";
     }
 
     public void Dispose()

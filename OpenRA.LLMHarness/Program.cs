@@ -16,6 +16,9 @@ builder.Services.Configure<LLMHarnessOptions>(
 // Add HttpClient for OllamaService
 builder.Services.AddHttpClient<OllamaService>();
 
+// Add SessionManager as a singleton
+builder.Services.AddSingleton<SessionManager>();
+
 // Add OllamaService as a singleton
 builder.Services.AddSingleton<OllamaService>();
 
