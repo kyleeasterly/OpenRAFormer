@@ -16,6 +16,9 @@ builder.Services.Configure<LLMHarnessOptions>(
 // Add HttpClient for OllamaService
 builder.Services.AddHttpClient<OllamaService>();
 
+// Add SessionManager as a singleton
+builder.Services.AddSingleton<SessionManager>();
+
 // Add OllamaService as a singleton
 builder.Services.AddSingleton<OllamaService>();
 
@@ -23,6 +26,10 @@ builder.Services.AddSingleton<OllamaService>();
 builder.Services.AddHostedService<FileWatcherService>();
 
 var app = builder.Build();
+
+// Clean up orphaned session marker file if harness crashed previously
+var sessionManager = app.Services.GetRequiredService<SessionManager>();
+sessionManager.CleanupOrphanedMarker();
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())

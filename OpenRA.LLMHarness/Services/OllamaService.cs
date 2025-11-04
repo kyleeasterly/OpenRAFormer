@@ -12,12 +12,13 @@ namespace OpenRA.LLMHarness.Services
 		readonly string logDirectory;
 		readonly string orderInputDirectory;
 		readonly string orderArchiveDirectory;
+		readonly SessionManager sessionManager;
 		// Note: phi4:14b and llama3.1:8b work very well, 5 to 10 seconds per response and they produce the correct order format more consistently.
 		public string OllamaApiUrl { get; set; }
 		public string ModelName { get; set; }
 
 		ChatClient chatClient;
-		readonly HashSet<string> processedFiles = [];
+		readonly Dictionary<string, DateTime> processedFiles = new();
 
 		public bool VerboseMode { get; set; } = false;
 		public string ThinkingLevel { get; set; } = "medium";
@@ -43,7 +44,7 @@ namespace OpenRA.LLMHarness.Services
 		public event Func<LLMResponse, Task>? OnResponseComplete;
 		public event Func<string, Task>? OnStatusUpdate;
 
-		public OllamaService(HttpClient httpClient, IOptions<LLMHarnessOptions> options)
+		public OllamaService(HttpClient httpClient, IOptions<LLMHarnessOptions> options, SessionManager sessionManager)
 		{
 			var config = options.Value;
 			watchDirectory = config.WatchDirectory;
@@ -52,6 +53,7 @@ namespace OpenRA.LLMHarness.Services
 			orderArchiveDirectory = config.OrderArchiveDirectory;
 			OllamaApiUrl = config.OllamaApiUrl;
 			ModelName = config.ModelName;
+			this.sessionManager = sessionManager;
 
 			InitializeChatClient();
 		}
@@ -316,23 +318,35 @@ namespace OpenRA.LLMHarness.Services
 					return;
 				}
 
-				// Check if the most recent file needs processing
+				// Check if the most recent file needs processing based on timestamp
 				var mostRecentFile = files.First();
 				var fileTime = File.GetLastWriteTime(mostRecentFile);
-				
-				// If the file is newer than our last processed time and not in processedFiles
+
+				// Check if file has been updated since we last processed it
 				bool shouldProcess = false;
 				lock (processedFiles)
 				{
-					if (!processedFiles.Contains(mostRecentFile) && fileTime > lastFileProcessedTime)
+					if (processedFiles.TryGetValue(mostRecentFile, out var lastProcessedTime))
 					{
-						shouldProcess = true;
+						// File was processed before - check if it's been updated since
+						if (fileTime > lastProcessedTime)
+						{
+							shouldProcess = true;
+						}
+					}
+					else
+					{
+						// File never processed - check if it's newer than our last activity
+						if (fileTime > lastFileProcessedTime)
+						{
+							shouldProcess = true;
+						}
 					}
 				}
 
 				if (shouldProcess && !isProcessingLLM)
 				{
-					await LogToFileAsync($"[FALLBACK] Found unprocessed file: {Path.GetFileName(mostRecentFile)}");
+					await LogToFileAsync($"[FALLBACK] Found unprocessed or updated file: {Path.GetFileName(mostRecentFile)}");
 					await ProcessFileAsync(mostRecentFile);
 				}
 			}
@@ -346,7 +360,7 @@ namespace OpenRA.LLMHarness.Services
 		private async Task ProcessFileAsync(string filePath)
 		{
 			await LogToFileAsync($"[PROCESS_FILE] Starting ProcessFileAsync for: {Path.GetFileName(filePath)}");
-			
+
 			// Check if we're shutting down
 			if (shutdownCts?.Token.IsCancellationRequested ?? true)
 			{
@@ -354,14 +368,30 @@ namespace OpenRA.LLMHarness.Services
 				return;
 			}
 
-			// Check if already processed first
+			// Check if a session is active
+			if (!sessionManager.IsSessionActive)
+			{
+				await LogToFileAsync($"[PROCESS_FILE] Skipping {Path.GetFileName(filePath)} - no active session");
+				await NotifyStatusAsync("No active session - please start a session to process game states");
+				return;
+			}
+
+			// Check if already processed based on file timestamp
+			var fileLastWriteTime = File.GetLastWriteTime(filePath);
 			bool alreadyProcessed = false;
 			lock (processedFiles)
 			{
-				if (processedFiles.Contains(filePath))
+				if (processedFiles.TryGetValue(filePath, out var lastProcessedTime))
 				{
-					alreadyProcessed = true;
-					_ = LogToFileAsync($"[PROCESS_FILE] Skipping {Path.GetFileName(filePath)} - already in processedFiles set (total: {processedFiles.Count})");
+					if (fileLastWriteTime <= lastProcessedTime)
+					{
+						alreadyProcessed = true;
+						_ = LogToFileAsync($"[PROCESS_FILE] Skipping {Path.GetFileName(filePath)} - file not modified since last processing (last: {lastProcessedTime:HH:mm:ss.fff}, current: {fileLastWriteTime:HH:mm:ss.fff})");
+					}
+					else
+					{
+						_ = LogToFileAsync($"[PROCESS_FILE] File {Path.GetFileName(filePath)} has been updated (last: {lastProcessedTime:HH:mm:ss.fff}, current: {fileLastWriteTime:HH:mm:ss.fff})");
+					}
 				}
 			}
 
@@ -380,12 +410,12 @@ namespace OpenRA.LLMHarness.Services
 					return;
 				}
 
-				// We got the lock, now mark this file as processed
+				// We got the lock, now mark this file as processed with its timestamp
 				isProcessingLLM = true;
 				lock (processedFiles)
 				{
-					processedFiles.Add(filePath);
-					_ = LogToFileAsync($"[PROCESS_FILE] Added {Path.GetFileName(filePath)} to processedFiles set (total: {processedFiles.Count})");
+					processedFiles[filePath] = fileLastWriteTime;
+					_ = LogToFileAsync($"[PROCESS_FILE] Recorded {Path.GetFileName(filePath)} with timestamp {fileLastWriteTime:HH:mm:ss.fff} (total tracked: {processedFiles.Count})");
 				}
 				_ = LogToFileAsync($"[LOCK] Starting processing for: {Path.GetFileName(filePath)}");
 			}
@@ -616,6 +646,28 @@ namespace OpenRA.LLMHarness.Services
 						DurationSeconds = seconds
 					};
 					await OnResponseComplete(llmResponse);
+				}
+
+				// Save turn artifacts to session
+				if (sessionManager.IsSessionActive)
+				{
+					try
+					{
+						var turnPath = sessionManager.SaveTurn(
+							systemPrompt,
+							userPrompt,
+							fullResponse,
+							ModelName,
+							ThinkingLevel,
+							seconds,
+							seconds); // Use same value for total pipeline time for now
+
+						await LogToFileAsync($"[SESSION] Saved turn artifacts to: {turnPath}");
+					}
+					catch (Exception ex)
+					{
+						await LogToFileAsync($"[SESSION] Failed to save turn artifacts: {ex.Message}\n{ex.StackTrace}");
+					}
 				}
 			}
 			catch (OperationCanceledException)
