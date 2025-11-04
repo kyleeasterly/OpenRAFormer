@@ -22,18 +22,20 @@ namespace OpenRA.LLMHarness.Services
 		{
 			var config = options.Value;
 
-			// Resolve sessions directory - if relative, make it relative to project root (not bin/)
+			// Resolve sessions directory - if relative, make it relative to LLMHarness project folder
 			if (Path.IsPathRooted(config.SessionsDirectory))
 			{
 				sessionsBaseDirectory = config.SessionsDirectory;
 			}
 			else
 			{
-				// Get project root by going up from bin/Debug/net8.0 to project directory
+				// Assembly is at /project/bin/OpenRA.LLMHarness.dll
+				// We want /project/OpenRA.LLMHarness/sessions/
 				var assemblyLocation = Assembly.GetExecutingAssembly().Location;
 				var binDirectory = Path.GetDirectoryName(assemblyLocation);
-				var projectRoot = Path.GetFullPath(Path.Combine(binDirectory!, "..", "..", ".."));
-				sessionsBaseDirectory = Path.Combine(projectRoot, config.SessionsDirectory);
+				var projectRoot = Path.GetFullPath(Path.Combine(binDirectory!, ".."));
+				var harnessProjectDir = Path.Combine(projectRoot, "OpenRA.LLMHarness");
+				sessionsBaseDirectory = Path.Combine(harnessProjectDir, config.SessionsDirectory);
 			}
 
 			// Session marker file goes in watch directory
@@ -60,9 +62,8 @@ namespace OpenRA.LLMHarness.Services
 			var folderName = $"{timestamp}_{currentSessionId}";
 			currentSessionPath = Path.Combine(sessionsBaseDirectory, folderName);
 
-			// Create directory structure
+			// Create session directory
 			Directory.CreateDirectory(currentSessionPath);
-			Directory.CreateDirectory(Path.Combine(currentSessionPath, "turns"));
 
 			// Write session marker file for game to detect
 			File.WriteAllText(sessionMarkerFile, currentSessionId);
@@ -115,15 +116,11 @@ namespace OpenRA.LLMHarness.Services
 
 			turnCounter++;
 			var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-			var turnFolderName = $"turn_{turnCounter:D3}_{timestamp}";
-			var turnPath = Path.Combine(currentSessionPath!, "turns", turnFolderName);
 
-			Directory.CreateDirectory(turnPath);
-
-			// Save prompts and response as markdown
-			File.WriteAllText(Path.Combine(turnPath, "system_prompt.md"), systemPrompt);
-			File.WriteAllText(Path.Combine(turnPath, "user_message.md"), userMessage);
-			File.WriteAllText(Path.Combine(turnPath, "assistant_response.md"), assistantResponse);
+			// Save prompts and response as markdown with timestamped filenames
+			File.WriteAllText(Path.Combine(currentSessionPath!, $"{timestamp}_system_prompt.md"), systemPrompt);
+			File.WriteAllText(Path.Combine(currentSessionPath!, $"{timestamp}_user_message.md"), userMessage);
+			File.WriteAllText(Path.Combine(currentSessionPath!, $"{timestamp}_assistant_response.md"), assistantResponse);
 
 			// Save settings
 			var settings = new
@@ -134,7 +131,7 @@ namespace OpenRA.LLMHarness.Services
 				thinking_level = thinkingLevel
 			};
 			File.WriteAllText(
-				Path.Combine(turnPath, "settings.json"),
+				Path.Combine(currentSessionPath!, $"{timestamp}_settings.json"),
 				JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
 
 			// Save timing
@@ -145,10 +142,10 @@ namespace OpenRA.LLMHarness.Services
 				total_pipeline_seconds = totalPipelineSeconds
 			};
 			File.WriteAllText(
-				Path.Combine(turnPath, "timing.json"),
+				Path.Combine(currentSessionPath!, $"{timestamp}_timing.json"),
 				JsonSerializer.Serialize(timing, new JsonSerializerOptions { WriteIndented = true }));
 
-			return turnPath;
+			return currentSessionPath!;
 		}
 
 		public void CleanupOrphanedMarker()

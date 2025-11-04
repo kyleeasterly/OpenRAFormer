@@ -27,6 +27,10 @@ builder.Services.AddHostedService<FileWatcherService>();
 
 var app = builder.Build();
 
+// Clean up orphaned session marker file if harness crashed previously
+var sessionManager = app.Services.GetRequiredService<SessionManager>();
+sessionManager.CleanupOrphanedMarker();
+
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
