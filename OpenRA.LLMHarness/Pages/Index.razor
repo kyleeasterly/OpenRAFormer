@@ -42,23 +42,16 @@
             }
             else
             {
-                <MudList Clickable="true">
+                <MudList Clickable="true" Dense="true">
                     @foreach (var response in sessionHistory.OrderByDescending(r => r.Timestamp))
                     {
-                        <MudListItem OnClick="@(() => SelectResponse(response.Id))">
-                            <MudCard Outlined="@(selectedResponseId == response.Id)" 
-                                     Class="@(selectedResponseId == response.Id ? "mud-theme-primary" : "")">
-                                <MudCardContent Class="py-2 px-3">
-                                    <MudText Typo="Typo.caption">@response.Timestamp.ToString("HH:mm:ss")</MudText>
-                                    <MudText Typo="Typo.body2" Class="text-truncate">
-                                        @(response.Response.Length > 50 ? response.Response.Substring(0, 50) + "..." : response.Response)
-                                    </MudText>
-                                    <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                        @response.DurationSeconds.ToString("F1")s
-                                    </MudText>
-                                </MudCardContent>
-                            </MudCard>
+                        <MudListItem OnClick="@(() => SelectResponse(response.Id))"
+                                     Selected="@(selectedResponseId == response.Id)">
+                            <MudText Typo="Typo.body2">
+                                @response.Timestamp.ToString("HH:mm:ss") - @response.DurationSeconds.ToString("F1")s
+                            </MudText>
                         </MudListItem>
+                        <MudDivider />
                     }
                 </MudList>
             }
