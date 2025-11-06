@@ -1,5 +1,6 @@
 using System.ClientModel;
 using System.Text;
+using Microsoft.Extensions.Options;
 using OpenAI;
 using OpenAI.Chat;
 
@@ -7,16 +8,17 @@ namespace OpenRA.LLMHarness.Services
 {
 	public sealed class OllamaService
 	{
-		const string WatchDirectory = @"C:\OpenRATest";
-		const string LogDirectory = @"C:\OpenRATest\LLM_Coach_Logs";
-		const string OrderInputDirectory = @"C:\OpenRATest_Orders\input";
-		const string OrderArchiveDirectory = @"C:\OpenRATest_Orders\archive";
+		readonly string watchDirectory;
+		readonly string logDirectory;
+		readonly string orderInputDirectory;
+		readonly string orderArchiveDirectory;
+		readonly SessionManager sessionManager;
 		// Note: phi4:14b and llama3.1:8b work very well, 5 to 10 seconds per response and they produce the correct order format more consistently.
-		public string OllamaApiUrl { get; set; } = "http://localhost:11434/v1";
-		public string ModelName { get; set; } = "phi4:14b"; // try out different models from https://ollama.com/search?o=newest
+		public string OllamaApiUrl { get; set; }
+		public string ModelName { get; set; }
 
 		ChatClient chatClient;
-		readonly HashSet<string> processedFiles = [];
+		readonly Dictionary<string, DateTime> processedFiles = new();
 
 		public bool VerboseMode { get; set; } = false;
 		public string ThinkingLevel { get; set; } = "medium";
@@ -42,8 +44,17 @@ namespace OpenRA.LLMHarness.Services
 		public event Func<LLMResponse, Task>? OnResponseComplete;
 		public event Func<string, Task>? OnStatusUpdate;
 
-		public OllamaService(HttpClient httpClient)
+		public OllamaService(HttpClient httpClient, IOptions<LLMHarnessOptions> options, SessionManager sessionManager)
 		{
+			var config = options.Value;
+			watchDirectory = config.WatchDirectory;
+			logDirectory = config.LogDirectory;
+			orderInputDirectory = config.OrderInputDirectory;
+			orderArchiveDirectory = config.OrderArchiveDirectory;
+			OllamaApiUrl = config.OllamaApiUrl;
+			ModelName = config.ModelName;
+			this.sessionManager = sessionManager;
+
 			InitializeChatClient();
 		}
 
@@ -71,37 +82,37 @@ namespace OpenRA.LLMHarness.Services
 			shutdownCts = new CancellationTokenSource();
 
 			// Create directories if they don't exist
-			if (!Directory.Exists(WatchDirectory))
+			if (!Directory.Exists(watchDirectory))
 			{
-				Directory.CreateDirectory(WatchDirectory);
+				Directory.CreateDirectory(watchDirectory);
 			}
 
-			if (!Directory.Exists(LogDirectory))
+			if (!Directory.Exists(logDirectory))
 			{
-				Directory.CreateDirectory(LogDirectory);
+				Directory.CreateDirectory(logDirectory);
 			}
 
 			// Create order directories if they don't exist
-			if (!Directory.Exists(OrderInputDirectory))
+			if (!Directory.Exists(orderInputDirectory))
 			{
-				Directory.CreateDirectory(OrderInputDirectory);
+				Directory.CreateDirectory(orderInputDirectory);
 			}
 
-			if (!Directory.Exists(OrderArchiveDirectory))
+			if (!Directory.Exists(orderArchiveDirectory))
 			{
-				Directory.CreateDirectory(OrderArchiveDirectory);
+				Directory.CreateDirectory(orderArchiveDirectory);
 			}
 
 			// Initialize log file for this session
 			var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-			currentLogFile = Path.Combine(LogDirectory, $"llm_coach_log_{timestamp}.txt");
+			currentLogFile = Path.Combine(logDirectory, $"llm_coach_log_{timestamp}.txt");
 
 			await NotifyStatusAsync($"Logging to: {currentLogFile}");
 			await LogToFileAsync($"=== OpenRA LLM Coach Session Started at {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
 			await LogToFileAsync($"Model: {ModelName}");
-			await LogToFileAsync($"Watch Directory: {WatchDirectory}");
-			await LogToFileAsync($"Order Input Directory: {OrderInputDirectory}");
-			await LogToFileAsync($"Order Archive Directory: {OrderArchiveDirectory}");
+			await LogToFileAsync($"Watch Directory: {watchDirectory}");
+			await LogToFileAsync($"Order Input Directory: {orderInputDirectory}");
+			await LogToFileAsync($"Order Archive Directory: {orderArchiveDirectory}");
 			await LogToFileAsync($"Write Orders To Game: {WriteOrdersToGame}");
 			await LogToFileAsync($"Thinking Level: {ThinkingLevel}");
 			await LogToFileAsync($"Ollama API URL: {OllamaApiUrl}");
@@ -114,19 +125,19 @@ namespace OpenRA.LLMHarness.Services
 		public void StartWatching()
 		{
 			// Set up file watcher with increased buffer and error handling
-			fileWatcher = new FileSystemWatcher(WatchDirectory);
+			fileWatcher = new FileSystemWatcher(watchDirectory);
 			fileWatcher.Filter = "*.txt";
 			fileWatcher.NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite;
 			fileWatcher.Created += OnNewFile;
 			fileWatcher.Changed += OnNewFile;
 			fileWatcher.Error += OnWatcherError;
-			
+
 			// Increase internal buffer to prevent overflow (default is 8KB, max is 64KB)
 			fileWatcher.InternalBufferSize = 65536; // 64KB max buffer
-			
+
 			fileWatcher.EnableRaisingEvents = true;
 
-			_ = NotifyStatusAsync($"Monitoring directory: {WatchDirectory}");
+			_ = NotifyStatusAsync($"Monitoring directory: {watchDirectory}");
 			_ = LogToFileAsync($"[WATCHER] File watcher started with buffer size: {fileWatcher.InternalBufferSize} bytes");
 
 			// Set up fallback timer to scan for new files every 15 seconds
@@ -211,7 +222,7 @@ namespace OpenRA.LLMHarness.Services
 		{
 			try
 			{
-				var files = Directory.GetFiles(WatchDirectory, "*.txt");
+				var files = Directory.GetFiles(watchDirectory, "*.txt");
 				await LogToFileAsync($"[INIT] Found {files.Length} existing files in watch directory");
 				if (files.Length > 0)
 				{
@@ -297,7 +308,7 @@ namespace OpenRA.LLMHarness.Services
 				await LogToFileAsync($"[FALLBACK] Running fallback file scan (no activity for {timeSinceLastFile.TotalSeconds:F0} seconds)");
 
 				// Get all txt files in the directory
-				var files = Directory.GetFiles(WatchDirectory, "*.txt")
+				var files = Directory.GetFiles(watchDirectory, "*.txt")
 					.OrderByDescending(File.GetLastWriteTime)
 					.ToArray();
 
@@ -307,23 +318,35 @@ namespace OpenRA.LLMHarness.Services
 					return;
 				}
 
-				// Check if the most recent file needs processing
+				// Check if the most recent file needs processing based on timestamp
 				var mostRecentFile = files.First();
 				var fileTime = File.GetLastWriteTime(mostRecentFile);
-				
-				// If the file is newer than our last processed time and not in processedFiles
+
+				// Check if file has been updated since we last processed it
 				bool shouldProcess = false;
 				lock (processedFiles)
 				{
-					if (!processedFiles.Contains(mostRecentFile) && fileTime > lastFileProcessedTime)
+					if (processedFiles.TryGetValue(mostRecentFile, out var lastProcessedTime))
 					{
-						shouldProcess = true;
+						// File was processed before - check if it's been updated since
+						if (fileTime > lastProcessedTime)
+						{
+							shouldProcess = true;
+						}
+					}
+					else
+					{
+						// File never processed - check if it's newer than our last activity
+						if (fileTime > lastFileProcessedTime)
+						{
+							shouldProcess = true;
+						}
 					}
 				}
 
 				if (shouldProcess && !isProcessingLLM)
 				{
-					await LogToFileAsync($"[FALLBACK] Found unprocessed file: {Path.GetFileName(mostRecentFile)}");
+					await LogToFileAsync($"[FALLBACK] Found unprocessed or updated file: {Path.GetFileName(mostRecentFile)}");
 					await ProcessFileAsync(mostRecentFile);
 				}
 			}
@@ -337,7 +360,7 @@ namespace OpenRA.LLMHarness.Services
 		private async Task ProcessFileAsync(string filePath)
 		{
 			await LogToFileAsync($"[PROCESS_FILE] Starting ProcessFileAsync for: {Path.GetFileName(filePath)}");
-			
+
 			// Check if we're shutting down
 			if (shutdownCts?.Token.IsCancellationRequested ?? true)
 			{
@@ -345,14 +368,30 @@ namespace OpenRA.LLMHarness.Services
 				return;
 			}
 
-			// Check if already processed first
+			// Check if a session is active
+			if (!sessionManager.IsSessionActive)
+			{
+				await LogToFileAsync($"[PROCESS_FILE] Skipping {Path.GetFileName(filePath)} - no active session");
+				await NotifyStatusAsync("No active session - please start a session to process game states");
+				return;
+			}
+
+			// Check if already processed based on file timestamp
+			var fileLastWriteTime = File.GetLastWriteTime(filePath);
 			bool alreadyProcessed = false;
 			lock (processedFiles)
 			{
-				if (processedFiles.Contains(filePath))
+				if (processedFiles.TryGetValue(filePath, out var lastProcessedTime))
 				{
-					alreadyProcessed = true;
-					_ = LogToFileAsync($"[PROCESS_FILE] Skipping {Path.GetFileName(filePath)} - already in processedFiles set (total: {processedFiles.Count})");
+					if (fileLastWriteTime <= lastProcessedTime)
+					{
+						alreadyProcessed = true;
+						_ = LogToFileAsync($"[PROCESS_FILE] Skipping {Path.GetFileName(filePath)} - file not modified since last processing (last: {lastProcessedTime:HH:mm:ss.fff}, current: {fileLastWriteTime:HH:mm:ss.fff})");
+					}
+					else
+					{
+						_ = LogToFileAsync($"[PROCESS_FILE] File {Path.GetFileName(filePath)} has been updated (last: {lastProcessedTime:HH:mm:ss.fff}, current: {fileLastWriteTime:HH:mm:ss.fff})");
+					}
 				}
 			}
 
@@ -371,12 +410,12 @@ namespace OpenRA.LLMHarness.Services
 					return;
 				}
 
-				// We got the lock, now mark this file as processed
+				// We got the lock, now mark this file as processed with its timestamp
 				isProcessingLLM = true;
 				lock (processedFiles)
 				{
-					processedFiles.Add(filePath);
-					_ = LogToFileAsync($"[PROCESS_FILE] Added {Path.GetFileName(filePath)} to processedFiles set (total: {processedFiles.Count})");
+					processedFiles[filePath] = fileLastWriteTime;
+					_ = LogToFileAsync($"[PROCESS_FILE] Recorded {Path.GetFileName(filePath)} with timestamp {fileLastWriteTime:HH:mm:ss.fff} (total tracked: {processedFiles.Count})");
 				}
 				_ = LogToFileAsync($"[LOCK] Starting processing for: {Path.GetFileName(filePath)}");
 			}
@@ -608,6 +647,28 @@ namespace OpenRA.LLMHarness.Services
 					};
 					await OnResponseComplete(llmResponse);
 				}
+
+				// Save turn artifacts to session
+				if (sessionManager.IsSessionActive)
+				{
+					try
+					{
+						var turnPath = sessionManager.SaveTurn(
+							systemPrompt,
+							userPrompt,
+							fullResponse,
+							ModelName,
+							ThinkingLevel,
+							seconds,
+							seconds); // Use same value for total pipeline time for now
+
+						await LogToFileAsync($"[SESSION] Saved turn artifacts to: {turnPath}");
+					}
+					catch (Exception ex)
+					{
+						await LogToFileAsync($"[SESSION] Failed to save turn artifacts: {ex.Message}\n{ex.StackTrace}");
+					}
+				}
 			}
 			catch (OperationCanceledException)
 			{
@@ -799,17 +860,17 @@ namespace OpenRA.LLMHarness.Services
 			{
 				var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
 				var filename = $"order_{timestamp}.txt";
-				
+
 				// ALWAYS write to archive
-				var archivePath = Path.Combine(OrderArchiveDirectory, filename);
+				var archivePath = Path.Combine(orderArchiveDirectory, filename);
 				await File.WriteAllTextAsync(archivePath, orders);
 				await LogToFileAsync($"[ORDERS] Archived orders to: {archivePath}");
 				await NotifyStatusAsync($"Orders archived: {filename}");
-				
+
 				// Conditionally write to input (for game processing)
 				if (WriteOrdersToGame)
 				{
-					var inputPath = Path.Combine(OrderInputDirectory, filename);
+					var inputPath = Path.Combine(orderInputDirectory, filename);
 					await File.WriteAllTextAsync(inputPath, orders);
 					await LogToFileAsync($"[ORDERS] Wrote orders for game processing to: {inputPath}");
 					await NotifyStatusAsync($"Orders sent to game: {filename}");
