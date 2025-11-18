@@ -207,43 +207,23 @@ namespace OpenRA.Mods.Common.Traits
 					foreach (var queue in queues)
 					{
 						var items = queue.AllQueued().ToList();
-						if (items.Count > 0)
+						foreach (var item in items)
 						{
-							// Group items by type and status
-							var itemGroups = items.GroupBy(item => new
-							{
-								Name = item.Item,
-								Status = item.Paused ? "PAUSED" : item.Done ? "READY" : "IN_PROGRESS"
-							});
+							var progress = item.RemainingCost == 0 ? 100 :
+								(100 * (item.TotalCost - item.RemainingCost) / item.TotalCost);
+							var friendlyName = world.Map.Rules.Actors[item.Item].TraitInfoOrDefault<BuildingInfo>() != null
+								? FriendlyNames.GetFriendlyBuildingName(item.Item)
+								: FriendlyNames.GetFriendlyUnitName(item.Item);
 
-							foreach (var group in itemGroups)
-							{
-								var firstItem = group.First();
-								var progress = firstItem.RemainingCost == 0 ? 100 :
-									(100 * (firstItem.TotalCost - firstItem.RemainingCost) / firstItem.TotalCost);
-								var friendlyName = world.Map.Rules.Actors[group.Key.Name].TraitInfoOrDefault<BuildingInfo>() != null
-									? FriendlyNames.GetFriendlyBuildingName(group.Key.Name)
-									: FriendlyNames.GetFriendlyUnitName(group.Key.Name);
+							var statusDescription = item.Paused ? "PAUSED" : item.Done ? "READY" : $"{progress}% complete";
 
-								var count = group.Count();
-								var additionalCount = Math.Max(0, count - 1);
+							if (item.Paused && !item.Done)
+								statusDescription = $"{progress}% complete (PAUSED)";
 
-								var statusDescription = group.Key.Status switch
-								{
-									"READY" => "READY",
-									_ => $"{progress}% complete"
-								};
+							var description = $"{friendlyName} {statusDescription}";
 
-								if (group.Key.Status == "PAUSED")
-									statusDescription += " (PAUSED)";
-
-								var description = $"{friendlyName} {statusDescription}";
-								if (additionalCount > 0)
-									description = string.Format(CultureInfo.InvariantCulture, "{0} (+{1})", description, additionalCount);
-
-								buildingProduction[building].Add(description);
-								allProductionItems.Add(description);
-							}
+							buildingProduction[building].Add(description);
+							allProductionItems.Add(description);
 						}
 					}
 				}
