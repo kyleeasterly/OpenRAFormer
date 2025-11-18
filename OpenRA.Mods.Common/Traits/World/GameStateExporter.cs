@@ -199,9 +199,11 @@ namespace OpenRA.Mods.Common.Traits
 			{
 				sb.AppendLine();
 				sb.AppendLine("#### Building Positions:");
-				
+
 				// Create a map of buildings to their production queues
 				var buildingProduction = new Dictionary<Actor, List<string>>();
+				var allProductionItems = new List<string>();
+
 				foreach (var building in buildings)
 				{
 					buildingProduction[building] = new List<string>();
@@ -212,12 +214,12 @@ namespace OpenRA.Mods.Common.Traits
 						if (items.Count > 0)
 						{
 							// Group items by type and status
-							var itemGroups = items.GroupBy(item => new 
-							{ 
+							var itemGroups = items.GroupBy(item => new
+							{
 								Name = item.Item,
 								Status = item.Paused ? "PAUSED" : item.Done ? "READY" : "IN_PROGRESS"
 							});
-							
+
 							foreach (var group in itemGroups)
 							{
 								var firstItem = group.First();
@@ -226,7 +228,7 @@ namespace OpenRA.Mods.Common.Traits
 								var friendlyName = world.Map.Rules.Actors[group.Key.Name].TraitInfoOrDefault<BuildingInfo>() != null
 									? FriendlyNames.GetFriendlyBuildingName(group.Key.Name)
 									: FriendlyNames.GetFriendlyUnitName(group.Key.Name);
-								
+
 								var count = group.Count();
 								var additionalCount = Math.Max(0, count - 1);
 
@@ -244,23 +246,30 @@ namespace OpenRA.Mods.Common.Traits
 									description = string.Format(CultureInfo.InvariantCulture, "{0} (+{1})", description, additionalCount);
 
 								buildingProduction[building].Add(description);
+								allProductionItems.Add(description);
 							}
 						}
 					}
 				}
-				
-				// Output buildings with positions and production
+
+				// Output buildings with positions (without production info)
 				foreach (var building in buildings.OrderBy(b => FriendlyNames.GetFriendlyBuildingName(b.Info.Name)))
 				{
 					var pos = building.CenterPosition;
 					var cell = world.Map.CellContaining(pos);
 					var friendlyName = FriendlyNames.GetFriendlyBuildingName(building.Info.Name);
-					
-					var productionInfo = buildingProduction[building].Count > 0 
-						? $" [{string.Join(", ", buildingProduction[building])}]"
-						: "";
-						
-					sb.AppendLine(CultureInfo.InvariantCulture, $"{friendlyName} ({cell.X},{cell.Y}){productionInfo}");
+					sb.AppendLine(CultureInfo.InvariantCulture, $"{friendlyName} ({cell.X},{cell.Y})");
+				}
+
+				// Output building queue as separate section
+				if (allProductionItems.Count > 0)
+				{
+					sb.AppendLine();
+					sb.AppendLine("#### Building Queue:");
+					foreach (var item in allProductionItems)
+					{
+						sb.AppendLine(item);
+					}
 				}
 			}
 
