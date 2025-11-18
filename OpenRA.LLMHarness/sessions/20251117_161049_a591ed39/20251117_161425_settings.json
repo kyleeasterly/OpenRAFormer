@@ -1,0 +1,6 @@
+{
+  "turn_number": 42,
+  "timestamp": "2025-11-17T16:14:25.4686215-09:00",
+  "model": "llama3.1:8b",
+  "thinking_level": "medium"
+}

@@ -746,7 +746,7 @@ namespace OpenRA.LLMHarness.Services
 			sb.AppendLine("- ALWAYS include the producing building's index number (e.g., Barracks#1, War Factory#2).");
 			sb.AppendLine("- Use Player1 for all orders.");
 			sb.AppendLine("- Only order items that can actually be built given current tech/prerequisites.");
-			sb.AppendLine("- Pay close attention to the Player1 production queues in the game state. Be careful not to issue duplicate orders to build things that simply haven't finished yet.");
+			sb.AppendLine("- Never Queue more than one building at a time. You should never have more than 1 of the same building in a queue.");
 			sb.AppendLine("- Spread unit production across multiple buildings when available. Ensure you are respecting the rules about \"what builds what\" and not issuing impossible orders like trying to construct a building *from* a Power Plant or Refinery.");
 			sb.AppendLine();
 			sb.AppendLine("Order format:");
