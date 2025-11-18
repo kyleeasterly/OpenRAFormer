@@ -242,9 +242,11 @@ namespace OpenRA.Mods.Common.Traits
 				{
 					sb.AppendLine();
 					sb.AppendLine("#### Building Queue:");
+					int numberIn = 0;
 					foreach (var item in allProductionItems)
 					{
-						sb.AppendLine(item);
+						numberIn++;
+						sb.AppendLine(numberIn.ToString()+". "+item);
 					}
 				}
 			}
