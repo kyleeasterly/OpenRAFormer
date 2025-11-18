@@ -62,7 +62,7 @@ namespace OpenRA.Mods.Common.Traits
 			if (world.WorldTick == 2)
 			{
 				// Check if this is a new map/game
-				if (hasArchivedForThisGame)
+				if (!hasArchivedForThisGame)
 				{
 					ArchivePreviousGameFiles();
 					hasArchivedForThisGame = true;
@@ -100,8 +100,8 @@ namespace OpenRA.Mods.Common.Traits
 				if (!Directory.Exists(info.OutputDirectory))
 					return;
 
-				var gameStateFiles = Directory.GetFiles(info.OutputDirectory, "gamestate_*.txt");
-				if (gameStateFiles.Length == 0)
+				var currentGameStateFile = Path.Combine(info.OutputDirectory, "current_gamestate.txt");
+				if (!File.Exists(currentGameStateFile))
 					return;
 
 				var archiveDirectory = Path.Combine(info.OutputDirectory, "archive");
@@ -112,14 +112,10 @@ namespace OpenRA.Mods.Common.Traits
 				var gameArchiveDirectory = Path.Combine(archiveDirectory, $"game_{timestamp}");
 				Directory.CreateDirectory(gameArchiveDirectory);
 
-				foreach (var file in gameStateFiles)
-				{
-					var fileName = Path.GetFileName(file);
-					var destinationPath = Path.Combine(gameArchiveDirectory, fileName);
-					File.Move(file, destinationPath);
-				}
+				var destinationPath = Path.Combine(gameArchiveDirectory, "current_gamestate.txt");
+				File.Move(currentGameStateFile, destinationPath);
 
-				Log.Write("debug", $"Archived {gameStateFiles.Length} gamestate files to {gameArchiveDirectory}");
+				Log.Write("debug", $"Archived current gamestate file to {gameArchiveDirectory}");
 			}
 			catch (Exception e)
 			{
@@ -293,7 +289,7 @@ namespace OpenRA.Mods.Common.Traits
 			try
 			{
 				// Find Player 1 (the human player)
-				var player1 = world.Players.FirstOrDefault(p => p.PlayerName == "Player1" && !p.NonCombatant && p.Playable);
+				var player1 = world.Players.FirstOrDefault(p => !p.IsBot && !p.NonCombatant && p.Playable);
 				if (player1 == null)
 					return;
 
@@ -412,17 +408,26 @@ namespace OpenRA.Mods.Common.Traits
 		{
 			try
 			{
+				// Check if a session is active by looking for the session marker file
+				var sessionMarkerFile = Path.Combine(info.OutputDirectory, ".session_active");
+				if (!File.Exists(sessionMarkerFile))
+				{
+					Log.Write("debug", "[GameStateExporter] Skipping export - no active session (marker file not found)");
+					return;
+				}
+
 				// Auto-place any ready buildings before exporting state
 				AutoPlaceReadyBuildings();
 
 				if (!Directory.Exists(info.OutputDirectory))
 					Directory.CreateDirectory(info.OutputDirectory);
 
-				var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
+				// Use single filename instead of timestamped files
+				var filename = Path.Combine(info.OutputDirectory, "current_gamestate.txt");
+
 				var totalSeconds = world.WorldTick / 25;
 			var minutes = totalSeconds / 60;
 			var seconds = totalSeconds % 60;
-			var filename = Path.Combine(info.OutputDirectory, $"gamestate_{timestamp}_{minutes:D2}m{seconds:D2}s.txt");
 
 				var sb = new StringBuilder();
 				sb.AppendLine("# Game State Snapshot");

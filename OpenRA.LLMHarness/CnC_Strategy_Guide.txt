@@ -4,7 +4,7 @@ This guide explains the basic mechanics and units for Command & Conquer.
 GDI and Nod share most basic units with faction-specific advanced units.
 
 # Build Order
-You MUST follow this exact order at game start:
+You MUST follow this exact order at game start. Do each step (1-6) only once and do not skip steps.:
 1. Deploy your MCV (Mobile Construction Vehicle) to create your Construction Yard
 2. Build a Power Plant - Cost: $500, Provides: 100 power
 3. Build a Refinery - Cost: $1500, Requires: Power Plant, Includes: 1 free Harvester
@@ -20,8 +20,8 @@ You MUST follow this exact order at game start:
 - Tiberium Storage Silos ($100) increase storage capacity, but try to avoid building them and efficiently turn your income into units instead
 
 # Strategy Tips
-1. Economy First: Build order is critical - Power → Refinery → Production
-2. Manage Queues: Pay attention to your current building and unit queues and think carefully before deciding which buildings and units to produce
+1. Economy First: Build order is critical. Follow the above 1-6 steps in order, only once :  Power Plant → Refinery → Barracks, etc.
+2. Manage Queues: Pay attention to your current building and unit queues. Neither shold have more than a few queued up EVER. Think carefully before deciding which buildings and units to produce
 3. Multiple Refineries: One refinery per Tiberium field for max income
 4. Combined Arms: Mix infantry, vehicles, and air units
 5. Power Management: Buildings operate slowly without sufficient power
