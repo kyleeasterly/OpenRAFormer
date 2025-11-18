@@ -184,6 +184,45 @@ namespace OpenRA.Mods.Common.Traits
 
 			// Get actors for this player
 			var playerActors = world.Actors.Where(a => a.Owner == player && !a.IsDead).ToList();
+
+			// Tiberium Blossom Trees within Build Radius
+			var constructionYards = playerActors
+				.Where(a => a.Info.HasTraitInfo<BuildingInfo>() && a.TraitsImplementing<BaseProvider>().Any())
+				.ToList();
+
+			if (constructionYards.Count > 0)
+			{
+				// Find all Tiberium Blossom Trees in the world
+				var blossomTrees = world.Actors
+					.Where(a => !a.IsDead && a.TraitsImplementing<SeedsResource>().Any())
+					.ToList();
+
+				if (blossomTrees.Count > 0)
+				{
+					sb.AppendLine();
+					sb.AppendLine("### Tiberium Blossom Trees in Build Radius");
+
+					foreach (var cy in constructionYards)
+					{
+						var baseProvider = cy.TraitsImplementing<BaseProvider>().FirstOrDefault();
+						if (baseProvider == null)
+							continue;
+
+						var cyName = FriendlyNames.GetFriendlyBuildingName(cy.Info.Name);
+						var cyCell = world.Map.CellContaining(cy.CenterPosition);
+
+						// Count trees within this Construction Yard's build radius
+						var treesInRange = blossomTrees.Count(tree =>
+						{
+							var target = Target.FromPos(tree.CenterPosition);
+							return target.IsInRange(cy.CenterPosition, baseProvider.Info.Range);
+						});
+
+						sb.AppendLine(CultureInfo.InvariantCulture, $"{cyName} ({cyCell.X},{cyCell.Y}): {treesInRange} trees");
+					}
+				}
+			}
+
 			var buildings = playerActors.Where(a => a.Info.HasTraitInfo<BuildingInfo>()).ToList();
 			// Filter out C17 cargo planes and player actors as they're not player-controllable units
 			var units = playerActors.Where(a => !a.Info.HasTraitInfo<BuildingInfo>() && 
