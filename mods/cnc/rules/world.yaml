@@ -170,6 +170,9 @@ World:
 		SnapshotInterval: 250
 		UseIntervalMode: false
 		Enabled: true
+	AutoRallyPoint:
+		Enabled: true
+		DistancePercentage: 30
 	ExternalOrderReader:
 		InputDirectory: C:\OpenRATest_Orders\input
 		CheckInterval: 25

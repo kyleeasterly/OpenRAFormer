@@ -78,7 +78,9 @@ namespace OpenRA.Mods.Common.Traits
 				else
 					initialFacing = exitinfo.Facing.Value;
 
-				exitLocations = rp != null && rp.Path.Count > 0 ? rp.Path : [exit];
+				// Only use rally point if unit is not a harvester
+				var isHarvester = producee.HasTraitInfo<HarvesterInfo>();
+				exitLocations = rp != null && rp.Path.Count > 0 && !isHarvester ? rp.Path : [exit];
 
 				td.Add(new LocationInit(exit));
 				td.Add(new CenterPositionInit(spawn));
