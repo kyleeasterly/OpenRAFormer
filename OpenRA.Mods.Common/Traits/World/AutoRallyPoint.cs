@@ -23,7 +23,7 @@ namespace OpenRA.Mods.Common.Traits
 		public readonly bool Enabled = true;
 
 		[Desc("Distance from the base towards map center (as a percentage, 0-100). Lower values keep rally point closer to base.")]
-		public readonly int DistancePercentage = 30;
+		public readonly int DistancePercentage = 10;
 
 		[Desc("Exclude these actor types from using rally points (e.g. harvesters).")]
 		public readonly string[] ExcludedActorTypes = { "harv" };
