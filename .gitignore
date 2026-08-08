@@ -50,3 +50,7 @@ update.log
 
 # IntelliJ files
 .idea
+
+# Local working context (session journals, notes) and local agent instructions
+/.context/
+/CLAUDE.md
