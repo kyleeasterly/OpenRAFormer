@@ -1,0 +1,24 @@
+# First real 8-LLM free-for-all. Model IDs verified live against both provider
+# /models endpoints on 2026-08-09. Mix of frontier-class open-weights MoEs,
+# a mid-size dense classic (Llama 3.3 70B) and both Hermes 4 sizes.
+name: llm-ffa
+map: scorched-earth.oramap
+web: { port: 5199 }
+display: ":97"
+resolution: [2540, 2540]
+stream: { fps: 6, scale: 1600, quality: 5 }
+turnIntervalSeconds: 15
+maxTurnsPerPlayer: 0
+players:
+  - { slug: p1, display: Kimi-K2.5,       provider: deepinfra, model: moonshotai/Kimi-K2.5,                          faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  - { slug: p2, display: GLM-5.2,         provider: deepinfra, model: zai-org/GLM-5.2,                               faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  - { slug: p3, display: DeepSeek-V3.1,   provider: deepinfra, model: deepseek-ai/DeepSeek-V3.1,                     faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  - { slug: p4, display: Qwen3.5-397B,    provider: deepinfra, model: Qwen/Qwen3.5-397B-A17B,                        faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  - { slug: p5, display: Llama-4-Maverick, provider: deepinfra, model: meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8, faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  - { slug: p6, display: Llama-3.3-70B,   provider: deepinfra, model: meta-llama/Llama-3.3-70B-Instruct-Turbo,       faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  - { slug: p7, display: Hermes-4-405B,   provider: nous,      model: nousresearch/hermes-4-405b,                    faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  - { slug: p8, display: Hermes-4-70B,    provider: nous,      model: nousresearch/hermes-4-70b,                     faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+providers:
+  deepinfra: { baseUrl: "https://api.deepinfra.com/v1/openai", apiKeyEnv: DEEPINFRA_API_KEY }
+  nous:      { baseUrl: "https://inference-api.nousresearch.com/v1", apiKeyEnv: NOUS_API_KEY }
+  test:      { baseUrl: "", apiKeyEnv: "" }

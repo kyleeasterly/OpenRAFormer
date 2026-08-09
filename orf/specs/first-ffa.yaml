@@ -1,0 +1,27 @@
+# First 8-player FFA experiment spec. All players use the deterministic `test`
+# provider for now; swap individual players to deepinfra/nous entries (examples
+# below) once API keys are configured.
+name: first-ffa
+map: scorched-earth.oramap
+web: { port: 5199 }
+display: ":97"
+resolution: [2540, 2540]
+stream: { fps: 6, scale: 1280, quality: 5 }
+turnIntervalSeconds: 12
+maxTurnsPerPlayer: 0        # 0 = unlimited
+players:
+  - { slug: p1, display: Test-1, provider: test, model: scripted, faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  - { slug: p2, display: Test-2, provider: test, model: scripted, faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  - { slug: p3, display: Test-3, provider: test, model: scripted, faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  - { slug: p4, display: Test-4, provider: test, model: scripted, faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  - { slug: p5, display: Test-5, provider: test, model: scripted, faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  - { slug: p6, display: Test-6, provider: test, model: scripted, faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  - { slug: p7, display: Test-7, provider: test, model: scripted, faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  - { slug: p8, display: Test-8, provider: test, model: scripted, faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  # Real LLM player examples:
+  # - { slug: p1, display: Llama-3.3-70B, provider: deepinfra, model: meta-llama/Llama-3.3-70B-Instruct, faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  # - { slug: p2, display: Hermes-4-405B, provider: nous, model: Hermes-4-405B, faction: Random, spawn: 0, team: 0, temperature: 0.7 }
+providers:
+  deepinfra: { baseUrl: "https://api.deepinfra.com/v1/openai", apiKeyEnv: DEEPINFRA_API_KEY }
+  nous:      { baseUrl: "https://inference-api.nousresearch.com/v1", apiKeyEnv: NOUS_API_KEY }
+  test:      { baseUrl: "", apiKeyEnv: "" }

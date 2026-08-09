@@ -1,0 +1,25 @@
+# 8x Gemma 4 free-for-all at maximum turn speed (turnIntervalSeconds: 0 = agents
+# take a turn the moment fresh engine state appears; effective cadence is bounded
+# by inference latency and the 1s state export interval).
+# gemma-4-26B-A4B is the sparse-MoE variant: cheapest fast option with real quality.
+name: gemma-ffa
+map: scorched-earth.oramap
+web: { port: 5199 }
+display: ":97"
+resolution: [2540, 2540]
+stream: { fps: 6, scale: 2048, quality: 6 }
+turnIntervalSeconds: 0
+maxTurnsPerPlayer: 0
+players:
+  - { slug: p1, display: Gemma-4-A, provider: deepinfra, model: google/gemma-4-26B-A4B-it, faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  - { slug: p2, display: Gemma-4-B, provider: deepinfra, model: google/gemma-4-26B-A4B-it, faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  - { slug: p3, display: Gemma-4-C, provider: deepinfra, model: google/gemma-4-26B-A4B-it, faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  - { slug: p4, display: Gemma-4-D, provider: deepinfra, model: google/gemma-4-26B-A4B-it, faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  - { slug: p5, display: Gemma-4-E, provider: deepinfra, model: google/gemma-4-26B-A4B-it, faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  - { slug: p6, display: Gemma-4-F, provider: deepinfra, model: google/gemma-4-26B-A4B-it, faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  - { slug: p7, display: Gemma-4-G, provider: deepinfra, model: google/gemma-4-26B-A4B-it, faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+  - { slug: p8, display: Gemma-4-H, provider: deepinfra, model: google/gemma-4-26B-A4B-it, faction: Random, spawn: 0, team: 0, temperature: 0.6 }
+providers:
+  deepinfra: { baseUrl: "https://api.deepinfra.com/v1/openai", apiKeyEnv: DEEPINFRA_API_KEY }
+  nous:      { baseUrl: "https://inference-api.nousresearch.com/v1", apiKeyEnv: NOUS_API_KEY }
+  test:      { baseUrl: "", apiKeyEnv: "" }

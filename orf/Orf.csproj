@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>orf</AssemblyName>
+    <RootNamespace>Orf</RootNamespace>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <!-- The repo-root .editorconfig enables engine-wide analyzers; orf is not part of the engine solution. -->
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <AnalysisLevel>none</AnalysisLevel>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="YamlDotNet" Version="16.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Make runtime assets available beside the binary regardless of cwd. -->
+    <Content Update="wwwroot\**" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="prompts\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

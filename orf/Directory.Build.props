@@ -1,0 +1,5 @@
+<!-- Intentionally empty: blocks inheritance of the engine's repo-root Directory.Build.props
+     (Library OutputType, ../bin OutputPath, StyleCop, disabled default compile items),
+     none of which apply to the orf orchestrator. -->
+<Project>
+</Project>
