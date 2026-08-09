@@ -218,13 +218,14 @@ namespace OpenRA.Mods.LLM.Traits
 
 		string StartProduction(World world, JsonElement order)
 		{
-			var item = GetString(order, "item")?.ToLowerInvariant();
-			if (item == null || !world.Map.Rules.Actors.TryGetValue(item, out var ai))
-				return $"unknown actor type '{item}'";
+			var requested = GetString(order, "item");
+			var item = LlmNames.ResolveInternal(world, requested);
+			if (item == null)
+				return $"unknown unit or structure '{requested}'";
 
 			var queue = Queues(world).FirstOrDefault(q => q.BuildableItems().Any(b => b.Name == item));
 			if (queue == null)
-				return $"'{item}' is not buildable right now (missing prerequisites or wrong faction)";
+				return $"'{requested}' is not buildable right now (missing prerequisites or wrong faction)";
 
 			var count = GetInt(order, "count", 1).Clamp(1, 10);
 			pending.Enqueue(Order.StartProduction(queue.Actor, item, count));
@@ -233,9 +234,9 @@ namespace OpenRA.Mods.LLM.Traits
 
 		string CancelProduction(World world, JsonElement order)
 		{
-			var item = GetString(order, "item")?.ToLowerInvariant();
+			var item = LlmNames.ResolveInternal(world, GetString(order, "item"));
 			if (item == null)
-				return "missing 'item'";
+				return "missing or unknown 'item'";
 
 			var queue = Queues(world).FirstOrDefault(q => q.AllQueued().Any(i => i.Item == item));
 			if (queue == null)

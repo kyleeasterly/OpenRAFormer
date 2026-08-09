@@ -8,7 +8,7 @@ namespace Orf;
 /// </summary>
 public static class TestAgent
 {
-	static readonly string[] BarracksTypes = ["hand", "pyle"];
+	static readonly string[] BarracksTypes = ["Hand of Nod", "Barracks"];
 
 	public static (JsonArray Orders, string Summary) Decide(JsonObject state)
 	{
@@ -28,7 +28,7 @@ public static class TestAgent
 		if (buildingQueue != null && buildingQueue["current"] is null or not JsonObject)
 		{
 			var have = buildings.OfType<JsonObject>()
-				.Select(b => b["type"]?.GetValue<string>())
+				.Select(b => b["name"]?.GetValue<string>())
 				.OfType<string>()
 				.ToList();
 
@@ -38,7 +38,7 @@ public static class TestAgent
 
 			var buildable = (buildingQueue["buildable"] as JsonArray ?? [])
 				.OfType<JsonObject>()
-				.Select(b => b["item"]?.GetValue<string>())
+				.Select(b => b["name"]?.GetValue<string>())
 				.OfType<string>()
 				.ToHashSet();
 
@@ -51,11 +51,11 @@ public static class TestAgent
 		}
 
 		// 2. Train infantry while the army is small.
-		var hasBarracks = buildings.OfType<JsonObject>().Any(b => BarracksTypes.Contains(b["type"]?.GetValue<string>()));
+		var hasBarracks = buildings.OfType<JsonObject>().Any(b => BarracksTypes.Contains(b["name"]?.GetValue<string>()));
 		if (hasBarracks && cash > 300 && units.Count < 12)
 		{
-			orders.Add(new JsonObject { ["type"] = "start_production", ["item"] = "e1", ["count"] = 2 });
-			actions.Add("train e1 x2");
+			orders.Add(new JsonObject { ["type"] = "start_production", ["item"] = "Minigunner", ["count"] = 5 });
+			actions.Add("train Minigunner x5");
 		}
 
 		// 3. Attack-move with the idle army once it is big enough.
@@ -77,8 +77,8 @@ public static class TestAgent
 	/// <summary>Next base goal not yet satisfied by existing or queued buildings, chosen from buildable items.</summary>
 	static string? NextGoal(List<string> have, HashSet<string> buildable)
 	{
-		if (!have.Contains("nuke") && buildable.Contains("nuke"))
-			return "nuke";
+		if (!have.Contains("Power Plant") && buildable.Contains("Power Plant"))
+			return "Power Plant";
 
 		if (!have.Any(BarracksTypes.Contains))
 		{
@@ -87,11 +87,11 @@ public static class TestAgent
 				return barracks;
 		}
 
-		if (!have.Contains("proc") && buildable.Contains("proc"))
-			return "proc";
+		if (!have.Contains("Tiberium Refinery") && buildable.Contains("Tiberium Refinery"))
+			return "Tiberium Refinery";
 
-		if (have.Count(t => t == "nuke") < 2 && buildable.Contains("nuke"))
-			return "nuke";
+		if (have.Count(t => t == "Power Plant") < 2 && buildable.Contains("Power Plant"))
+			return "Power Plant";
 
 		return null;
 	}

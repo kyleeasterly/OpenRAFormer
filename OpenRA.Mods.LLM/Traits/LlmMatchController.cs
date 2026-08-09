@@ -33,7 +33,6 @@ namespace OpenRA.Mods.LLM.Traits
 	public sealed class LlmMatchController : ITick, ITickRender, IWorldLoaded, IGameOver
 	{
 		readonly LlmMatchControllerInfo info;
-		readonly Dictionary<string, string> displayNames = [];
 
 		Dictionary<Player, LlmPlayerConfig> configs;
 		IResourceLayer resourceLayer;
@@ -50,6 +49,7 @@ namespace OpenRA.Mods.LLM.Traits
 			if (!LlmRun.Active)
 				return;
 
+			LlmDamageLog.Clear();
 			configs = LlmRun.PlayerConfigs(w);
 			resourceLayer = w.WorldActor.TraitOrDefault<IResourceLayer>();
 			interval = LlmRun.Match.StateIntervalTicks > 0 ? LlmRun.Match.StateIntervalTicks : info.StateIntervalTicks;
@@ -141,11 +141,36 @@ namespace OpenRA.Mods.LLM.Traits
 			});
 		}
 
+		readonly Dictionary<Player, Queue<(int Tick, long Earned, long Spent)>> econHistory = [];
+
+		(int IncomePerMinute, int SpendPerMinute) EconRates(World world, Player player, PlayerResources resources)
+		{
+			if (resources == null)
+				return (0, 0);
+
+			if (!econHistory.TryGetValue(player, out var hist))
+				econHistory[player] = hist = new Queue<(int, long, long)>();
+
+			hist.Enqueue((world.WorldTick, resources.Earned, resources.Spent));
+			while (hist.Count > 1 && world.WorldTick - hist.Peek().Tick > 750)
+				hist.Dequeue();
+
+			var (oldTick, oldEarned, oldSpent) = hist.Peek();
+			var seconds = (world.WorldTick - oldTick) * world.Timestep / 1000f;
+			if (seconds < 1f)
+				return (0, 0);
+
+			return (
+				(int)((resources.Earned - oldEarned) / seconds * 60),
+				(int)((resources.Spent - oldSpent) / seconds * 60));
+		}
+
 		object PlayerState(World world, Player player, LlmPlayerConfig cfg)
 		{
 			var map = world.Map;
 			var resources = player.PlayerActor.TraitOrDefault<PlayerResources>();
 			var power = player.PlayerActor.TraitOrDefault<PowerManager>();
+			var (incomePerMinute, spendPerMinute) = EconRates(world, player, resources);
 
 			var buildings = new List<object>();
 			var units = new List<object>();
@@ -170,8 +195,7 @@ namespace OpenRA.Mods.LLM.Traits
 						buildings.Add(new
 						{
 							id = a.ActorID,
-							type = a.Info.Name,
-							name = DisplayName(a.Info),
+							name = LlmNames.Display(world, a.Info),
 							cell = CellArray(cell),
 							hpPercent = HpPercent(a),
 							rally = rally.HasValue ? CellArray(rally.Value) : null
@@ -182,8 +206,7 @@ namespace OpenRA.Mods.LLM.Traits
 						units.Add(new
 						{
 							id = a.ActorID,
-							type = a.Info.Name,
-							name = DisplayName(a.Info),
+							name = LlmNames.Display(world, a.Info),
 							cell = CellArray(cell),
 							hpPercent = HpPercent(a),
 							idle = a.IsIdle
@@ -197,8 +220,7 @@ namespace OpenRA.Mods.LLM.Traits
 					visibleEnemies.Add(new
 					{
 						id = a.ActorID,
-						type = a.Info.Name,
-						name = DisplayName(a.Info),
+						name = LlmNames.Display(world, a.Info),
 						owner = ownerCfg.Slug,
 						cell = CellArray(map.CellContaining(a.CenterPosition)),
 						hpPercent = HpPercent(a),
@@ -208,29 +230,32 @@ namespace OpenRA.Mods.LLM.Traits
 			}
 
 			var production = new List<object>();
+			var busyQueues = 0;
 			foreach (var queue in world.ActorsWithTrait<ProductionQueue>()
 				.Where(x => x.Actor.Owner == player && x.Trait.Enabled)
 				.Select(x => x.Trait))
 			{
 				var current = queue.CurrentItem();
+				if (current != null)
+					busyQueues++;
+
 				production.Add(new
 				{
 					queue = queue.Info.Type,
+					busy = current != null,
 					current = current == null ? null : new
 					{
-						item = current.Item,
-						name = DisplayName(world.Map.Rules.Actors[current.Item]),
+						name = LlmNames.Display(world, world.Map.Rules.Actors[current.Item]),
 						progressPercent = current.TotalTime > 0
 							? (current.TotalTime - current.RemainingTime) * 100 / current.TotalTime
 							: 0,
 						paused = current.Paused,
 						ready = current.Done
 					},
-					queued = queue.AllQueued().Select(i => i.Item).ToList(),
+					queued = queue.AllQueued().Select(i => LlmNames.Display(world, world.Map.Rules.Actors[i.Item])).ToList(),
 					buildable = queue.BuildableItems().Select(b => new
 					{
-						item = b.Name,
-						name = DisplayName(b),
+						name = LlmNames.Display(world, b),
 						cost = queue.GetProductionCost(b)
 					}).ToList()
 				});
@@ -250,8 +275,7 @@ namespace OpenRA.Mods.LLM.Traits
 
 					frozen.Add(new
 					{
-						type = fa.Info.Name,
-						name = DisplayName(fa.Info),
+						name = LlmNames.Display(world, fa.Info),
 						owner = ownerCfg.Slug,
 						cell = CellArray(map.CellContaining(fa.CenterPosition))
 					});
@@ -267,10 +291,36 @@ namespace OpenRA.Mods.LLM.Traits
 					slug = cfg.Slug,
 					faction = player.Faction.InternalName,
 					cash = resources == null ? 0 : resources.Cash + resources.Resources,
+					incomePerMinute,
+					spendPerMinute,
 					powerProvided = power?.PowerProvided ?? 0,
 					powerDrained = power?.PowerDrained ?? 0,
 					defeated = player.WinState == WinState.Lost
 				},
+				buildCapacity = new
+				{
+					queues = production.Count,
+					busy = busyQueues,
+					idle = production.Count - busyQueues
+				},
+				underAttack = LlmDamageLog.Recent(player, world.WorldTick - 250)
+					.GroupBy(e => (e.VictimId, e.AttackerId))
+					.Take(12)
+					.Select(g =>
+					{
+						var e = g.Last();
+						configs.TryGetValue(e.AttackerOwner, out var attackerCfg);
+						return (object)new
+						{
+							yourUnitId = e.VictimId,
+							yourUnit = NameOf(world, e.VictimType),
+							attackerId = e.AttackerId,
+							attacker = NameOf(world, e.AttackerType),
+							attackerOwner = attackerCfg?.Slug,
+							attackerCell = e.AttackerCell == CPos.Zero ? null : CellArray(e.AttackerCell)
+						};
+					})
+					.ToList(),
 				map = new
 				{
 					width = map.MapSize.Width,
@@ -378,25 +428,11 @@ namespace OpenRA.Mods.LLM.Traits
 			};
 		}
 
-		string DisplayName(ActorInfo ai)
+		static string NameOf(World world, string internalType)
 		{
-			if (displayNames.TryGetValue(ai.Name, out var cached))
-				return cached;
-
-			var name = ai.Name;
-			try
-			{
-				var tooltip = ai.TraitInfoOrDefault<TooltipInfo>();
-				if (tooltip != null && !string.IsNullOrEmpty(tooltip.Name))
-					name = FluentProvider.GetMessage(tooltip.Name);
-			}
-			catch
-			{
-				// Fall back to the internal name if fluent resolution fails.
-			}
-
-			displayNames[ai.Name] = name;
-			return name;
+			return world.Map.Rules.Actors.TryGetValue(internalType, out var ai)
+				? LlmNames.Display(world, ai)
+				: internalType;
 		}
 
 		static int[] CellArray(CPos cell)

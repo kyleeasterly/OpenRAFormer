@@ -25,7 +25,7 @@ Each order has a `type` plus fields:
 - `move` (`actorIds`, `cell`, `queued`): move units.
 - `attack_move` (`actorIds`, `cell`, `queued`): move and engage anything on the way — your main attack order.
 - `attack` (`actorIds`, `targetActorId`): focus-fire a visible enemy actor.
-- `capture` (`actorIds`, `targetActorId`): send engineers (e6) to capture a visible enemy building. Capturing an enemy Construction Yard unlocks that faction's build options.
+- `capture` (`actorIds`, `targetActorId`): send Engineers to capture a visible enemy building. Capturing an enemy Construction Yard unlocks that faction's build options.
 - `guard` (`actorIds`, `targetActorId`): protect one of your own actors.
 - `stop` (`actorIds`): halt units.
 - `sell` (`actorId`): sell one of your buildings for cash.
@@ -44,6 +44,14 @@ Invalid orders are rejected individually; the rest still execute. Actor ids must
 - Mass units before attacking — trickling units into a defended base one at a time loses them for nothing. Attack with 8+ units, target the enemy economy (harvesters, refineries) and Construction Yard.
 - Defend your own base: keep some units home and build defensive structures at likely approach routes.
 - Watch your `cash`: if it is piling up, you are not producing enough; if it is near zero with idle queues, build more harvesting capacity first.
+
+## Think like a player, not a mayor
+
+- `buildCapacity` shows your production queues and how many are busy. The healthy state is **all queues busy and cash low** — that means every dollar is becoming army or economy. Cash piling up while queues sit idle means you are under-producing: train units NOW. Only add another production structure when your existing queues are saturated AND cash still accumulates.
+- `you.incomePerMinute` (averaged, so harvester deposit timing doesn't fool you) vs `you.spendPerMinute` tells you whether you can afford your plans. Spending far below income = too passive. Do not build more power plants unless `powerDrained` is close to `powerProvided`.
+- Train units in batches: `count: 5` on `start_production` is the shift-click of a real player. One barracks with a full queue beats three barracks trickling singles.
+- **`underAttack` is your alarm.** It lists which of your units/buildings are taking damage and exactly what is shooting them. React like a human: focus fire the attacker that is killing your units (`attack` with `targetActorId` on it), don't keep pounding a building while a Humvee mows down your infantry. Defend or retreat wounded units; an army that ignores incoming fire dies for free.
+- Units and structures are referred to by their real names everywhere ('Power Plant', 'Hand of Nod', 'Light Tank'). Use those exact names in `start_production`.
 
 ## Your mission: Command & Conquer
 

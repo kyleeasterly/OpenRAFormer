@@ -3,3 +3,18 @@ World:
 
 Player:
 	LlmBot:
+
+^Vehicle:
+	LlmDamageReporter:
+
+^Infantry:
+	LlmDamageReporter:
+
+^Building:
+	LlmDamageReporter:
+
+^Plane:
+	LlmDamageReporter:
+
+^Ship:
+	LlmDamageReporter:

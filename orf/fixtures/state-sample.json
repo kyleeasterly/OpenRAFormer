@@ -1,357 +1,57 @@
 {
- "tick": 7500,
- "second": 300,
- "you": {
-  "slug": "p1",
-  "faction": "nod",
-  "cash": 2300,
-  "powerProvided": 200,
-  "powerDrained": 140
- },
- "map": {
-  "width": 126,
-  "height": 126,
-  "yourSpawnCell": [
-   12,
-   100
-  ]
- },
+ "tick": 4500, "second": 180,
+ "you": { "slug": "p1", "faction": "nod", "cash": 2340, "incomePerMinute": 720, "spendPerMinute": 400,
+          "powerProvided": 200, "powerDrained": 140, "defeated": false },
+ "map": { "width": 162, "height": 98, "yourSpawnCell": [12, 90] },
+ "enemySpawns": [
+  { "cell": [42, 7], "explored": false },
+  { "cell": [67, 7], "explored": false },
+  { "cell": [92, 90], "explored": true },
+  { "cell": [117, 7], "explored": false },
+  { "cell": [117, 90], "explored": false }
+ ],
+ "buildCapacity": { "queues": 2, "busy": 1, "idle": 1 },
  "production": [
-  {
-   "queue": "Building",
-   "current": null,
-   "queued": [],
-   "buildable": [
-    {
-     "item": "nuke",
-     "name": "Power Plant",
-     "cost": 300
-    },
-    {
-     "item": "hand",
-     "name": "Hand of Nod",
-     "cost": 300
-    },
-    {
-     "item": "proc",
-     "name": "Tiberium Refinery",
-     "cost": 2000
-    },
-    {
-     "item": "gun",
-     "name": "Gun Turret",
-     "cost": 600
-    },
-    {
-     "item": "afld",
-     "name": "Airstrip",
-     "cost": 2000
-    },
-    {
-     "item": "silo",
-     "name": "Tiberium Silo",
-     "cost": 150
-    }
-   ]
-  },
-  {
-   "queue": "Infantry",
-   "current": null,
-   "queued": [],
-   "buildable": [
-    {
-     "item": "e1",
-     "name": "Minigunner",
-     "cost": 100
-    },
-    {
-     "item": "e3",
-     "name": "Bazooka",
-     "cost": 300
-    },
-    {
-     "item": "e4",
-     "name": "Flamethrower",
-     "cost": 200
-    }
-   ]
-  }
+  { "queue": "Building.Nod", "busy": true,
+    "current": { "name": "Tiberium Refinery", "progressPercent": 40, "paused": false, "ready": false },
+    "queued": ["Tiberium Refinery"],
+    "buildable": [ { "name": "Power Plant", "cost": 300 }, { "name": "Hand of Nod", "cost": 300 },
+                   { "name": "Tiberium Refinery", "cost": 2000 }, { "name": "Gun Turret", "cost": 600 } ] },
+  { "queue": "Infantry.Nod", "busy": false, "current": null, "queued": [],
+    "buildable": [ { "name": "Minigunner", "cost": 100 }, { "name": "Rocket Soldier", "cost": 300 },
+                   { "name": "Engineer", "cost": 500 } ] }
  ],
  "buildings": [
-  {
-   "id": 133,
-   "type": "fact",
-   "name": "Construction Yard",
-   "cell": [
-    12,
-    100
-   ],
-   "hpPercent": 100
-  },
-  {
-   "id": 134,
-   "type": "nuke",
-   "name": "Power Plant",
-   "cell": [
-    9,
-    98
-   ],
-   "hpPercent": 100
-  },
-  {
-   "id": 135,
-   "type": "hand",
-   "name": "Hand of Nod",
-   "cell": [
-    15,
-    101
-   ],
-   "hpPercent": 92
-  },
-  {
-   "id": 136,
-   "type": "proc",
-   "name": "Tiberium Refinery",
-   "cell": [
-    10,
-    103
-   ],
-   "hpPercent": 100
-  },
-  {
-   "id": 137,
-   "type": "nuke",
-   "name": "Power Plant",
-   "cell": [
-    8,
-    101
-   ],
-   "hpPercent": 100
-  }
+  { "id": 133, "name": "Construction Yard", "cell": [12, 90], "hpPercent": 100, "rally": null },
+  { "id": 134, "name": "Power Plant", "cell": [15, 88], "hpPercent": 100, "rally": null },
+  { "id": 135, "name": "Hand of Nod", "cell": [10, 87], "hpPercent": 90, "rally": [12, 85] },
+  { "id": 136, "name": "Tiberium Refinery", "cell": [16, 92], "hpPercent": 100, "rally": null },
+  { "id": 137, "name": "Gun Turret", "cell": [14, 85], "hpPercent": 75, "rally": null }
  ],
  "units": [
-  {
-   "id": 140,
-   "type": "e1",
-   "name": "Minigunner",
-   "cell": [
-    14,
-    98
-   ],
-   "hpPercent": 100,
-   "idle": true
-  },
-  {
-   "id": 141,
-   "type": "e1",
-   "name": "Minigunner",
-   "cell": [
-    14,
-    99
-   ],
-   "hpPercent": 100,
-   "idle": true
-  },
-  {
-   "id": 142,
-   "type": "e1",
-   "name": "Minigunner",
-   "cell": [
-    15,
-    98
-   ],
-   "hpPercent": 88,
-   "idle": true
-  },
-  {
-   "id": 143,
-   "type": "e1",
-   "name": "Minigunner",
-   "cell": [
-    15,
-    99
-   ],
-   "hpPercent": 100,
-   "idle": true
-  },
-  {
-   "id": 144,
-   "type": "e1",
-   "name": "Minigunner",
-   "cell": [
-    16,
-    98
-   ],
-   "hpPercent": 100,
-   "idle": true
-  },
-  {
-   "id": 145,
-   "type": "e3",
-   "name": "Bazooka",
-   "cell": [
-    16,
-    99
-   ],
-   "hpPercent": 100,
-   "idle": true
-  },
-  {
-   "id": 146,
-   "type": "e3",
-   "name": "Bazooka",
-   "cell": [
-    17,
-    98
-   ],
-   "hpPercent": 75,
-   "idle": true
-  },
-  {
-   "id": 147,
-   "type": "e3",
-   "name": "Bazooka",
-   "cell": [
-    17,
-    99
-   ],
-   "hpPercent": 100,
-   "idle": true
-  },
-  {
-   "id": 148,
-   "type": "bggy",
-   "name": "Nod Buggy",
-   "cell": [
-    20,
-    95
-   ],
-   "hpPercent": 60,
-   "idle": false
-  },
-  {
-   "id": 150,
-   "type": "harv",
-   "name": "Harvester",
-   "cell": [
-    19,
-    92
-   ],
-   "hpPercent": 100,
-   "idle": false
-  }
+  { "id": 140, "name": "Minigunner", "cell": [13, 86], "hpPercent": 100, "idle": true },
+  { "id": 141, "name": "Minigunner", "cell": [13, 87], "hpPercent": 100, "idle": true },
+  { "id": 142, "name": "Minigunner", "cell": [14, 86], "hpPercent": 60, "idle": true },
+  { "id": 143, "name": "Minigunner", "cell": [14, 87], "hpPercent": 100, "idle": true },
+  { "id": 144, "name": "Rocket Soldier", "cell": [15, 86], "hpPercent": 100, "idle": true },
+  { "id": 145, "name": "Rocket Soldier", "cell": [15, 87], "hpPercent": 100, "idle": true },
+  { "id": 146, "name": "Nod Buggy", "cell": [12, 84], "hpPercent": 100, "idle": true },
+  { "id": 147, "name": "Minigunner", "cell": [16, 86], "hpPercent": 100, "idle": true },
+  { "id": 148, "name": "Minigunner", "cell": [16, 87], "hpPercent": 100, "idle": true },
+  { "id": 149, "name": "Harvester", "cell": [20, 93], "hpPercent": 100, "idle": false }
  ],
  "visibleEnemies": [
-  {
-   "id": 201,
-   "type": "ltnk",
-   "name": "Light Tank",
-   "owner": "p3",
-   "cell": [
-    40,
-    90
-   ],
-   "hpPercent": 80,
-   "isBuilding": false
-  },
-  {
-   "id": 202,
-   "type": "e1",
-   "name": "Minigunner",
-   "owner": "p3",
-   "cell": [
-    41,
-    91
-   ],
-   "hpPercent": 100,
-   "isBuilding": false
-  },
-  {
-   "id": 205,
-   "type": "gun",
-   "name": "Gun Turret",
-   "owner": "p3",
-   "cell": [
-    55,
-    82
-   ],
-   "hpPercent": 100,
-   "isBuilding": true
-  }
+  { "id": 201, "name": "Light Tank", "owner": "p3", "cell": [24, 80], "hpPercent": 80, "isBuilding": false },
+  { "id": 202, "name": "Humvee", "owner": "p3", "cell": [22, 82], "hpPercent": 100, "isBuilding": false }
  ],
  "lastKnownEnemyBuildings": [
-  {
-   "type": "fact",
-   "name": "Construction Yard",
-   "owner": "p3",
-   "cell": [
-    60,
-    80
-   ]
-  },
-  {
-   "type": "proc",
-   "name": "Tiberium Refinery",
-   "owner": "p3",
-   "cell": [
-    58,
-    83
-   ]
-  },
-  {
-   "type": "pyle",
-   "name": "Barracks",
-   "owner": "p6",
-   "cell": [
-    100,
-    30
-   ]
-  }
+  { "name": "Construction Yard", "owner": "p3", "cell": [92, 90] },
+  { "name": "Barracks", "owner": "p3", "cell": [90, 88] }
  ],
- "exploredResources": [
-  {
-   "cell": [
-    20,
-    90
-   ],
-   "cells": 42
-  },
-  {
-   "cell": [
-    28,
-    96
-   ],
-   "cells": 17
-  },
-  {
-   "cell": [
-    36,
-    70
-   ],
-   "cells": 55
-  }
+ "underAttack": [
+  { "yourUnitId": 142, "yourUnit": "Minigunner", "attackerId": 202, "attacker": "Humvee",
+    "attackerOwner": "p3", "attackerCell": [22, 82] }
  ],
- "recentResults": null,
- "enemySpawns": [
-  [
-   42,
-   7
-  ],
-  [
-   117,
-   90
-  ],
-  [
-   67,
-   7
-  ],
-  [
-   92,
-   90
-  ],
-  [
-   17,
-   49
-  ]
- ]
+ "exploredResources": [ { "cell": [20, 95], "cells": 42 }, { "cell": [30, 70], "cells": 18 } ],
+ "recentResults": null
 }

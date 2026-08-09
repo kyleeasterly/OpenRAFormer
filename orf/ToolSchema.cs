@@ -26,8 +26,8 @@ public static class ToolSchema
 		                  "enum": ["start_production", "cancel_production", "deploy", "move", "attack_move", "attack", "capture", "guard", "stop", "sell", "repair", "set_rally"],
 		                  "description": "The order type."
 		                },
-		                "item": { "type": "string", "description": "Production item type id, e.g. 'e1' or 'proc' (start_production, cancel_production)." },
-		                "count": { "type": "integer", "description": "How many to start/cancel (start_production, cancel_production). Default 1." },
+		                "item": { "type": "string", "description": "Exact unit or structure name from your buildable list, e.g. 'Power Plant', 'Minigunner', 'Tiberium Refinery' (start_production, cancel_production)." },
+		                "count": { "type": "integer", "description": "How many to train/cancel, 1-10 (start_production, cancel_production). 1 is a single click; 5 is the shift-click batch a human uses when massing an army. Ordering units one at a time wastes turns — batch unless cash-limited." },
 		                "actorIds": { "type": "array", "items": { "type": "integer" }, "description": "Ids of your actors (deploy, move, attack_move, attack, capture, guard, stop). capture requires engineers; the target enemy building becomes yours, and a captured Construction Yard lets you build that faction's structures." },
 		                "actorId": { "type": "integer", "description": "Single actor id (sell, repair, set_rally)." },
 		                "targetActorId": { "type": "integer", "description": "Target actor id, must be visible to you (attack, guard)." },
