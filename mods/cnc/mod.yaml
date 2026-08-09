@@ -58,6 +58,7 @@ Rules:
 	cnc|rules/ships.yaml
 	cnc|rules/aircraft.yaml
 	cnc|rules/husks.yaml
+	cnc|rules/llm.yaml
 	cnc|rules/map-generators.yaml
 
 Sequences:
@@ -91,7 +92,7 @@ Cursors:
 Chrome:
 	cnc|chrome.yaml
 
-Assemblies: OpenRA.Mods.Common.dll, OpenRA.Mods.Cnc.dll
+Assemblies: OpenRA.Mods.Common.dll, OpenRA.Mods.Cnc.dll, OpenRA.Mods.LLM.dll
 
 ChromeLayout:
 	cnc|chrome/mainmenu.yaml
@@ -178,10 +179,7 @@ Hotkeys:
 	common|hotkeys/control-groups.yaml
 	cnc|hotkeys.yaml
 
-LoadScreen: CncLoadScreen
-	Image: cnc|uibits/chrome.png
-	Image2x: cnc|uibits/chrome-2x.png
-	Image3x: cnc|uibits/chrome-3x.png
+LoadScreen: LlmLoadScreen
 
 ServerTraits:
 	LobbyCommands

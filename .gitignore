@@ -54,3 +54,6 @@ update.log
 # Local working context (session journals, notes) and local agent instructions
 /.context/
 /CLAUDE.md
+
+# orf match run artifacts
+runs/
