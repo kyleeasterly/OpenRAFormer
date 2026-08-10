@@ -35,7 +35,7 @@
   #liveBadge.finished .dot { background: #ffd75e; animation: none; }
 
   main {
-    display: grid; grid-template-columns: 230px 1fr 230px;
+    display: grid; grid-template-columns: 300px 1fr 300px;
     gap: 8px; padding: 8px; overflow: hidden;
   }
 
@@ -141,10 +141,31 @@
     color: #999; border: 1px solid #333; border-radius: 3px; padding: 0 4px;
   }
   .pmodel { color: #777; font-size: 10px; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; }
-  .stat { display: flex; justify-content: space-between; gap: 6px; padding: 0; line-height: 1.35; }
-  .stat .k { color: #888; }
-  .stat .v { color: #ddd; }
+  .statgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 8px; margin: 3px 0; }
+  .tile { min-width: 0; }
+  .tile .k {
+    display: block; color: #777; font-size: 8.5px; text-transform: uppercase;
+    letter-spacing: .6px; line-height: 1.2;
+  }
+  .tile .v { display: block; color: #ddd; font-size: 12px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .power-bad { color: #f55 !important; }
+
+  /* Build queues: game sidebar icons with the radial build-progress wipe. */
+  .queues { display: flex; flex-direction: column; gap: 3px; margin-top: 3px; }
+  .queuerow { display: flex; align-items: center; gap: 4px; min-height: 26px; }
+  .qicon {
+    position: relative; width: 34px; height: 26px; border-radius: 2px; overflow: hidden;
+    background: #111; border: 1px solid #333; flex-shrink: 0;
+  }
+  .qicon img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .qicon .wipe { position: absolute; inset: 0; }
+  .qicon.ready { outline: 1px solid #ffd75e; }
+  .qicon .qlabel {
+    position: absolute; right: 1px; bottom: 0; font-size: 8px; color: #fff;
+    background: rgba(0,0,0,.6); padding: 0 2px; border-radius: 2px;
+  }
+  .qmore { color: #777; font-size: 9px; }
+  .qempty { opacity: .35; }
 
   .badge {
     display: inline-block; margin-top: 2px; font-size: 9px; font-weight: 700;
@@ -330,24 +351,38 @@ async function refreshTurns() {
   } catch { return; }
 
   const follow = document.getElementById("followLive").checked;
+  const firstFill = drawer.known.size === 0;
   let newest = null;
-  // Newest first from the API; insert unknown ones at the top, keeping order.
+  // Newest first from the API; append unknown ones at the BOTTOM in chronological
+  // order, so items already on screen never move and reading position is stable.
   for (let i = turns.length - 1; i >= 0; i--) {
     const t = turns[i];
     if (drawer.known.has(t.seq)) continue;
     drawer.known.add(t.seq);
     const item = makeTurnItem(t);
-    drawer.list.prepend(item);
+    drawer.list.append(item);
     newest = item;
   }
 
   if (newest && follow) {
-    // Auto-expand only the latest arrival and keep the view pinned to the top.
+    // Auto-expand the latest arrival and scroll to it. Only collapse items the
+    // follower itself opened — never one the user clicked open to read.
     for (const openEl of drawer.list.querySelectorAll(".turn.open"))
-      openEl.classList.remove("open");
+      if (openEl.dataset.autoOpened) {
+        openEl.classList.remove("open");
+        delete openEl.dataset.autoOpened;
+      }
+    newest.dataset.autoOpened = "1";
     toggleTurn(newest, true);
-    drawer.list.scrollTop = 0;
+    drawer.list.scrollTop = drawer.list.scrollHeight;
+  } else if (firstFill && newest) {
+    // Opening the drawer lands on the newest turn even when not following.
+    drawer.list.scrollTop = drawer.list.scrollHeight;
   }
+}
+
+function prettyArgs(args) {
+  try { return JSON.stringify(JSON.parse(args), null, 1); } catch { return args ?? ""; }
 }
 
 function makeTurnItem(t) {
@@ -358,7 +393,10 @@ function makeTurnItem(t) {
   el("span", "meta mono", head).textContent = new Date(t.atUtc).toLocaleTimeString();
   el("span", "gist", head);
   el("div", "turnBody", item);
-  head.addEventListener("click", () => toggleTurn(item, !item.classList.contains("open")));
+  head.addEventListener("click", () => {
+    delete item.dataset.autoOpened; // user-opened items are theirs to close
+    toggleTurn(item, !item.classList.contains("open"));
+  });
   return item;
 }
 
@@ -389,16 +427,28 @@ async function toggleTurn(item, open) {
   }
 
   const msg = d.response && d.response.choices && d.response.choices[0] && d.response.choices[0].message;
+  if (msg && msg.reasoning_content) {
+    el("h4", null, body).textContent = "agent reasoning";
+    el("pre", null, body).textContent = msg.reasoning_content;
+  }
   if (msg && msg.content) {
     el("h4", null, body).textContent = "agent commentary";
     el("pre", null, body).textContent = msg.content;
-    item.querySelector(".gist").textContent = msg.content.slice(0, 90);
   }
+  if (msg && Array.isArray(msg.tool_calls) && msg.tool_calls.length) {
+    el("h4", null, body).textContent = "tool calls";
+    el("pre", null, body).textContent = msg.tool_calls
+      .map(tc => `${tc.function?.name ?? "?"} ${prettyArgs(tc.function?.arguments)}`)
+      .join("\n\n");
+  }
+  const gistText = (msg && msg.content) || (msg && msg.reasoning_content) || "";
+  if (gistText)
+    item.querySelector(".gist").textContent = gistText.slice(0, 90);
 
   if (d.orders) {
     el("h4", null, body).textContent = "orders issued";
     el("pre", null, body).textContent = JSON.stringify(d.orders, null, 1);
-    if (!msg || !msg.content) {
+    if (!gistText) {
       const os = (d.orders.orders || []).map(o => o.type).join(", ");
       item.querySelector(".gist").textContent = os || "(pass)";
     }
@@ -545,20 +595,62 @@ function makeCard(p, parent) {
   card.title = "click for full agent history";
   card.addEventListener("click", () => openHistory(p));
 
+  const grid = el("div", "statgrid", card);
   const stats = {};
-  for (const [key, label] of [["cash","Cash"],["power","Power"],["army","Army value"],["units","Units"],["buildings","Buildings"],["targets","Targets cleared"],["cost","LLM cost"]]) {
-    const row = el("div", "stat", card);
-    el("span", "k", row).textContent = label;
-    stats[key] = el("span", "v mono", row);
+  for (const [key, label] of [["cash","Cash"],["power","Power"],["army","Army"],["units","Units"],["kd","Kills / losses"],["buildings","Buildings"],["targets","Targets"],["cost","LLM cost"]]) {
+    const tile = el("div", "tile", grid);
+    el("span", "k", tile).textContent = label;
+    stats[key] = el("span", "v mono", tile);
     stats[key].textContent = "–";
   }
+
+  const queues = el("div", "queues", card);
 
   const badge = el("span", "badge b-stale", card);
   badge.textContent = "WAITING";
   const summary = el("div", "summary", card);
   const goals = el("div", "goals", card);
 
-  cards.set(p.slug, { card, chip, faction, badge, summary, goals, stats });
+  cards.set(p.slug, { card, chip, faction, badge, summary, goals, stats, queues });
+}
+
+function iconSlug(name) {
+  return (name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+// One row per production queue: current item's icon under the C&C radial build
+// wipe, then up to 4 queued item icons, dimmed.
+function renderQueues(container, production) {
+  container.textContent = "";
+  for (const q of production || []) {
+    if (!q.current && !(q.queued || []).length) continue;
+    const row = el("div", "queuerow", container);
+
+    if (q.current) {
+      const cell = el("span", "qicon", row);
+      const img = el("img", null, cell);
+      img.src = `icons/${iconSlug(q.current.name)}.png`;
+      img.onerror = () => { img.style.display = "none"; };
+      const wipe = el("span", "wipe", cell);
+      const pct = q.current.ready ? 100 : (q.current.progressPercent ?? 0);
+      // conic sweep: finished portion clear, remaining portion darkened
+      wipe.style.background = `conic-gradient(transparent ${pct}%, rgba(0,0,0,.7) ${pct}%)`;
+      if (q.current.ready) cell.classList.add("ready");
+      if (q.current.paused) el("span", "qlabel", cell).textContent = "II";
+    }
+
+    const queued = q.queued || [];
+    // The first queued entry duplicates current for engine queues; show the tail.
+    const tail = q.current && queued.length && queued[0] === q.current.name ? queued.slice(1) : queued;
+    for (const name of tail.slice(0, 4)) {
+      const cell = el("span", "qicon qempty", row);
+      const img = el("img", null, cell);
+      img.src = `icons/${iconSlug(name)}.png`;
+      img.onerror = () => { img.style.display = "none"; };
+    }
+    if (tail.length > 4)
+      el("span", "qmore", row).textContent = `+${tail.length - 4}`;
+  }
 }
 
 function fmtClock(sec) {
@@ -640,9 +732,12 @@ function render(data) {
       c.stats.power.textContent = `${gp.powerProvided ?? 0}/${gp.powerDrained ?? 0}`;
       c.stats.power.classList.toggle("power-bad", (gp.powerDrained ?? 0) > (gp.powerProvided ?? 0));
       c.stats.army.textContent = (gp.armyValue ?? 0).toLocaleString();
-      c.stats.units.textContent = `${gp.unitCount ?? 0}  (K/D ${gp.unitsKilled ?? 0}/${gp.unitsLost ?? 0})`;
+      c.stats.units.textContent = gp.unitCount ?? 0;
+      c.stats.kd.textContent = `${gp.unitsKilled ?? 0} / ${gp.unitsLost ?? 0}`;
       c.stats.buildings.textContent = gp.buildingCount ?? 0;
     }
+
+    renderQueues(c.queues, p.production);
 
     if (st && typeof st.totalCostUsd === "number")
       c.stats.cost.textContent = "$" + st.totalCostUsd.toFixed(4);

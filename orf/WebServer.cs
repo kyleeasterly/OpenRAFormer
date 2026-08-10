@@ -218,6 +218,21 @@ public static class WebServer
 		var players = new JsonArray();
 		foreach (var p in spec.Players)
 		{
+			// Build queues for the observer cards: current item + progress + waiting list.
+			JsonArray production = null;
+			if (Util.TryReadJson(Path.Combine(runDir, "state", $"{p.Slug}.json")) is JsonObject st
+				&& st["production"] is JsonArray prod)
+			{
+				production = [];
+				foreach (var q in prod.OfType<JsonObject>())
+					production.Add(new JsonObject
+					{
+						["queue"] = q["queue"]?.DeepClone(),
+						["current"] = q["current"]?.DeepClone(),
+						["queued"] = q["queued"]?.DeepClone(),
+					});
+			}
+
 			players.Add(new JsonObject
 			{
 				["slug"] = p.Slug,
@@ -226,6 +241,7 @@ public static class WebServer
 				["model"] = p.Model,
 				["faction"] = p.Faction,
 				["status"] = Util.TryReadJson(Path.Combine(runDir, "agents", p.Slug, "status.json")),
+				["production"] = production,
 			});
 		}
 
