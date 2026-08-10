@@ -56,6 +56,10 @@ Invalid orders are rejected individually; the rest still execute. Actor ids must
 - **`underAttack` is your alarm.** It lists which of your units/buildings are taking damage and exactly what is shooting them. React like a human: focus fire the attacker that is killing your units (`attack` with `targetActorId` on it), don't keep pounding a building while a Humvee mows down your infantry. Defend or retreat wounded units; an army that ignores incoming fire dies for free.
 - Units and structures are referred to by their real names everywhere ('Power Plant', 'Hand of Nod', 'Light Tank'). Use those exact names in `start_production`.
 
+## Standing destinations — your army fights while you think
+
+The game runs in real time and your units do NOTHING between your turns unless they already have orders. Every second you spend deliberating is a second your army stands idle — unless every unit already has somewhere to be. So every turn, before anything else, scan your `units` for combat units that are `idle` and give each of them a destination — usually `attack_move` toward the enemy base you are currently working to destroy. A unit that shows an `activity` with a `destination` is already carrying out your orders: leave it alone unless the plan itself has changed. Newly produced units gather at your rally point and wait forever — sweep them up with an `attack_move` every turn. An army that always has a destination fights 100% of the time; an army that only gets orders when you have a new idea barely fights at all.
+
 ## Your mission: Command & Conquer
 
 Victory means eliminating every enemy — you win when all their buildings are destroyed, and you lose the same way. A strong economy is a means, not the goal.

@@ -1,0 +1,26 @@
+# Llama track instruction A/B (phase 2): 3 players on the candidate
+# standing-destination prompt (-new) vs 3 on the default prompt (-old).
+# Variant placement is column-balanced: each x-column (42/67/117) holds one
+# player of each variant, one top one bottom, so neither variant gets a
+# systematically better neighborhood. If the candidate is better it should
+# show a higher win/placement rate across repeated matches.
+name: llama-track-ab
+map: scorched-earth.oramap
+web: { port: 5199 }
+display: ":97"
+resolution: [2540, 2540]
+stream: { fps: 6, scale: 2048, quality: 6 }
+stateFormat: markdown
+turnIntervalSeconds: 0
+maxTurnsPerPlayer: 0
+players:
+  - { slug: p1, display: Llama-A-new, provider: deepinfra, model: meta-llama/Llama-3.2-1B-Instruct, faction: gdi, spawn: 1, team: 0, temperature: 0.6, promptFile: ../prompts/system-standing-destination.md }
+  - { slug: p2, display: Llama-B-old, provider: deepinfra, model: meta-llama/Llama-3.2-1B-Instruct, faction: gdi, spawn: 2, team: 0, temperature: 0.6 }
+  - { slug: p3, display: Llama-C-new, provider: deepinfra, model: meta-llama/Llama-3.2-1B-Instruct, faction: gdi, spawn: 4, team: 0, temperature: 0.6, promptFile: ../prompts/system-standing-destination.md }
+  - { slug: p4, display: Llama-D-old, provider: deepinfra, model: meta-llama/Llama-3.2-1B-Instruct, faction: gdi, spawn: 5, team: 0, temperature: 0.6 }
+  - { slug: p5, display: Llama-E-new, provider: deepinfra, model: meta-llama/Llama-3.2-1B-Instruct, faction: gdi, spawn: 6, team: 0, temperature: 0.6, promptFile: ../prompts/system-standing-destination.md }
+  - { slug: p6, display: Llama-F-old, provider: deepinfra, model: meta-llama/Llama-3.2-1B-Instruct, faction: gdi, spawn: 8, team: 0, temperature: 0.6 }
+providers:
+  deepinfra: { baseUrl: "https://api.deepinfra.com/v1/openai", apiKeyEnv: DEEPINFRA_API_KEY }
+  nous:      { baseUrl: "https://inference-api.nousresearch.com/v1", apiKeyEnv: NOUS_API_KEY }
+  test:      { baseUrl: "", apiKeyEnv: "" }

@@ -47,6 +47,12 @@ public sealed class AgentLoop
 			: Util.AssetPath(Path.Combine("prompts", "system-default.md"));
 		systemPrompt = File.ReadAllText(promptPath);
 
+		// Shared game knowledge (unit counters, armor classes) appended to every
+		// prompt variant so instruction A/Bs stay orthogonal to game facts.
+		var guidePath = Util.AssetPath(Path.Combine("prompts", "strategy-guide.md"));
+		if (File.Exists(guidePath))
+			systemPrompt += "\n\n" + File.ReadAllText(guidePath);
+
 		if (!provider.IsTest)
 		{
 			var apiKey = Environment.GetEnvironmentVariable(provider.ApiKeyEnv);

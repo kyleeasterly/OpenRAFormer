@@ -269,6 +269,32 @@ namespace OpenRA.Mods.LLM.Traits
 				});
 			}
 
+			// Finished buildings awaiting a place_building decision: give the agent a
+			// legality-annotated view of its base area so it picks position, not rules.
+			var pendingPlacement = new List<object>();
+			foreach (var queue in world.ActorsWithTrait<ProductionQueue>()
+				.Where(x => x.Actor.Owner == player && x.Trait.Enabled)
+				.Select(x => x.Trait))
+			{
+				var done = queue.AllQueued().FirstOrDefault(i => i.Done);
+				if (done == null || !world.Map.Rules.Actors.TryGetValue(done.Item, out var ai))
+					continue;
+
+				var bi = ai.TraitInfoOrDefault<BuildingInfo>();
+				if (bi == null)
+					continue;
+
+				var (origin, rows, valid) = PlacementGrid.Build(world, player, ai, bi, 12);
+				pendingPlacement.Add(new
+				{
+					item = LlmNames.Display(world, ai),
+					gridOrigin = CellArray(origin),
+					grid = rows,
+					legend = PlacementGrid.Legend,
+					validCellsSample = valid.Take(40).Select(CellArray).ToList()
+				});
+			}
+
 			var frozen = new List<object>();
 			var frozenLayer = player.PlayerActor.TraitOrDefault<FrozenActorLayer>();
 			if (frozenLayer != null)
@@ -349,6 +375,7 @@ namespace OpenRA.Mods.LLM.Traits
 					.OrderBy(s => s.cell[0]).ThenBy(s => s.cell[1])
 					.ToList(),
 				production,
+				pendingPlacement,
 				buildings,
 				units,
 				visibleEnemies,

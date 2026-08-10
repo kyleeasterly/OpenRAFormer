@@ -1,0 +1,26 @@
+# GPT track (two-track program, 2026-08-10): 6x GPT-OSS-20B FFA, all on the same
+# default instructions. Baseline for prompt A/B tests within the track — later,
+# half the players get a candidate instruction improvement and win rate decides.
+# Spawns 1,2,4 (top row x=42,67,117) and 5,6,8 (bottom row x=42,67,117): both
+# rows symmetric. stateFormat markdown per the exp1/exp2 result (2-3x cheaper,
+# no capability loss).
+name: gpt-track-ffa
+map: scorched-earth.oramap
+web: { port: 5199 }
+display: ":97"
+resolution: [2540, 2540]
+stream: { fps: 6, scale: 2048, quality: 6 }
+stateFormat: markdown
+turnIntervalSeconds: 0
+maxTurnsPerPlayer: 0
+players:
+  - { slug: p1, display: GPT-A, provider: deepinfra, model: openai/gpt-oss-20b              , faction: gdi, spawn: 1, team: 0, temperature: 0.6 }
+  - { slug: p2, display: GPT-B, provider: deepinfra, model: openai/gpt-oss-20b              , faction: gdi, spawn: 2, team: 0, temperature: 0.6 }
+  - { slug: p3, display: GPT-C, provider: deepinfra, model: openai/gpt-oss-20b              , faction: gdi, spawn: 4, team: 0, temperature: 0.6 }
+  - { slug: p4, display: GPT-D, provider: deepinfra, model: openai/gpt-oss-20b              , faction: gdi, spawn: 5, team: 0, temperature: 0.6 }
+  - { slug: p5, display: GPT-E, provider: deepinfra, model: openai/gpt-oss-20b              , faction: gdi, spawn: 6, team: 0, temperature: 0.6 }
+  - { slug: p6, display: GPT-F, provider: deepinfra, model: openai/gpt-oss-20b              , faction: gdi, spawn: 8, team: 0, temperature: 0.6 }
+providers:
+  deepinfra: { baseUrl: "https://api.deepinfra.com/v1/openai", apiKeyEnv: DEEPINFRA_API_KEY }
+  nous:      { baseUrl: "https://inference-api.nousresearch.com/v1", apiKeyEnv: NOUS_API_KEY }
+  test:      { baseUrl: "", apiKeyEnv: "" }

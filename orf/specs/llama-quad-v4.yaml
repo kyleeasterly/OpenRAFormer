@@ -1,0 +1,26 @@
+# Llama-only 4-player instruction A/B (2026-08-10): 2x v2-tank-doctrine prompt
+# vs 2x default prompt, opposite-diagonal corners so each variant has identical
+# geometry. v2 bundles the fixes the all-instance log analysis pointed at:
+# fixed competitive opening (power > barracks > refinery > refinery > factory >
+# medium tanks), power-plant cap, rejection-means-build-prerequisite, and the
+# attack-by-minute-5 / no-idle-units doctrine. Metric: win/placement rate over
+# repeated matches. Small field to conserve tokens.
+name: llama-quad-v4
+map: scorched-earth.oramap
+web: { port: 5199 }
+display: ":97"
+resolution: [2540, 2540]
+stream: { fps: 6, scale: 2048, quality: 6 }
+stateFormat: markdown
+turnIntervalSeconds: 0
+maxTurnsPerPlayer: 0
+players:
+  # corners: 1=(42,7) 4=(117,7) 5=(42,90) 8=(117,90); v2 on one diagonal, default on the other
+  - { slug: p1, display: Llama-v4-A,  provider: deepinfra, model: meta-llama/Llama-3.2-1B-Instruct, faction: gdi, spawn: 1, team: 0, temperature: 0.6, promptFile: ../prompts/system-v4.md }
+  - { slug: p2, display: Llama-v4-B, provider: deepinfra, model: meta-llama/Llama-3.2-1B-Instruct, faction: gdi, spawn: 4, team: 0, temperature: 0.6 , promptFile: ../prompts/system-v4.md }
+  - { slug: p3, display: Llama-v4-C, provider: deepinfra, model: meta-llama/Llama-3.2-1B-Instruct, faction: gdi, spawn: 5, team: 0, temperature: 0.6 , promptFile: ../prompts/system-v4.md }
+  - { slug: p4, display: Llama-v4-D,  provider: deepinfra, model: meta-llama/Llama-3.2-1B-Instruct, faction: gdi, spawn: 8, team: 0, temperature: 0.6, promptFile: ../prompts/system-v4.md }
+providers:
+  deepinfra: { baseUrl: "https://api.deepinfra.com/v1/openai", apiKeyEnv: DEEPINFRA_API_KEY }
+  nous:      { baseUrl: "https://inference-api.nousresearch.com/v1", apiKeyEnv: NOUS_API_KEY }
+  test:      { baseUrl: "", apiKeyEnv: "" }

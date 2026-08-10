@@ -41,6 +41,9 @@ namespace OpenRA.Mods.LLM.Traits
 		[Desc("Maximum search radius (in cells) for automatic building placement.")]
 		public readonly int PlacementRadius = 25;
 
+		[Desc("Ticks a ready building waits for an agent place_building order before auto-placement kicks in.")]
+		public readonly int PlacementGraceTicks = 1500;
+
 		string IBotInfo.Type => Type;
 		string IBotInfo.Name => Name;
 
@@ -53,6 +56,7 @@ namespace OpenRA.Mods.LLM.Traits
 
 		readonly LlmBotInfo info;
 		readonly Queue<Order> pending = new();
+		readonly Dictionary<string, int> readySince = [];
 
 		Player player;
 		bool enabled;
@@ -184,6 +188,8 @@ namespace OpenRA.Mods.LLM.Traits
 				{
 					"start_production" => StartProduction(world, order),
 					"cancel_production" => CancelProduction(world, order),
+					"place_building" => PlaceBuilding(world, order),
+					"resign" => Resign(world),
 					"deploy" => ForEachActor(world, order, a => new Order("DeployTransform", a, false)),
 					"move" => TargetCellOrder(world, order, "Move"),
 					"attack_move" => TargetCellOrder(world, order, "AttackMove"),
@@ -228,6 +234,19 @@ namespace OpenRA.Mods.LLM.Traits
 				return $"'{requested}' is not buildable right now (missing prerequisites or wrong faction)";
 
 			var count = GetInt(order, "count", 1).Clamp(1, 10);
+
+			// Queue hygiene for structures: agents with short memories re-order the
+			// same building every turn (observed: 39 queued refineries). Buildings
+			// queue one at a time, and a third copy of the same one is refused.
+			if (world.Map.Rules.Actors.TryGetValue(item, out var ai) && ai.HasTraitInfo<BuildingInfo>())
+			{
+				count = 1;
+				var alreadyQueued = queue.AllQueued().Count(i => i.Item == item);
+				if (alreadyQueued >= 2)
+					return $"already {alreadyQueued}x '{requested}' in the queue — do not re-order it; "
+						+ "use cancel_production to trim extras (cancels from the end of the queue)";
+			}
+
 			pending.Enqueue(Order.StartProduction(queue.Actor, item, count));
 			return null;
 		}
@@ -242,7 +261,17 @@ namespace OpenRA.Mods.LLM.Traits
 			if (queue == null)
 				return $"'{item}' is not in any production queue";
 
-			var count = GetInt(order, "count", 1).Clamp(1, 10);
+			// Cancelling only trims WAITING copies; the in-progress item is protected.
+			// Without this, short-memory agents cancel-loop their first Power Plant
+			// forever and never build anything (observed: 90 cancelled, 0 built).
+			var total = queue.AllQueued().Count(i => i.Item == item);
+			var current = queue.CurrentItem();
+			var waiting = total - (current != null && current.Item == item ? 1 : 0);
+			if (waiting == 0)
+				return $"the only '{LlmNames.Display(world, world.Map.Rules.Actors[item])}' is already in progress — "
+					+ "let it finish; cancelling in-progress construction is how you end up with no base";
+
+			var count = GetInt(order, "count", 1).Clamp(1, waiting.Clamp(1, 10));
 			pending.Enqueue(Order.CancelProduction(queue.Actor, item, count));
 			return null;
 		}
@@ -339,6 +368,24 @@ namespace OpenRA.Mods.LLM.Traits
 			return actor != null && !actor.IsDead && actor.IsInWorld && actor.Owner == player ? actor : null;
 		}
 
+		string Resign(World world)
+		{
+			// Dignity guard: resignation is for genuinely dead positions, not bad
+			// moods. With a Construction Yard or MCV the player can still rebuild.
+			var hasBuildingQueue = world.ActorsWithTrait<ProductionQueue>()
+				.Any(x => x.Actor.Owner == player && x.Trait.Enabled
+					&& x.Trait.Info.Type.StartsWith("Building", StringComparison.Ordinal));
+
+			var hasMcv = world.Actors.Any(a => a.Owner == player && !a.IsDead && a.IsInWorld
+				&& a.Info.HasTraitInfo<TransformsInfo>() && a.Info.HasTraitInfo<MobileInfo>());
+
+			if (hasBuildingQueue || hasMcv)
+				return "resignation rejected: you still have a Construction Yard or MCV, so you can rebuild — fight on";
+
+			pending.Enqueue(new Order("Surrender", player.PlayerActor, false));
+			return null;
+		}
+
 		void AutoDeployMcv(World world)
 		{
 			var hasBase = world.Actors.Any(a => a.Owner == player && !a.IsDead && a.Info.HasTraitInfo<BuildingInfo>());
@@ -352,8 +399,37 @@ namespace OpenRA.Mods.LLM.Traits
 				pending.Enqueue(new Order("DeployTransform", mcv, false));
 		}
 
+		string PlaceBuilding(World world, JsonElement order)
+		{
+			var requested = GetString(order, "item");
+			var item = LlmNames.ResolveInternal(world, requested);
+			if (item == null)
+				return $"unknown unit or structure '{requested}'";
+
+			if (!TryGetCell(world, order, "cell", out var cell))
+				return "missing or invalid 'cell'";
+
+			var queue = Queues(world).FirstOrDefault(q => q.AllQueued().Any(i => i.Item == item && i.Done));
+			if (queue == null)
+				return $"'{requested}' is not finished and awaiting placement";
+
+			if (!world.Map.Rules.Actors.TryGetValue(item, out var ai)
+				|| ai.TraitInfoOrDefault<BuildingInfo>() is not BuildingInfo bi)
+				return $"'{requested}' is not a building";
+
+			if (!world.CanPlaceBuilding(cell, ai, bi, null))
+				return $"cannot place at [{cell.X},{cell.Y}]: blocked by terrain, buildings, or units — pick a '+' cell from the placement grid";
+
+			if (!bi.IsCloseEnoughToBase(world, player, ai, cell))
+				return $"cannot place at [{cell.X},{cell.Y}]: too far from your base — pick a '+' cell from the placement grid";
+
+			IssuePlacement(world, queue, item, ai, cell);
+			return null;
+		}
+
 		void AutoPlaceReadyBuildings(World world)
 		{
+			var seen = new HashSet<string>();
 			foreach (var queue in Queues(world))
 			{
 				var done = queue.AllQueued().FirstOrDefault(i => i.Done);
@@ -364,32 +440,46 @@ namespace OpenRA.Mods.LLM.Traits
 				if (bi == null)
 					continue;
 
+				// Give the agent a grace window to choose the spot itself via
+				// place_building; only place automatically once that expires.
+				var key = $"{queue.Actor.ActorID}:{done.Item}";
+				seen.Add(key);
+				if (!readySince.TryGetValue(key, out var since))
+				{
+					readySince[key] = world.WorldTick;
+					continue;
+				}
+
+				if (world.WorldTick - since < info.PlacementGraceTicks)
+					continue;
+
 				var cell = ChoosePlacementCell(world, ai, bi);
 				if (cell == null)
 					continue;
 
-				var orderString = ai.HasTraitInfo<LineBuildInfo>() ? "LineBuild" : "PlaceBuilding";
-				pending.Enqueue(new Order(orderString, player.PlayerActor, Target.FromCell(world, cell.Value), false)
-				{
-					TargetString = done.Item,
-					ExtraLocation = CPos.Zero,
-					ExtraData = queue.Actor.ActorID,
-					SuppressVisualFeedback = true
-				});
+				IssuePlacement(world, queue, done.Item, ai, cell.Value);
 			}
+
+			foreach (var stale in readySince.Keys.Where(k => !seen.Contains(k)).ToList())
+				readySince.Remove(stale);
+		}
+
+		void IssuePlacement(World world, ProductionQueue queue, string item, ActorInfo ai, CPos cell)
+		{
+			var orderString = ai.HasTraitInfo<LineBuildInfo>() ? "LineBuild" : "PlaceBuilding";
+			pending.Enqueue(new Order(orderString, player.PlayerActor, Target.FromCell(world, cell), false)
+			{
+				TargetString = item,
+				ExtraLocation = CPos.Zero,
+				ExtraData = queue.Actor.ActorID,
+				SuppressVisualFeedback = true
+			});
+			readySince.Remove($"{queue.Actor.ActorID}:{item}");
 		}
 
 		CPos? ChoosePlacementCell(World world, ActorInfo ai, BuildingInfo bi)
 		{
-			var buildings = world.Actors
-				.Where(a => a.Owner == player && !a.IsDead && a.Info.HasTraitInfo<BuildingInfo>())
-				.ToList();
-
-			var center = buildings.Count > 0
-				? world.Map.CellContaining(new WPos(
-					(int)(buildings.Sum(b => (long)b.CenterPosition.X) / buildings.Count),
-					(int)(buildings.Sum(b => (long)b.CenterPosition.Y) / buildings.Count), 0))
-				: player.HomeLocation;
+			var center = PlacementGrid.BaseCenter(world, player);
 
 			placementOffsets ??= GenerateOffsets(info.PlacementRadius);
 

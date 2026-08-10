@@ -23,15 +23,15 @@ public static class ToolSchema
 		              "properties": {
 		                "type": {
 		                  "type": "string",
-		                  "enum": ["start_production", "cancel_production", "deploy", "move", "attack_move", "attack", "capture", "guard", "stop", "sell", "repair", "set_rally"],
+		                  "enum": ["start_production", "cancel_production", "place_building", "resign", "deploy", "move", "attack_move", "attack", "capture", "guard", "stop", "sell", "repair", "set_rally"],
 		                  "description": "The order type."
 		                },
-		                "item": { "type": "string", "description": "Exact unit or structure name from your buildable list, e.g. 'Power Plant', 'Minigunner', 'Tiberium Refinery' (start_production, cancel_production)." },
+		                "item": { "type": "string", "description": "Exact unit or structure name from your buildable list, e.g. 'Power Plant', 'Minigunner', 'Tiberium Refinery' (start_production, cancel_production, place_building)." },
 		                "count": { "type": "integer", "description": "How many to train/cancel, 1-10 (start_production, cancel_production). 1 is a single click; 5 is the shift-click batch a human uses when massing an army. Ordering units one at a time wastes turns — batch unless cash-limited." },
 		                "actorIds": { "type": "array", "items": { "type": "integer" }, "description": "Ids of your actors (deploy, move, attack_move, attack, capture, guard, stop). capture requires engineers; the target enemy building becomes yours, and a captured Construction Yard lets you build that faction's structures." },
 		                "actorId": { "type": "integer", "description": "Single actor id (sell, repair, set_rally)." },
 		                "targetActorId": { "type": "integer", "description": "Target actor id, must be visible to you (attack, guard)." },
-		                "cell": { "type": "array", "items": { "type": "integer" }, "minItems": 2, "maxItems": 2, "description": "[x, y] map cell (move, attack_move, set_rally)." },
+		                "cell": { "type": "array", "items": { "type": "integer" }, "minItems": 2, "maxItems": 2, "description": "[x, y] map cell (move, attack_move, set_rally, place_building). For place_building it must be a '+' cell from the pendingPlacement grid." },
 		                "queued": { "type": "boolean", "description": "Queue after the actor's current activity instead of replacing it (move, attack_move). Default false." }
 		              },
 		              "required": ["type"]

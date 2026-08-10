@@ -16,8 +16,8 @@ public static class StateMarkdown
 		var handled = new HashSet<string>
 		{
 			"tick", "second", "you", "buildCapacity", "underAttack", "map", "enemySpawns",
-			"production", "buildings", "units", "visibleEnemies", "lastKnownEnemyBuildings",
-			"exploredResources",
+			"production", "pendingPlacement", "buildings", "units", "visibleEnemies",
+			"lastKnownEnemyBuildings", "exploredResources",
 		};
 
 		sb.AppendLine($"tick: {state["tick"]} | second: {state["second"]}");
@@ -64,6 +64,25 @@ public static class StateMarkdown
 				var queued = Join(q["queued"], n => Scalar(n));
 				var buildable = Join(q["buildable"], n => n is JsonObject b ? $"{b["name"]} ${b["cost"]}" : Scalar(n));
 				sb.AppendLine($"|{q["queue"]}|{(True(q["busy"]) ? "yes" : "no")}|{current}|{queued}|{buildable}|");
+			}
+		}
+
+		if (state["pendingPlacement"] is JsonArray pending && pending.Count > 0)
+		{
+			sb.AppendLine();
+			sb.AppendLine("## pendingPlacement — finished buildings waiting for YOUR placement decision");
+			foreach (var p in pending.OfType<JsonObject>())
+			{
+				var origin = p["gridOrigin"] as JsonArray;
+				sb.AppendLine($"**{p["item"]}** is ready. Issue `place_building` with a '+' cell, or it will be auto-placed for you after a grace period.");
+				sb.AppendLine($"Legend: {p["legend"]}");
+				sb.AppendLine($"Grid top-left corner is cell {Cell(origin)}; each row is one y step down, each character one x step right.");
+				sb.AppendLine("```");
+				var y = origin?[1]?.GetValue<int>() ?? 0;
+				foreach (var row in p["grid"] as JsonArray ?? [])
+					sb.AppendLine($"y={y++,3} {row}");
+				sb.AppendLine("```");
+				sb.AppendLine($"Some valid cells: {Join(p["validCellsSample"], Scalar)}");
 			}
 		}
 

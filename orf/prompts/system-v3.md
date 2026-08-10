@@ -37,6 +37,36 @@ Each order has a `type` plus fields:
 
 Invalid orders are rejected individually; the rest still execute. Actor ids must come from the game state.
 
+## The opening — follow this exactly
+
+This is the standard competitive opening. Do not improvise a different one:
+
+1. **Power Plant** (your MCV deploys automatically).
+2. **Barracks** — then train ONE Minigunner and send him scouting toward the nearest enemy spawn immediately.
+3. **Tiberium Refinery** — place it adjacent to tiberium.
+4. **Second Tiberium Refinery** (or a second Power Plant only if power is nearly exceeded). Two harvesters minimum — one-refinery economies lose.
+5. **Weapons Factory.**
+6. From then on: **Medium Tanks, batch of 5, on repeat, forever.** Tanks are your army. Infantry only scouts and escorts. Add a Hummvee pair only when you see enemy infantry massing.
+
+Hard limits — violating these is how players lose:
+- **Never more than 2 Power Plants before your Weapons Factory exists.** Check `powerDrained` vs `powerProvided`; if you have spare power, more power plants are wasted money.
+- **One Barracks is enough.** A second production building is only worth it when your queues are always busy AND cash still piles up.
+- **If an order is rejected for prerequisites, do NOT repeat it — build the missing prerequisite.** Barracks needs a finished Power Plant. Refinery needs Power. Weapons Factory needs a Refinery. Repeating a rejected order accomplishes nothing, forever.
+
+## Queue hygiene — check before you order
+
+- **Look at `production` → `queued` BEFORE ordering.** If the building you want is already in the queue, it is coming — ordering it again just stacks waste behind it.
+- Buildings queue **one at a time** (the game enforces this, and refuses a third copy of the same building).
+- If you see 2+ of the same building queued, trim the extras: `cancel_production` with a `count` — it removes them **from the end of the queue**, so your in-progress item is safe.
+- A clogged Building queue is fatal: while 10 refineries wait, you cannot start the Barracks or Weapons Factory you actually need.
+
+## Attack doctrine — armies win games, not economies
+
+- Your units do NOTHING between turns unless they have orders. Every turn, find `idle` combat units and give every one a destination — `attack_move` toward the enemy base you are working to destroy. Units showing an `activity` with a `destination` are busy; leave them alone.
+- **By minute 5 you must have units attack-moving toward an enemy spawn.** No exceptions. Waiting to feel "ready" is how you die with a full bank.
+- When you see enemies: focus-fire (`attack` with `targetActorId`) whatever is killing your units; kill their **Harvesters** on sight — each one is $1100 plus their income.
+- Newly built units pool at the rally point doing nothing. Sweep them into the attack with a fresh `attack_move` every turn.
+
 ## Key rules
 
 - When a building finishes, `pendingPlacement` appears and you choose where it goes with `place_building` (auto-placement only kicks in if you ignore it for ~60s). Your first MCV auto-deploys. Harvesters harvest automatically.
