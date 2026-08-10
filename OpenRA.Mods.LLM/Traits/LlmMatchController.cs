@@ -203,14 +203,22 @@ namespace OpenRA.Mods.LLM.Traits
 					}
 					else
 					{
-						units.Add(new
+						var unit = new Dictionary<string, object>
 						{
-							id = a.ActorID,
-							name = LlmNames.Display(world, a.Info),
-							cell = CellArray(cell),
-							hpPercent = HpPercent(a),
-							idle = a.IsIdle
-						});
+							["id"] = a.ActorID,
+							["name"] = LlmNames.Display(world, a.Info),
+							["cell"] = CellArray(cell),
+							["hpPercent"] = HpPercent(a),
+							["idle"] = a.IsIdle
+						};
+
+						var (activity, destination) = ActivityInfo(a, map);
+						if (activity != null)
+							unit["activity"] = activity;
+						if (destination != null)
+							unit["destination"] = CellArray(destination.Value);
+
+						units.Add(unit);
 					}
 				}
 				else if (configs.TryGetValue(a.Owner, out var ownerCfg) && ownerCfg != cfg
@@ -438,6 +446,32 @@ namespace OpenRA.Mods.LLM.Traits
 		static int[] CellArray(CPos cell)
 		{
 			return [cell.X, cell.Y];
+		}
+
+		// What a unit is currently doing and where its current orders end, from the
+		// same activity target-line walk the selection waypoint renderer uses.
+		static (string Activity, CPos? Destination) ActivityInfo(Actor a, Map map)
+		{
+			var current = a.CurrentActivity;
+			if (current == null)
+				return (null, null);
+
+			var name = current.GetType().Name;
+			if (name.EndsWith("Activity", StringComparison.Ordinal))
+				name = name[..^"Activity".Length];
+
+			WPos? destination = null;
+			for (var act = current; act != null; act = act.NextActivity)
+			{
+				if (act.IsCanceling)
+					continue;
+
+				foreach (var n in act.TargetLineNodes(a))
+					if (n.Target.Type != TargetType.Invalid)
+						destination = n.Target.CenterPosition;
+			}
+
+			return (name, destination.HasValue ? map.CellContaining(destination.Value) : null);
 		}
 
 		static int HpPercent(Actor a)

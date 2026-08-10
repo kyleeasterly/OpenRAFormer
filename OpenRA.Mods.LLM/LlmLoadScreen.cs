@@ -73,8 +73,10 @@ namespace OpenRA.Mods.LLM
 						foreach (var option in match.Options)
 							orders.Add(Order.Command($"option {option.Key} {option.Value}"));
 
-						orders.Add(Order.Command($"state {Session.ClientState.Ready}"));
-
+						// Do NOT go Ready here: a Ready client may only issue state/startgame
+						// commands, and a local server auto-starts once all humans are Ready —
+						// either would make phase 1's faction/spawn/team configuration dead
+						// letters (they were, silently, until spawns became non-default).
 						foreach (var order in orders)
 							om.IssueOrder(order);
 					}
@@ -106,6 +108,7 @@ namespace OpenRA.Mods.LLM
 								orders.Add(Order.Command($"team {bot.Index} {pc.Team}"));
 						}
 
+						orders.Add(Order.Command($"state {Session.ClientState.Ready}"));
 						orders.Add(Order.Command("startgame"));
 						foreach (var order in orders)
 							om.IssueOrder(order);
