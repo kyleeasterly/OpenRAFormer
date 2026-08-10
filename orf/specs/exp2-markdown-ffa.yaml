@@ -1,0 +1,32 @@
+# Experiment 2 of 2 (2026-08-09): context-format A/B test, Markdown arm.
+# 8-player FFA, 4x Llama-1B vs 4x GPT-OSS-20B, checkerboard spawn alternation
+# (no two same-model neighbors, horizontally or across the map). Factions pinned
+# to GDI in BOTH arms so the only variable vs exp2-markdown is the state format.
+# This arm: identical content rendered as Markdown tables (stateFormat: markdown).
+name: exp2-markdown
+map: scorched-earth.oramap
+web: { port: 5199 }
+display: ":97"
+resolution: [2540, 2540]
+stream: { fps: 6, scale: 2048, quality: 6 }
+stateFormat: markdown
+turnIntervalSeconds: 0
+maxTurnsPerPlayer: 0
+players:
+  # Checkerboard alternation. Spawn indices follow map-file mpspawn order:
+  #   1=(42,7) 2=(67,7) 3=(92,7) 4=(117,7)  |  5=(42,90) 6=(67,90) 7=(92,90) 8=(117,90)
+  # Giving: top row (y=7) L G L G, bottom row (y=90) G L G L — no same-model
+  # neighbors horizontally or vertically. (Requires the LlmLoadScreen Ready-ordering
+  # fix; before it, spawn/faction lobby commands were silently discarded.)
+  - { slug: p1, display: Llama-1B-A,  provider: deepinfra, model: meta-llama/Llama-3.2-1B-Instruct, faction: gdi, spawn: 1, team: 0, temperature: 0.6 }
+  - { slug: p2, display: GPT-20B-A,   provider: deepinfra, model: openai/gpt-oss-20b,               faction: gdi, spawn: 2, team: 0, temperature: 0.6 }
+  - { slug: p3, display: Llama-1B-B,  provider: deepinfra, model: meta-llama/Llama-3.2-1B-Instruct, faction: gdi, spawn: 3, team: 0, temperature: 0.6 }
+  - { slug: p4, display: GPT-20B-B,   provider: deepinfra, model: openai/gpt-oss-20b,               faction: gdi, spawn: 4, team: 0, temperature: 0.6 }
+  - { slug: p5, display: GPT-20B-C,   provider: deepinfra, model: openai/gpt-oss-20b,               faction: gdi, spawn: 5, team: 0, temperature: 0.6 }
+  - { slug: p6, display: Llama-1B-C,  provider: deepinfra, model: meta-llama/Llama-3.2-1B-Instruct, faction: gdi, spawn: 6, team: 0, temperature: 0.6 }
+  - { slug: p7, display: GPT-20B-D,   provider: deepinfra, model: openai/gpt-oss-20b,               faction: gdi, spawn: 7, team: 0, temperature: 0.6 }
+  - { slug: p8, display: Llama-1B-D,  provider: deepinfra, model: meta-llama/Llama-3.2-1B-Instruct, faction: gdi, spawn: 8, team: 0, temperature: 0.6 }
+providers:
+  deepinfra: { baseUrl: "https://api.deepinfra.com/v1/openai", apiKeyEnv: DEEPINFRA_API_KEY }
+  nous:      { baseUrl: "https://inference-api.nousresearch.com/v1", apiKeyEnv: NOUS_API_KEY }
+  test:      { baseUrl: "", apiKeyEnv: "" }

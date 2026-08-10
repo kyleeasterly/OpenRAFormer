@@ -13,6 +13,7 @@ public sealed class Spec
 	public StreamSpec Stream { get; set; } = new();
 	public int TurnIntervalSeconds { get; set; } = 12;
 	public int MaxTurnsPerPlayer { get; set; }
+	public string StateFormat { get; set; } = "json";
 	public List<PlayerSpec> Players { get; set; } = [];
 	public Dictionary<string, ProviderSpec> Providers { get; set; } = [];
 
@@ -39,6 +40,8 @@ public sealed class Spec
 
 		if (string.IsNullOrWhiteSpace(spec.Name))
 			throw new InvalidOperationException("Spec is missing 'name'");
+		if (spec.StateFormat is not ("json" or "markdown"))
+			throw new InvalidOperationException($"Unknown stateFormat '{spec.StateFormat}' (expected 'json' or 'markdown')");
 		if (spec.Players.Count == 0)
 			throw new InvalidOperationException("Spec has no players");
 

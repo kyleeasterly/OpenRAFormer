@@ -395,14 +395,24 @@ public sealed class AgentLoop
 
 	string BuildUserContent(JsonObject state, List<JsonObject> results)
 	{
-		var text = $"Current game state (JSON):\n{state.ToJsonString()}";
+		var markdown = spec.StateFormat == "markdown";
+		var text = markdown
+			? $"Current game state:\n{StateMarkdown.Render(state)}"
+			: $"Current game state:\n{state.ToJsonString()}";
 
 		if (results.Count > 0)
 		{
-			var arr = new JsonArray();
-			foreach (var r in results)
-				arr.Add(r.DeepClone());
-			text += $"\n\nRecent order results:\n{arr.ToJsonString()}";
+			if (markdown)
+			{
+				text += $"\n\nRecent order results:\n{StateMarkdown.RenderResults(results)}";
+			}
+			else
+			{
+				var arr = new JsonArray();
+				foreach (var r in results)
+					arr.Add(r.DeepClone());
+				text += $"\n\nRecent order results:\n{arr.ToJsonString()}";
+			}
 		}
 
 		SyncChecklistFromState(state);
