@@ -79,6 +79,7 @@ public sealed class PlayerSpec
 	public int Team { get; set; }
 	public double Temperature { get; set; } = 0.6;
 	public string? PromptFile { get; set; }
+	public bool RecentActions { get; set; } = true;
 }
 
 public sealed class ProviderSpec

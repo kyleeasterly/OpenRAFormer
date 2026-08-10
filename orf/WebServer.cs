@@ -219,7 +219,7 @@ public static class WebServer
 		foreach (var p in spec.Players)
 		{
 			// Build queues for the observer cards: current item + progress + waiting list.
-			JsonArray production = null;
+			JsonArray? production = null;
 			if (Util.TryReadJson(Path.Combine(runDir, "state", $"{p.Slug}.json")) is JsonObject st
 				&& st["production"] is JsonArray prod)
 			{

@@ -205,9 +205,16 @@ namespace OpenRA.Mods.LLM.Traits
 					_ => $"unknown order type '{type}'"
 				};
 
-				return reason == null
-					? new { index, status = "ok" }
-					: new { index, status = "rejected", reason };
+				if (reason == null)
+					return new { index, status = "ok" };
+
+				// "ok:" prefix = accepted, with a factual note about what happened.
+				// The scaffold enforces game rules only; consequences of legal-but-
+				// questionable orders are mirrored back, not blocked.
+				if (reason.StartsWith("ok:", StringComparison.Ordinal))
+					return new { index, status = "ok", note = reason[3..] };
+
+				return new { index, status = "rejected", reason };
 			}
 			catch (Exception e)
 			{
@@ -234,20 +241,14 @@ namespace OpenRA.Mods.LLM.Traits
 				return $"'{requested}' is not buildable right now (missing prerequisites or wrong faction)";
 
 			var count = GetInt(order, "count", 1).Clamp(1, 10);
-
-			// Queue hygiene for structures: agents with short memories re-order the
-			// same building every turn (observed: 39 queued refineries). Buildings
-			// queue one at a time, and a third copy of the same one is refused.
-			if (world.Map.Rules.Actors.TryGetValue(item, out var ai) && ai.HasTraitInfo<BuildingInfo>())
-			{
-				count = 1;
-				var alreadyQueued = queue.AllQueued().Count(i => i.Item == item);
-				if (alreadyQueued >= 2)
-					return $"already {alreadyQueued}x '{requested}' in the queue — do not re-order it; "
-						+ "use cancel_production to trim extras (cancels from the end of the queue)";
-			}
-
 			pending.Enqueue(Order.StartProduction(queue.Actor, item, count));
+
+			// Honest mirror, not a guard: duplicates are legal play, but agents with
+			// short memories should see what their queue already holds.
+			var alreadyQueued = queue.AllQueued().Count(i => i.Item == item);
+			if (alreadyQueued > 0 && world.Map.Rules.Actors.TryGetValue(item, out var ai) && ai.HasTraitInfo<BuildingInfo>())
+				return $"ok:queued — note you already had {alreadyQueued}x '{requested}' in this queue before this order";
+
 			return null;
 		}
 
@@ -261,19 +262,20 @@ namespace OpenRA.Mods.LLM.Traits
 			if (queue == null)
 				return $"'{item}' is not in any production queue";
 
-			// Cancelling only trims WAITING copies; the in-progress item is protected.
-			// Without this, short-memory agents cancel-loop their first Power Plant
-			// forever and never build anything (observed: 90 cancelled, 0 built).
+			// Faithful to the real game: cancels the most recently queued copies
+			// first, and CAN cancel the one in progress (with refund) when the count
+			// reaches it. The result mirrors exactly what happened.
 			var total = queue.AllQueued().Count(i => i.Item == item);
 			var current = queue.CurrentItem();
-			var waiting = total - (current != null && current.Item == item ? 1 : 0);
-			if (waiting == 0)
-				return $"the only '{LlmNames.Display(world, world.Map.Rules.Actors[item])}' is already in progress — "
-					+ "let it finish; cancelling in-progress construction is how you end up with no base";
+			var currentIsItem = current != null && current.Item == item;
+			var count = GetInt(order, "count", 1).Clamp(1, 10);
+			var effective = Math.Min(count, total);
+			pending.Enqueue(Order.CancelProduction(queue.Actor, item, effective));
 
-			var count = GetInt(order, "count", 1).Clamp(1, waiting.Clamp(1, 10));
-			pending.Enqueue(Order.CancelProduction(queue.Actor, item, count));
-			return null;
+			var display = LlmNames.Display(world, world.Map.Rules.Actors[item]);
+			return currentIsItem && effective >= total
+				? $"ok:cancelled {effective}x {display} INCLUDING the one under construction (cost refunded, build time lost)"
+				: $"ok:removed {effective}x {display} from the waiting queue; construction in progress was not affected";
 		}
 
 		string TargetCellOrder(World world, JsonElement order, string orderString)

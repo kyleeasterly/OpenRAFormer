@@ -1,0 +1,23 @@
+# Cancel-flapping instruction experiment, match A (2026-08-10). All players get
+# the fixed state export (queued = waiting only). 2x2: prompt {nc = cancel never
+# mentioned, wr = one mechanical when-rule} x recentActions digest {off, on}.
+# Metric: cancels + in-progress hits + buildings by minute 12. Match B rotates
+# assignments across spawns.
+name: flap-a
+map: scorched-earth.oramap
+web: { port: 5199 }
+display: ":97"
+resolution: [2540, 2540]
+stream: { fps: 6, scale: 2048, quality: 6 }
+stateFormat: markdown
+turnIntervalSeconds: 0
+maxTurnsPerPlayer: 0
+players:
+  - { slug: p1, display: nc-noMem,  provider: deepinfra, model: meta-llama/Llama-3.2-1B-Instruct, faction: gdi, spawn: 1, team: 0, temperature: 0.6, promptFile: ../prompts/system-flap-nc.md, recentActions: false }
+  - { slug: p2, display: wr-noMem,  provider: deepinfra, model: meta-llama/Llama-3.2-1B-Instruct, faction: gdi, spawn: 4, team: 0, temperature: 0.6, promptFile: ../prompts/system-flap-wr.md, recentActions: false }
+  - { slug: p3, display: nc-mem,    provider: deepinfra, model: meta-llama/Llama-3.2-1B-Instruct, faction: gdi, spawn: 5, team: 0, temperature: 0.6, promptFile: ../prompts/system-flap-nc.md }
+  - { slug: p4, display: wr-mem,    provider: deepinfra, model: meta-llama/Llama-3.2-1B-Instruct, faction: gdi, spawn: 8, team: 0, temperature: 0.6, promptFile: ../prompts/system-flap-wr.md }
+providers:
+  deepinfra: { baseUrl: "https://api.deepinfra.com/v1/openai", apiKeyEnv: DEEPINFRA_API_KEY }
+  nous:      { baseUrl: "https://inference-api.nousresearch.com/v1", apiKeyEnv: NOUS_API_KEY }
+  test:      { baseUrl: "", apiKeyEnv: "" }

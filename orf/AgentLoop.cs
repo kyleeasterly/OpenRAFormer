@@ -29,6 +29,7 @@ public sealed class AgentLoop
 	readonly Dictionary<string, bool> checklist = [];
 	readonly HashSet<string> exploredSpawns = [];
 	long totalCompletionTokens;
+	readonly Queue<string> actionLog = new();
 	string? lastError;
 	string summaryLine = "";
 	string seqStr = "000000";
@@ -224,6 +225,7 @@ public sealed class AgentLoop
 		{
 			var inboxFile = Path.Combine(InboxDir, $"{seqStr}.json");
 			Util.WriteAtomic(inboxFile, new JsonObject { ["orders"] = orders.DeepClone() }.ToJsonString(Util.Indented));
+			RecordActions(state, orders);
 		}
 
 		Util.WriteAtomic(Path.Combine(turnDir, "orders.json"), new JsonObject { ["orders"] = orders.DeepClone() }.ToJsonString(Util.Indented));
@@ -399,6 +401,27 @@ public sealed class AgentLoop
 		return orders;
 	}
 
+	// Rolling factual log of the agent's own issued orders. The 6-exchange message
+	// history only spans seconds at fast cadence; this digest spans minutes, so the
+	// agent can see it already ordered/cancelled something before doing it again.
+	void RecordActions(JsonObject state, JsonArray orders)
+	{
+		var sec = state["second"]?.GetValue<long>() ?? 0;
+		var t = $"{sec / 60}:{sec % 60:D2}";
+		foreach (var o in orders.OfType<JsonObject>())
+		{
+			var type = o["type"]?.GetValue<string>() ?? "?";
+			var item = o["item"]?.GetValue<string>();
+			var cell = o["cell"] is JsonArray c ? $" -> [{c[0]},{c[1]}]" : "";
+			var count = o["count"]?.GetValue<int>() is int n and > 1 ? $" x{n}" : "";
+			var actors = o["actorIds"] is JsonArray a ? $" ({a.Count} units)" : "";
+			actionLog.Enqueue($"t={t} {type}{(item != null ? " " + item : "")}{count}{cell}{actors}");
+		}
+
+		while (actionLog.Count > 15)
+			actionLog.Dequeue();
+	}
+
 	string BuildUserContent(JsonObject state, List<JsonObject> results)
 	{
 		var markdown = spec.StateFormat == "markdown";
@@ -420,6 +443,10 @@ public sealed class AgentLoop
 				text += $"\n\nRecent order results:\n{arr.ToJsonString()}";
 			}
 		}
+
+		if (player.RecentActions && actionLog.Count > 0)
+			text += "\n\nYour recent actions (already done — do not repeat them):\n"
+				+ string.Join("\n", actionLog.Select(a => "  " + a));
 
 		SyncChecklistFromState(state);
 

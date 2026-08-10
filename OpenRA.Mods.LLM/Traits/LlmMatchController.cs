@@ -260,7 +260,12 @@ namespace OpenRA.Mods.LLM.Traits
 						paused = current.Paused,
 						ready = current.Done
 					},
-					queued = queue.AllQueued().Select(i => LlmNames.Display(world, world.Map.Rules.Actors[i.Item])).ToList(),
+
+					// Waiting items only — AllQueued() includes the in-progress item,
+					// which made one building look like a duplicate and triggered
+					// cancel-flapping in duplicate-trimming agents.
+					queued = queue.AllQueued().Where(i => i != current)
+						.Select(i => LlmNames.Display(world, world.Map.Rules.Actors[i.Item])).ToList(),
 					buildable = queue.BuildableItems().Select(b => new
 					{
 						name = LlmNames.Display(world, b),
