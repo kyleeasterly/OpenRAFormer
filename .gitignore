@@ -57,3 +57,6 @@ update.log
 
 # orf match run artifacts
 runs/
+
+# Track our dashboard HTML despite the upstream *.html ignore above
+!orf/wwwroot/*.html

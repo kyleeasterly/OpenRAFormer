@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>orf — live match</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: #111; color: #ddd;
+    font: 13px/1.45 ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+  }
+  .mono { font-family: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; }
+
+  .wrap { display: grid; grid-template-rows: auto 1fr; height: 100vh; }
+
+  header {
+    display: flex; align-items: baseline; gap: 18px;
+    padding: 8px 16px; background: #181818; border-bottom: 1px solid #2a2a2a;
+    white-space: nowrap;
+  }
+  #mapTitle { font-size: 16px; font-weight: 700; color: #fff; }
+  #clock { font-size: 26px; font-weight: 700; color: #fff; letter-spacing: 1px; }
+  .hdim { color: #888; font-size: 12px; }
+  #runId { margin-left: auto; }
+  #liveBadge { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 12px; }
+  #liveBadge .dot {
+    width: 9px; height: 9px; border-radius: 50%; background: #e33;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+  #liveBadge.finished { color: #ffd75e; }
+  #liveBadge.finished .dot { background: #ffd75e; animation: none; }
+
+  main {
+    display: grid; grid-template-columns: 230px 1fr 230px;
+    gap: 8px; padding: 8px; overflow: hidden;
+  }
+
+  #graphStrip {
+    position: relative; height: 110px; margin: 6px 8px 0;
+    background: #161618; border: 1px solid #242428; border-radius: 5px;
+  }
+  #pointsChart { width: 100%; height: 100%; display: block; cursor: crosshair; }
+  #graphTitle {
+    position: absolute; top: 4px; left: 10px; font-size: 10px; color: #777;
+    text-transform: uppercase; letter-spacing: .8px; pointer-events: none;
+  }
+  #graphTip {
+    position: absolute; display: none; background: #1e1e22; border: 1px solid #333;
+    border-radius: 4px; padding: 5px 8px; font-size: 10px; pointer-events: none;
+    z-index: 30; white-space: nowrap; color: #ccc;
+  }
+  #graphTip .row { display: flex; align-items: center; gap: 5px; }
+  #graphTip .dot { width: 7px; height: 7px; border-radius: 2px; display: inline-block; }
+  .col { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 0; }
+
+  .stage {
+    display: flex; align-items: center; justify-content: center;
+    background: #000; border-radius: 6px; min-width: 0; position: relative;
+    overflow: hidden; cursor: grab; touch-action: none;
+  }
+  .stage.panning { cursor: grabbing; }
+  .stage img {
+    max-width: 100%; max-height: 92vh; object-fit: contain;
+    transform-origin: 0 0; will-change: transform;
+  }
+  #zoomHint {
+    position: absolute; right: 8px; bottom: 6px; color: #555; font-size: 11px;
+    pointer-events: none; user-select: none;
+  }
+
+  .card.clickable { cursor: pointer; }
+  .card.clickable:hover { background: #1b1b1f; }
+
+  #drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(640px, 92vw);
+    background: #141417; border-left: 1px solid #2a2a30; z-index: 40;
+    display: none; flex-direction: column; box-shadow: -12px 0 32px rgba(0,0,0,.5);
+  }
+  #drawer.open { display: flex; }
+  #drawerHead {
+    display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+    border-bottom: 1px solid #2a2a30; flex: 0 0 auto;
+  }
+  #drawerTitle { font-weight: 600; }
+  #drawerModel { color: #888; font-size: 12px; }
+  #drawerHead label { margin-left: auto; color: #999; font-size: 12px; display: flex; gap: 5px; align-items: center; }
+  #drawerClose {
+    background: none; border: none; color: #aaa; font-size: 18px; cursor: pointer; padding: 2px 8px;
+  }
+  #drawerClose:hover { color: #fff; }
+  #turnList { overflow-y: auto; flex: 1; padding: 8px; }
+  .turn { border: 1px solid #26262c; border-radius: 5px; margin-bottom: 6px; background: #17171a; }
+  .turnHead {
+    display: flex; gap: 10px; align-items: baseline; padding: 7px 10px; cursor: pointer;
+    font-size: 12px;
+  }
+  .turnHead:hover { background: #1d1d22; }
+  .turnHead .seq { font-weight: 600; color: #ddd; }
+  .turnHead .meta { color: #777; }
+  .turnHead .gist { color: #999; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .turnBody { display: none; border-top: 1px solid #26262c; padding: 8px 10px; }
+  .turn.open .turnBody { display: block; }
+  .turnBody h4 { margin: 8px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: #6d8dc4; }
+  .turnBody pre {
+    white-space: pre-wrap; word-break: break-word; font-size: 11px; line-height: 1.45;
+    background: #101012; border: 1px solid #222; border-radius: 4px; padding: 8px;
+    max-height: 300px; overflow-y: auto; margin: 0; color: #bbb;
+  }
+  .turnBody .costline { color: #777; font-size: 11px; margin-top: 6px; }
+  .goals {
+    color: #8fa8d0; font-size: 11px; padding: 2px 0 0; font-style: italic;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  #drawerPlan {
+    flex: 0 0 auto; border-bottom: 1px solid #2a2a30; padding: 8px 14px;
+    font-size: 12px; display: none;
+  }
+  #drawerPlan.filled { display: block; }
+  #drawerPlan .planhead { color: #6d8dc4; font-size: 10px; text-transform: uppercase; letter-spacing: .8px; margin: 4px 0 2px; }
+  #drawerPlan .goal { color: #bcd; }
+  #drawerPlan .chk { display: inline-block; margin: 2px 8px 2px 0; color: #999; }
+  #drawerPlan .chk.done { color: #5fb56f; text-decoration: line-through; }
+  #waiting {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #666; font-size: 15px; letter-spacing: .5px;
+  }
+
+  .card {
+    background: #1a1a1a; border: 1px solid #262626; border-left: 3px solid #555;
+    border-radius: 4px; padding: 4px 7px; flex-shrink: 0; font-size: 11px;
+  }
+  .cardhead { display: flex; align-items: center; gap: 6px; }
+  .chip { width: 9px; height: 9px; border-radius: 2px; background: #555; flex-shrink: 0; }
+  .pname { font-weight: 700; color: #fff; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+  .faction {
+    margin-left: auto; font-size: 9px; text-transform: uppercase; letter-spacing: .5px;
+    color: #999; border: 1px solid #333; border-radius: 3px; padding: 0 4px;
+  }
+  .pmodel { color: #777; font-size: 10px; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; }
+  .stat { display: flex; justify-content: space-between; gap: 6px; padding: 0; line-height: 1.35; }
+  .stat .k { color: #888; }
+  .stat .v { color: #ddd; }
+  .power-bad { color: #f55 !important; }
+
+  .badge {
+    display: inline-block; margin-top: 2px; font-size: 9px; font-weight: 700;
+    letter-spacing: .8px; border-radius: 3px; padding: 0 6px;
+  }
+  .b-alive { background: #143d14; color: #6f6; }
+  .b-won   { background: #4d3d00; color: #ffd75e; }
+  .b-lost  { background: #431111; color: #f77; }
+  .b-stale { background: #2c2c2c; color: #999; }
+
+  .summary {
+    margin-top: 2px; color: #888; font-style: italic; font-size: 10px;
+    display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical;
+    line-clamp: 1; overflow: hidden;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span id="mapTitle">orf</span>
+    <span id="clock" class="mono">--:--</span>
+    <span class="hdim">tick <span id="tick" class="mono">–</span></span>
+    <span class="hdim"><span id="alive">–</span> alive</span>
+    <span class="hdim mono" title="total LLM spend (provider-reported)">$<span id="totalCost">0.0000</span></span>
+    <span id="liveBadge"><span class="dot"></span><span id="liveText">LIVE</span></span>
+    <span id="runId" class="hdim mono"></span>
+  </header>
+  <div id="graphStrip">
+    <canvas id="pointsChart"></canvas>
+    <span id="graphTitle">game points (army + assets value)</span>
+    <div id="graphTip"></div>
+  </div>
+  <main>
+    <div class="col" id="colLeft"></div>
+    <div class="stage" id="stage">
+      <img src="stream" alt="live map view" id="streamImg" draggable="false"
+           onerror="this.style.display='none'" onload="this.style.display=''">
+      <div id="waiting">waiting for game…</div>
+      <div id="zoomHint">scroll to zoom · drag to pan · double-click to reset</div>
+    </div>
+    <div class="col" id="colRight"></div>
+  </main>
+</div>
+
+<div id="drawer">
+  <div id="drawerHead">
+    <span class="chip" id="drawerChip"></span>
+    <span id="drawerTitle"></span>
+    <span id="drawerModel" class="mono"></span>
+    <label><input type="checkbox" id="followLive" checked> follow live</label>
+    <button id="drawerClose" title="close">✕</button>
+  </div>
+  <div id="drawerPlan"></div>
+  <div id="turnList"></div>
+</div>
+
+<script>
+"use strict";
+
+// --- Zoom & pan on the live view -------------------------------------------
+// Pure client-side: transforms the streamed image, keeping the point under the
+// cursor fixed while zooming. Never upscales detail beyond the stream itself.
+(() => {
+  const stage = document.getElementById("stage");
+  const img = document.getElementById("streamImg");
+  let scale = 1, tx = 0, ty = 0;
+  let panning = false, lastX = 0, lastY = 0;
+
+  const apply = () => {
+    img.style.transform = scale === 1 && tx === 0 && ty === 0
+      ? "" : `translate(${tx}px, ${ty}px) scale(${scale})`;
+  };
+
+  const clamp = () => {
+    // Keep at least a sliver of the image on screen.
+    const r = img.getBoundingClientRect();
+    const s = stage.getBoundingClientRect();
+    if (r.right < s.left + 40) tx += s.left + 40 - r.right;
+    if (r.left > s.right - 40) tx -= r.left - (s.right - 40);
+    if (r.bottom < s.top + 40) ty += s.top + 40 - r.bottom;
+    if (r.top > s.bottom - 40) ty -= r.top - (s.bottom - 40);
+  };
+
+  stage.addEventListener("wheel", e => {
+    e.preventDefault();
+    const factor = Math.exp(-e.deltaY * 0.0015);
+    const next = Math.min(8, Math.max(1, scale * factor));
+    if (next === scale) { if (next === 1) { tx = ty = 0; apply(); } return; }
+
+    // Zoom toward the cursor: keep the image point under it stationary.
+    const rect = img.getBoundingClientRect();
+    const px = e.clientX - rect.left, py = e.clientY - rect.top;
+    tx += px - px * (next / scale);
+    ty += py - py * (next / scale);
+    scale = next;
+    if (scale === 1) tx = ty = 0;
+    clamp();
+    apply();
+  }, { passive: false });
+
+  stage.addEventListener("pointerdown", e => {
+    if (scale === 1) return;
+    panning = true; lastX = e.clientX; lastY = e.clientY;
+    stage.classList.add("panning");
+    stage.setPointerCapture(e.pointerId);
+  });
+  stage.addEventListener("pointermove", e => {
+    if (!panning) return;
+    tx += e.clientX - lastX; ty += e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    clamp();
+    apply();
+  });
+  const endPan = () => { panning = false; stage.classList.remove("panning"); };
+  stage.addEventListener("pointerup", endPan);
+  stage.addEventListener("pointercancel", endPan);
+  stage.addEventListener("dblclick", () => { scale = 1; tx = ty = 0; apply(); });
+})();
+
+// --- Agent history drawer ---------------------------------------------------
+// Click a player card to inspect every turn: exactly what the agent was sent,
+// what it replied, and what orders resulted. Polls for new turns while open.
+const drawer = {
+  el: document.getElementById("drawer"),
+  list: document.getElementById("turnList"),
+  slug: null,
+  timer: null,
+  known: new Set(),
+};
+
+function openHistory(p) {
+  drawer.slug = p.slug;
+  drawer.known.clear();
+  drawer.list.textContent = "";
+  document.getElementById("drawerTitle").textContent = p.display || p.slug;
+  document.getElementById("drawerModel").textContent = `${p.model} · ${p.provider}`;
+  const chip = document.getElementById("drawerChip");
+  const cardChip = cards.get(p.slug);
+  chip.style.background = cardChip ? cardChip.chip.style.background : "#666";
+  drawer.el.classList.add("open");
+  refreshTurns();
+  clearInterval(drawer.timer);
+  drawer.timer = setInterval(refreshTurns, 2000);
+}
+
+function renderDrawerPlan(st) {
+  const plan = document.getElementById("drawerPlan");
+  plan.textContent = "";
+  const hasGoals = st && Array.isArray(st.goals) && st.goals.length > 0;
+  const hasChk = st && Array.isArray(st.checklist) && st.checklist.length > 0;
+  plan.classList.toggle("filled", !!(hasGoals || hasChk));
+
+  if (hasGoals) {
+    el("div", "planhead", plan).textContent = "long-term goals";
+    for (const g of st.goals)
+      el("div", "goal", plan).textContent = "◎ " + g;
+  }
+
+  if (hasChk) {
+    el("div", "planhead", plan).textContent = "elimination checklist";
+    for (const i of st.checklist) {
+      const s = el("span", "chk" + (i.done ? " done" : ""), plan);
+      s.textContent = (i.done ? "☑" : "☐") + " [" + i.cell + "]";
+    }
+  }
+}
+
+function closeHistory() {
+  drawer.el.classList.remove("open");
+  drawer.slug = null;
+  clearInterval(drawer.timer);
+}
+
+document.getElementById("drawerClose").addEventListener("click", closeHistory);
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeHistory(); });
+
+async function refreshTurns() {
+  if (!drawer.slug) return;
+  let turns;
+  try {
+    turns = await (await fetch(`api/agents/${drawer.slug}/turns`)).json();
+  } catch { return; }
+
+  const follow = document.getElementById("followLive").checked;
+  let newest = null;
+  // Newest first from the API; insert unknown ones at the top, keeping order.
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const t = turns[i];
+    if (drawer.known.has(t.seq)) continue;
+    drawer.known.add(t.seq);
+    const item = makeTurnItem(t);
+    drawer.list.prepend(item);
+    newest = item;
+  }
+
+  if (newest && follow) {
+    // Auto-expand only the latest arrival and keep the view pinned to the top.
+    for (const openEl of drawer.list.querySelectorAll(".turn.open"))
+      openEl.classList.remove("open");
+    toggleTurn(newest, true);
+    drawer.list.scrollTop = 0;
+  }
+}
+
+function makeTurnItem(t) {
+  const item = el("div", "turn");
+  item.dataset.seq = t.seq;
+  const head = el("div", "turnHead", item);
+  el("span", "seq mono", head).textContent = "#" + t.seq.replace(/^0+/, "") || "0";
+  el("span", "meta mono", head).textContent = new Date(t.atUtc).toLocaleTimeString();
+  el("span", "gist", head);
+  el("div", "turnBody", item);
+  head.addEventListener("click", () => toggleTurn(item, !item.classList.contains("open")));
+  return item;
+}
+
+async function toggleTurn(item, open) {
+  item.classList.toggle("open", open);
+  if (!open || item.dataset.loaded) return;
+
+  const body = item.querySelector(".turnBody");
+  body.textContent = "loading…";
+  let d;
+  try {
+    d = await (await fetch(`api/agents/${drawer.slug}/turns/${item.dataset.seq}`)).json();
+  } catch {
+    body.textContent = "failed to load turn";
+    return;
+  }
+
+  item.dataset.loaded = "1";
+  body.textContent = "";
+
+  // Input: the newest user message from the request payload.
+  const messages = (d.request && d.request.messages) || [];
+  const lastUser = [...messages].reverse().find(m => m.role === "user");
+  if (lastUser) {
+    el("h4", null, body).textContent = "input to agent";
+    el("pre", null, body).textContent = typeof lastUser.content === "string"
+      ? lastUser.content : JSON.stringify(lastUser.content, null, 1);
+  }
+
+  const msg = d.response && d.response.choices && d.response.choices[0] && d.response.choices[0].message;
+  if (msg && msg.content) {
+    el("h4", null, body).textContent = "agent commentary";
+    el("pre", null, body).textContent = msg.content;
+    item.querySelector(".gist").textContent = msg.content.slice(0, 90);
+  }
+
+  if (d.orders) {
+    el("h4", null, body).textContent = "orders issued";
+    el("pre", null, body).textContent = JSON.stringify(d.orders, null, 1);
+    if (!msg || !msg.content) {
+      const os = (d.orders.orders || []).map(o => o.type).join(", ");
+      item.querySelector(".gist").textContent = os || "(pass)";
+    }
+  }
+
+  const usage = d.response && d.response.usage;
+  if (usage) {
+    const cost = typeof usage.estimated_cost === "number" ? ` · $${usage.estimated_cost.toFixed(5)}` : "";
+    el("div", "costline mono", body).textContent =
+      `tokens ${usage.prompt_tokens ?? "?"} in / ${usage.completion_tokens ?? "?"} out${cost}`;
+  }
+}
+
+// --- Game points graph -------------------------------------------------------
+// One line per player in their in-game color (color follows the entity — the
+// same mapping as the map view). Points = army value + assets value.
+const graph = { data: [], colors: {}, names: {} };
+
+(async () => {
+  try { graph.data = await (await fetch("api/history")).json(); } catch { }
+  drawGraph();
+})();
+
+function pushGamePoint(game, players) {
+  if (!game || !Array.isArray(game.players)) return;
+  for (const p of players) graph.names[p.slug] = p.display || p.slug;
+  for (const gp of game.players) if (gp.colorHex) graph.colors[gp.slug] = "#" + gp.colorHex;
+
+  const last = graph.data[graph.data.length - 1];
+  if (!last || last.second !== game.second) {
+    const points = {};
+    for (const gp of game.players) points[gp.slug] = (gp.armyValue || 0) + (gp.assetsValue || 0);
+    graph.data.push({ second: game.second, points });
+    if (graph.data.length > 7200) graph.data.shift();
+  }
+  drawGraph();
+}
+
+const fmtK = v => v >= 1000 ? (v / 1000).toFixed(v >= 10000 ? 0 : 1) + "k" : Math.round(v);
+
+function drawGraph() {
+  const cv = document.getElementById("pointsChart");
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (!w || graph.data.length < 2) return;
+  const dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const d = graph.data;
+  const padL = 8, padR = 130, padT = 16, padB = 6;
+  const xmax = Math.max(d[d.length - 1].second, 60);
+  let ymax = 100;
+  for (const r of d) for (const k in r.points) ymax = Math.max(ymax, r.points[k]);
+  ymax *= 1.08;
+  const X = s => padL + (w - padL - padR) * (s / xmax);
+  const Y = v => padT + (h - padT - padB) * (1 - v / ymax);
+
+  ctx.font = "9px system-ui, sans-serif";
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "#242428";
+  ctx.fillStyle = "#666";
+  for (let i = 1; i <= 3; i++) {
+    const v = ymax * i / 4, y = Y(v);
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+    ctx.fillText(fmtK(v), padL + 2, y - 2);
+  }
+
+  const slugs = Object.keys(graph.colors);
+  const ends = [];
+  for (const s of slugs) {
+    ctx.strokeStyle = graph.colors[s]; ctx.lineWidth = 2;
+    ctx.beginPath();
+    let started = false, lastV = 0;
+    for (const r of d) {
+      const v = r.points[s];
+      if (v == null) continue;
+      lastV = v;
+      const x = X(r.second), y = Y(v);
+      if (started) ctx.lineTo(x, y); else { ctx.moveTo(x, y); started = true; }
+    }
+    ctx.stroke();
+    if (started) ends.push({ s, v: lastV, y: Y(lastV) });
+  }
+
+  // Direct labels at line ends, nudged apart on collision; ink text + color chip.
+  ends.sort((a, b) => a.y - b.y);
+  let prev = -99;
+  for (const e of ends) { e.ly = Math.min(Math.max(e.y, prev + 11, padT), h - 6); prev = e.ly; }
+  for (const e of ends) {
+    ctx.fillStyle = graph.colors[e.s];
+    ctx.fillRect(w - padR + 6, e.ly - 4, 7, 7);
+    ctx.fillStyle = "#aaa";
+    ctx.fillText(`${graph.names[e.s] || e.s} ${fmtK(e.v)}`, w - padR + 17, e.ly + 3);
+  }
+}
+
+(() => {
+  const cv = document.getElementById("pointsChart");
+  const tip = document.getElementById("graphTip");
+  cv.addEventListener("mousemove", e => {
+    const d = graph.data;
+    if (d.length < 2) return;
+    const rect = cv.getBoundingClientRect();
+    const w = rect.width, padL = 8, padR = 130;
+    const xmax = Math.max(d[d.length - 1].second, 60);
+    const sec = (e.clientX - rect.left - padL) / (w - padL - padR) * xmax;
+    let row = d[0];
+    for (const r of d) { if (r.second <= sec) row = r; else break; }
+    const entries = Object.entries(row.points)
+      .sort((a, b) => b[1] - a[1]);
+    tip.innerHTML = `<div style="color:#777">${fmtClock(row.second)}</div>` + entries.map(([s, v]) =>
+      `<div class="row"><span class="dot" style="background:${graph.colors[s] || "#666"}"></span>${graph.names[s] || s}: ${fmtK(v)}</div>`).join("");
+    tip.style.display = "block";
+    tip.style.left = Math.min(e.clientX - rect.left + 12, w - 150) + "px";
+    tip.style.top = "8px";
+  });
+  cv.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+  window.addEventListener("resize", drawGraph);
+})();
+
+const cards = new Map(); // slug -> element refs
+
+function el(tag, cls, parent) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+function makeCard(p, parent) {
+  const card = el("div", "card", parent);
+  const head = el("div", "cardhead", card);
+  const chip = el("span", "chip", head);
+  const name = el("span", "pname", head);
+  name.textContent = p.display || p.slug;
+  const faction = el("span", "faction", head);
+  faction.textContent = p.faction || "";
+  const model = el("div", "pmodel", card);
+  model.textContent = `${p.model} · ${p.provider}`;
+
+  card.classList.add("clickable");
+  card.title = "click for full agent history";
+  card.addEventListener("click", () => openHistory(p));
+
+  const stats = {};
+  for (const [key, label] of [["cash","Cash"],["power","Power"],["army","Army value"],["units","Units"],["buildings","Buildings"],["targets","Targets cleared"],["cost","LLM cost"]]) {
+    const row = el("div", "stat", card);
+    el("span", "k", row).textContent = label;
+    stats[key] = el("span", "v mono", row);
+    stats[key].textContent = "–";
+  }
+
+  const badge = el("span", "badge b-stale", card);
+  badge.textContent = "WAITING";
+  const summary = el("div", "summary", card);
+  const goals = el("div", "goals", card);
+
+  cards.set(p.slug, { card, chip, faction, badge, summary, goals, stats });
+}
+
+function fmtClock(sec) {
+  if (sec == null) return "--:--";
+  const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function render(data) {
+  const game = data.game;
+  const players = data.players || [];
+
+  // Build cards once, in spec order: 0..3 left, 4..7 right.
+  if (cards.size === 0 && players.length > 0) {
+    const left = document.getElementById("colLeft");
+    const right = document.getElementById("colRight");
+    const half = Math.ceil(players.length / 2);
+    players.forEach((p, i) => makeCard(p, i < half ? left : right));
+  }
+
+  document.getElementById("runId").textContent = data.runId || "";
+
+  let totalCost = 0;
+  for (const p of players)
+    if (p.status && typeof p.status.totalCostUsd === "number") totalCost += p.status.totalCostUsd;
+  document.getElementById("totalCost").textContent = totalCost.toFixed(4);
+
+  pushGamePoint(game, players);
+
+  const gamePlayers = new Map();
+  if (game && Array.isArray(game.players))
+    for (const gp of game.players) gamePlayers.set(gp.slug, gp);
+
+  // Header
+  const waiting = document.getElementById("waiting");
+  if (game) {
+    waiting.style.display = "none";
+    document.getElementById("mapTitle").textContent = (game.map && game.map.title) || "…";
+    document.getElementById("clock").textContent = fmtClock(game.second);
+    document.getElementById("tick").textContent = game.tick ?? "–";
+    const total = gamePlayers.size || players.length;
+    const alive = [...gamePlayers.values()].filter(p => p.winState !== "Lost").length;
+    document.getElementById("alive").textContent = `${alive}/${total}`;
+  } else {
+    waiting.style.display = "flex";
+    document.getElementById("mapTitle").textContent = "orf";
+    document.getElementById("clock").textContent = "--:--";
+  }
+
+  const liveBadge = document.getElementById("liveBadge");
+  const liveText = document.getElementById("liveText");
+  if (data.finished) {
+    liveBadge.classList.add("finished");
+    const winners = (data.finished.players || [])
+      .filter(p => p.winState === "Won")
+      .map(p => (players.find(sp => sp.slug === p.slug) || {}).display || p.slug);
+    liveText.textContent = "FINISHED" + (winners.length ? " — " + winners.join(", ") + " wins" : "");
+  } else {
+    liveBadge.classList.remove("finished");
+    liveText.textContent = "LIVE";
+  }
+
+  // Player cards
+  const now = Date.now();
+  for (const p of players) {
+    const c = cards.get(p.slug);
+    if (!c) continue;
+    const gp = gamePlayers.get(p.slug);
+    const st = p.status;
+
+    if (gp && gp.colorHex) {
+      c.chip.style.background = "#" + gp.colorHex;
+      c.card.style.borderLeftColor = "#" + gp.colorHex;
+    }
+    c.faction.textContent = (gp && gp.faction) || p.faction || "";
+
+    if (gp) {
+      c.stats.cash.textContent = "$" + (gp.cash ?? 0).toLocaleString();
+      c.stats.power.textContent = `${gp.powerProvided ?? 0}/${gp.powerDrained ?? 0}`;
+      c.stats.power.classList.toggle("power-bad", (gp.powerDrained ?? 0) > (gp.powerProvided ?? 0));
+      c.stats.army.textContent = (gp.armyValue ?? 0).toLocaleString();
+      c.stats.units.textContent = `${gp.unitCount ?? 0}  (K/D ${gp.unitsKilled ?? 0}/${gp.unitsLost ?? 0})`;
+      c.stats.buildings.textContent = gp.buildingCount ?? 0;
+    }
+
+    if (st && typeof st.totalCostUsd === "number")
+      c.stats.cost.textContent = "$" + st.totalCostUsd.toFixed(4);
+
+    if (st && Array.isArray(st.checklist) && st.checklist.length > 0) {
+      const done = st.checklist.filter(i => i.done).length;
+      c.stats.targets.textContent = `${done}/${st.checklist.length}`;
+    }
+
+    c.goals.textContent = (st && Array.isArray(st.goals) && st.goals.length > 0)
+      ? "◎ " + st.goals.join(" · ")
+      : "";
+
+    if (drawer.slug === p.slug)
+      renderDrawerPlan(st);
+
+    let cls = "b-stale", label = "WAITING";
+    if (gp && gp.winState === "Won") { cls = "b-won"; label = "WON"; }
+    else if (gp && gp.winState === "Lost") { cls = "b-lost"; label = "LOST"; }
+    else if (st && st.lastTurnAtUtc) {
+      const age = now - Date.parse(st.lastTurnAtUtc);
+      if (age > 60000) { cls = "b-stale"; label = "STALE"; }
+      else { cls = "b-alive"; label = "ALIVE"; }
+    } else if (gp) {
+      cls = "b-alive"; label = "ALIVE";
+    }
+    c.badge.className = "badge " + cls;
+    c.badge.textContent = label;
+
+    c.summary.textContent = (st && st.summaryLine) || "";
+  }
+}
+
+const es = new EventSource("api/live");
+es.onmessage = e => {
+  try { render(JSON.parse(e.data)); } catch (err) { console.error(err); }
+};
+</script>
+</body>
+</html>

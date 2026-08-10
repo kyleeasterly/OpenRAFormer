@@ -10,6 +10,11 @@ public sealed class MatchRunner(Spec spec, string specPath)
 
 	Process? gameProcess;
 	Process? ffmpegProcess;
+	Process? xvfbProcess;
+	string? displayLockPath;
+	int display;
+
+	string DisplayStr => $":{display}";
 
 	public async Task<int> RunAsync(int? portOverride, bool noGame, bool noWeb, CancellationToken ct)
 	{
@@ -18,10 +23,31 @@ public sealed class MatchRunner(Spec spec, string specPath)
 		var runDir = Path.Combine(repoRoot, "runs", runId);
 		var runStartUtc = DateTime.UtcNow;
 
-		CreateRunDir(runDir, runId);
-		Util.Log("orf", $"run dir: {runDir}");
+		// The spec's display/port are starting points, not reservations: probe upward
+		// until something is free so parallel matches never need per-spec editing.
+		if (!noGame && !AcquireAnyDisplayLock())
+			return 1;
 
-		var webApp = noWeb ? null : await WebServer.StartAsync(spec, runDir, runId, portOverride ?? spec.Web.Port);
+		WebApplication? webApp = null;
+		var port = portOverride ?? spec.Web.Port;
+		if (!noWeb)
+		{
+			for (var attempt = 0; ; attempt++, port++)
+			{
+				try
+				{
+					webApp = await WebServer.StartAsync(spec, runDir, runId, port);
+					break;
+				}
+				catch (IOException) when (attempt < 15)
+				{
+					Util.Log("orf", $"port {port} is busy, trying {port + 1}");
+				}
+			}
+		}
+
+		CreateRunDir(runDir, runId, noGame ? null : display, noWeb ? null : port);
+		Util.Log("orf", $"run dir: {runDir}");
 
 		var logStdout = Task.CompletedTask;
 		var logStderr = Task.CompletedTask;
@@ -40,10 +66,17 @@ public sealed class MatchRunner(Spec spec, string specPath)
 			}
 
 			// Agents start once the engine begins exporting state.
+			var stopPath = Path.Combine(runDir, "stop");
 			var gameJson = Path.Combine(runDir, "state", "game.json");
 			while (!File.Exists(gameJson))
 			{
 				ct.ThrowIfCancellationRequested();
+				if (File.Exists(stopPath))
+				{
+					Util.Log("orf", "stop file detected, shutting down");
+					return 0;
+				}
+
 				if (gameProcess != null && gameProcess.HasExited)
 				{
 					Util.Log("orf", $"game process exited (code {gameProcess.ExitCode}) before writing state/game.json — see {runDir}/engine.err");
@@ -61,11 +94,17 @@ public sealed class MatchRunner(Spec spec, string specPath)
 				.Select((p, i) => new AgentLoop(runDir, spec, p, i, specDir).RunAsync(agentCts.Token))
 				.ToList();
 
-			// Wait for game over (result.json) or game process exit.
+			// Wait for game over (result.json), a stop request, or game process exit.
 			var resultPath = Path.Combine(runDir, "result.json");
 			while (!File.Exists(resultPath))
 			{
 				ct.ThrowIfCancellationRequested();
+				if (File.Exists(stopPath))
+				{
+					Util.Log("orf", "stop file detected, ending match");
+					break;
+				}
+
 				if (gameProcess != null && gameProcess.HasExited)
 				{
 					Util.Log("orf", $"game process exited (code {gameProcess.ExitCode})");
@@ -97,7 +136,7 @@ public sealed class MatchRunner(Spec spec, string specPath)
 		}
 	}
 
-	void CreateRunDir(string runDir, string runId)
+	void CreateRunDir(string runDir, string runId, int? allocatedDisplay, int? allocatedPort)
 	{
 		Directory.CreateDirectory(Path.Combine(runDir, "state"));
 		foreach (var p in spec.Players)
@@ -125,38 +164,146 @@ public sealed class MatchRunner(Spec spec, string specPath)
 			["map"] = spec.Map,
 			["stateIntervalTicks"] = 25,
 			["options"] = new JsonObject { ["gamespeed"] = "default" },
+			["display"] = allocatedDisplay,
+			["webPort"] = allocatedPort,
 			["players"] = players,
 		};
 
 		Util.WriteAtomic(Path.Combine(runDir, "match.json"), match.ToJsonString(Util.Indented));
 	}
 
-	static void EnsureXvfb(Spec spec)
+	/// <summary>
+	/// Per-run engine support dir so parallel game processes don't fight over
+	/// ~/.config/openra (Logs, Replays, settings). Game content is shared read-only
+	/// via symlink; replays land under the run itself.
+	/// </summary>
+	static string CreateSupportDir(string runDir)
 	{
-		var socket = $"/tmp/.X11-unix/X{spec.DisplayNumber}";
+		var supportDir = Path.Combine(runDir, "support");
+		Directory.CreateDirectory(supportDir);
+
+		var sharedContent = Path.Combine(
+			Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", "openra", "Content");
+		var contentLink = Path.Combine(supportDir, "Content");
+		if (Directory.Exists(sharedContent) && !Directory.Exists(contentLink) && !File.Exists(contentLink))
+			File.CreateSymbolicLink(contentLink, sharedContent);
+
+		return supportDir;
+	}
+
+	void EnsureXvfb(Spec spec)
+	{
+		// We hold the display lock, so anything already on this display is debris
+		// from a dead run — sweep it and start fresh.
+		var socket = $"/tmp/.X11-unix/X{display}";
 		if (File.Exists(socket))
 		{
-			Util.Log("orf", $"Xvfb already running on {spec.Display}");
-			return;
+			Util.Log("orf", $"stale X server artifacts on {DisplayStr}, sweeping");
+			SweepDisplay(display);
+			for (var i = 0; i < 20 && File.Exists(socket); i++)
+				Thread.Sleep(250);
 		}
 
-		Util.Log("orf", $"starting Xvfb on {spec.Display}");
+		Util.Log("orf", $"starting Xvfb on {DisplayStr}");
 		var psi = new ProcessStartInfo("Xvfb")
 		{
 			UseShellExecute = false,
 		};
-		psi.ArgumentList.Add(spec.Display);
+		psi.ArgumentList.Add(DisplayStr);
 		psi.ArgumentList.Add("-screen");
 		psi.ArgumentList.Add("0");
 		psi.ArgumentList.Add($"{spec.Width}x{spec.Height}x24");
 		psi.ArgumentList.Add("-nolisten");
 		psi.ArgumentList.Add("tcp");
 
-		Process.Start(psi); // intentionally left running after the match
+		xvfbProcess = Process.Start(psi);
 
 		// Give the server a moment to create the socket.
 		for (var i = 0; i < 20 && !File.Exists(socket); i++)
 			Thread.Sleep(250);
+	}
+
+	/// <summary>
+	/// One orf per X display. The lock file holds the owner's PID; a lock whose owner
+	/// is dead means the previous run crashed or was killed — take over and sweep.
+	/// Probes upward from the spec's display so parallel launches self-allocate.
+	/// </summary>
+	bool AcquireAnyDisplayLock()
+	{
+		for (var candidate = spec.DisplayNumber; candidate < spec.DisplayNumber + 16; candidate++)
+		{
+			var lockPath = $"/tmp/orf-display-{candidate}.lock";
+			if (File.Exists(lockPath)
+				&& int.TryParse(File.ReadAllText(lockPath).Trim(), out var ownerPid)
+				&& IsAlive(ownerPid))
+			{
+				Util.Log("orf", $"display :{candidate} is in use by orf pid {ownerPid}, trying :{candidate + 1}");
+				continue;
+			}
+
+			File.WriteAllText(lockPath, Environment.ProcessId.ToString());
+			displayLockPath = lockPath;
+			display = candidate;
+			return true;
+		}
+
+		Util.Log("orf", $"no free display in :{spec.DisplayNumber}..:{spec.DisplayNumber + 15}");
+		return false;
+	}
+
+	static bool IsAlive(int pid)
+	{
+		try
+		{
+			return !Process.GetProcessById(pid).HasExited;
+		}
+		catch
+		{
+			return false;
+		}
+	}
+
+	/// <summary>
+	/// Kill leftover match processes bound to our display: the Xvfb serving it, any
+	/// ffmpeg grabbing it, and any game process whose DISPLAY env points at it.
+	/// Only touches processes we can read (same user).
+	/// </summary>
+	static void SweepDisplay(int display)
+	{
+		foreach (var procDir in Directory.GetDirectories("/proc"))
+		{
+			if (!int.TryParse(Path.GetFileName(procDir), out var pid) || pid == Environment.ProcessId)
+				continue;
+
+			string cmdline, environ;
+			try
+			{
+				cmdline = File.ReadAllText(Path.Combine(procDir, "cmdline")).Replace('\0', ' ');
+				environ = File.ReadAllText(Path.Combine(procDir, "environ")).Replace('\0', '\n');
+			}
+			catch
+			{
+				continue; // gone, or another user's process
+			}
+
+			var isOurXvfb = cmdline.StartsWith("Xvfb ", StringComparison.Ordinal) && cmdline.Contains($" :{display} ");
+			var isOurFfmpeg = cmdline.Contains("x11grab") && cmdline.Contains($"-i :{display} ");
+			var isOurGame = cmdline.Contains("bin/OpenRA.dll") && environ.Contains($"\nDISPLAY=:{display}\n");
+			if (!isOurXvfb && !isOurFfmpeg && !isOurGame)
+				continue;
+
+			Util.Log("orf", $"sweeping stale process {pid}: {cmdline[..Math.Min(80, cmdline.Length)]}");
+			try
+			{
+				var p = Process.GetProcessById(pid);
+				p.Kill();
+				if (!p.WaitForExit(3000))
+					Util.Log("orf", $"pid {pid} did not exit after kill");
+			}
+			catch
+			{
+			}
+		}
 	}
 
 	(Process Game, Task LogOut, Task LogErr) SpawnGame(string repoRoot, string runDir, Spec spec)
@@ -171,12 +318,13 @@ public sealed class MatchRunner(Spec spec, string specPath)
 		};
 		psi.ArgumentList.Add("bin/OpenRA.dll");
 		psi.ArgumentList.Add("Engine.EngineDir=..");
+		psi.ArgumentList.Add($"Engine.SupportDir={CreateSupportDir(runDir)}");
 		psi.ArgumentList.Add("Game.Mod=cnc");
 		psi.ArgumentList.Add("Graphics.Mode=Windowed");
 		psi.ArgumentList.Add($"Graphics.WindowedSize={spec.Width},{spec.Height}");
 
 		psi.Environment["ORF_RUN_DIR"] = runDir;
-		psi.Environment["DISPLAY"] = spec.Display;
+		psi.Environment["DISPLAY"] = DisplayStr;
 		psi.Environment["LIBGL_ALWAYS_SOFTWARE"] = "1";
 		psi.Environment["GALLIUM_DRIVER"] = "llvmpipe";
 
@@ -199,7 +347,7 @@ public sealed class MatchRunner(Spec spec, string specPath)
 		}
 	}
 
-	static Process SpawnFfmpeg(string runDir, Spec spec)
+	Process SpawnFfmpeg(string runDir, Spec spec)
 	{
 		Util.Log("orf", "starting ffmpeg x11grab");
 		var psi = new ProcessStartInfo("ffmpeg")
@@ -214,7 +362,7 @@ public sealed class MatchRunner(Spec spec, string specPath)
 			"-f", "x11grab",
 			"-video_size", $"{spec.Width}x{spec.Height}",
 			"-framerate", spec.Stream.Fps.ToString(),
-			"-i", spec.Display,
+			"-i", DisplayStr,
 			"-vf", $"scale={spec.Stream.Scale}:-1",
 			"-q:v", spec.Stream.Quality.ToString(),
 			"-update", "1",
@@ -246,7 +394,11 @@ public sealed class MatchRunner(Spec spec, string specPath)
 	{
 		try
 		{
-			var replaysDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", "openra", "Replays");
+			// Replays land in the per-run support dir now; fall back to the shared
+			// location for runs that predate it.
+			var replaysDir = Path.Combine(runDir, "support", "Replays");
+			if (!Directory.Exists(replaysDir))
+				replaysDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", "openra", "Replays");
 			if (!Directory.Exists(replaysDir))
 				return;
 
@@ -286,7 +438,7 @@ public sealed class MatchRunner(Spec spec, string specPath)
 
 	void KillChildren()
 	{
-		foreach (var p in new[] { ffmpegProcess, gameProcess })
+		foreach (var p in new[] { ffmpegProcess, gameProcess, xvfbProcess })
 		{
 			try
 			{
@@ -296,6 +448,15 @@ public sealed class MatchRunner(Spec spec, string specPath)
 			catch
 			{
 			}
+		}
+
+		try
+		{
+			if (displayLockPath != null)
+				File.Delete(displayLockPath);
+		}
+		catch
+		{
 		}
 	}
 }

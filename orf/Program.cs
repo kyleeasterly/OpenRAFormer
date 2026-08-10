@@ -13,6 +13,15 @@ const string Usage =
 	  orf agent-turn --spec <path> --slug <slug> --state <fixture.json> --outdir <dir>
 	      Execute exactly one agent turn offline against a state fixture. Writes the
 	      inbox order file and turn artifacts under <dir>.
+
+	  orf stop [runId]
+	      Request a clean shutdown of a running match by writing runs/<id>/stop.
+	      Without runId, targets the newest run that has not finished.
+
+	  orf hub [--port N]
+	      Landing page over all runs on one fixed port (default 5100). Lists live and
+	      finished matches and proxies each run's dashboard under /r/<runId>/, so a
+	      single tunnel reaches everything. Only the open dashboard streams video.
 	""";
 
 if (args.Length == 0)
@@ -29,6 +38,10 @@ try
 			return await RunCommand(args[1..]);
 		case "agent-turn":
 			return await AgentTurnCommand(args[1..]);
+		case "stop":
+			return StopCommand(args[1..]);
+		case "hub":
+			return await HubCommand(args[1..]);
 		case "-h" or "--help" or "help":
 			Console.WriteLine(Usage);
 			return 0;
@@ -86,6 +99,22 @@ static async Task<int> RunCommand(string[] args)
 		cts.Cancel();
 	};
 
+	// `dotnet run` swallows console SIGINT, and a plain `kill` (SIGTERM) would skip
+	// every finally block — either way children leak. Catch both and cancel instead.
+	using var sigterm = System.Runtime.InteropServices.PosixSignalRegistration.Create(
+		System.Runtime.InteropServices.PosixSignal.SIGTERM, ctx =>
+		{
+			ctx.Cancel = true;
+			Util.Log("orf", "SIGTERM received");
+			cts.Cancel();
+		});
+	using var sigint = System.Runtime.InteropServices.PosixSignalRegistration.Create(
+		System.Runtime.InteropServices.PosixSignal.SIGINT, ctx =>
+		{
+			ctx.Cancel = true;
+			cts.Cancel();
+		});
+
 	return await new MatchRunner(spec, specPath).RunAsync(port, noGame, noWeb, cts.Token);
 }
 
@@ -136,6 +165,50 @@ static async Task<int> AgentTurnCommand(string[] args)
 	await loop.TakeTurnAsync(state, [], CancellationToken.None);
 
 	Util.Log("orf", $"agent-turn complete; artifacts under {outDir}");
+	return 0;
+}
+
+static async Task<int> HubCommand(string[] args)
+{
+	var port = 5100;
+	for (var i = 0; i < args.Length; i++)
+	{
+		if (args[i] == "--port")
+			port = int.Parse(Expect(args, ref i, "--port"));
+		else
+			throw new ArgumentException($"Unknown option '{args[i]}' for 'hub'");
+	}
+
+	using var cts = new CancellationTokenSource();
+	Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+	using var sigterm = System.Runtime.InteropServices.PosixSignalRegistration.Create(
+		System.Runtime.InteropServices.PosixSignal.SIGTERM, ctx => { ctx.Cancel = true; cts.Cancel(); });
+
+	return await Hub.RunAsync(port, cts.Token);
+}
+
+static int StopCommand(string[] args)
+{
+	var runsDir = Path.Combine(Util.FindRepoRoot(), "runs");
+	string? runDir = null;
+
+	if (args.Length > 0)
+	{
+		runDir = Path.Combine(runsDir, args[0]);
+		if (!Directory.Exists(runDir))
+			throw new ArgumentException($"No run dir '{runDir}'");
+	}
+	else
+	{
+		runDir = Directory.GetDirectories(runsDir)
+			.Where(d => !File.Exists(Path.Combine(d, "result.json")))
+			.OrderByDescending(Path.GetFileName)
+			.FirstOrDefault()
+			?? throw new ArgumentException("No unfinished run found to stop");
+	}
+
+	File.WriteAllText(Path.Combine(runDir, "stop"), $"requested {DateTime.UtcNow:o}\n");
+	Util.Log("orf", $"stop requested for {Path.GetFileName(runDir)} (takes effect within ~1s if that match is live)");
 	return 0;
 }
 
