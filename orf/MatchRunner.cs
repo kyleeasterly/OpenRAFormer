@@ -11,6 +11,9 @@ public sealed class MatchRunner(Spec spec, string specPath)
 	Process? gameProcess;
 	Process? ffmpegProcess;
 	Process? xvfbProcess;
+	Process? audioFfmpegProcess;
+	Task? audioPumpTask;
+	string? alsoftConfPath;
 	string? displayLockPath;
 	int display;
 
@@ -57,6 +60,13 @@ public sealed class MatchRunner(Spec spec, string specPath)
 			if (!noGame)
 			{
 				EnsureXvfb(spec);
+
+				// Audio: game renders sound via openal-soft's wave backend into a FIFO;
+				// ffmpeg (the reader) must be listening before the game opens the write
+				// end. Both block on open until the pair meet — that's fine.
+				PrepareAudioFifo(runDir);
+				audioFfmpegProcess = SpawnAudioFfmpeg(runDir);
+
 				(gameProcess, logStdout, logStderr) = SpawnGame(repoRoot, runDir, spec);
 				ffmpegProcess = SpawnFfmpeg(runDir, spec);
 			}
@@ -116,6 +126,20 @@ public sealed class MatchRunner(Spec spec, string specPath)
 
 			agentCts.Cancel();
 			await Task.WhenAll(agentTasks).WaitAsync(TimeSpan.FromSeconds(15), CancellationToken.None).ContinueWith(_ => { });
+
+			// The engine exits itself ~10s after game over (end screen grace); wait
+			// for that so the replay is finalized and unlocked before archiving.
+			// ffmpeg keeps rolling through the grace so the stream shows the ending.
+			if (gameProcess != null && !gameProcess.HasExited)
+			{
+				Util.Log("orf", "waiting for engine to exit and finalize the replay…");
+				await Task.WhenAny(gameProcess.WaitForExitAsync(CancellationToken.None), Task.Delay(TimeSpan.FromSeconds(25)));
+				if (!gameProcess.HasExited)
+				{
+					Util.Log("orf", "engine still running after grace period, killing it");
+					try { gameProcess.Kill(entireProcessTree: true); } catch { }
+				}
+			}
 
 			StopFfmpeg();
 			CopyReplay(runDir, runStartUtc);
@@ -328,6 +352,13 @@ public sealed class MatchRunner(Spec spec, string specPath)
 		psi.Environment["LIBGL_ALWAYS_SOFTWARE"] = "1";
 		psi.Environment["GALLIUM_DRIVER"] = "llvmpipe";
 
+		if (alsoftConfPath != null)
+		{
+			// Route openal-soft to the wave-writer backend (no sound server needed).
+			psi.Environment["ALSOFT_CONF"] = alsoftConfPath;
+			psi.ArgumentList.Add("Sound.MusicVolume=0");
+		}
+
 		var process = Process.Start(psi) ?? throw new InvalidOperationException("Failed to start game process");
 		var logOut = PumpAsync(process.StandardOutput.BaseStream, Path.Combine(runDir, "engine.log"));
 		var logErr = PumpAsync(process.StandardError.BaseStream, Path.Combine(runDir, "engine.err"));
@@ -345,6 +376,73 @@ public sealed class MatchRunner(Spec spec, string specPath)
 		{
 			// process torn down
 		}
+	}
+
+	/// <summary>Creates the audio FIFO and the alsoft.conf pointing openal-soft's wave backend at it.</summary>
+	void PrepareAudioFifo(string runDir)
+	{
+		try
+		{
+			var fifo = Path.Combine(runDir, "audio.fifo");
+			if (File.Exists(fifo))
+				File.Delete(fifo);
+
+			var mkfifo = Process.Start(new ProcessStartInfo("mkfifo", fifo) { UseShellExecute = false });
+			mkfifo?.WaitForExit(5000);
+			if (mkfifo == null || mkfifo.ExitCode != 0)
+			{
+				Util.Log("orf", "mkfifo failed — running without game audio");
+				return;
+			}
+
+			alsoftConfPath = Path.Combine(runDir, "alsoft.conf");
+			File.WriteAllText(alsoftConfPath, $"[general]\ndrivers = wave\nfrequency = 44100\n\n[wave]\nfile = {fifo}\n");
+		}
+		catch (Exception ex)
+		{
+			Util.Log("orf", $"audio fifo setup failed ({ex.Message}) — running without game audio");
+			alsoftConfPath = null;
+		}
+	}
+
+	/// <summary>Reads raw WAV from the FIFO, encodes to MP3, and feeds the dashboard broadcaster.</summary>
+	Process? SpawnAudioFfmpeg(string runDir)
+	{
+		if (alsoftConfPath == null)
+			return null;
+
+		Util.Log("orf", "starting audio encoder (fifo → mp3 broadcast)");
+		var psi = new ProcessStartInfo("ffmpeg")
+		{
+			UseShellExecute = false,
+			RedirectStandardOutput = true,
+			RedirectStandardError = false,
+		};
+
+		foreach (var arg in new[]
+		{
+			"-hide_banner", "-loglevel", "error",
+			"-f", "wav", "-i", Path.Combine(runDir, "audio.fifo"),
+
+			// God-view listener sits mid-map, so distant combat mixes quiet;
+			// adaptive normalization brings it up without clipping close fights.
+			"-af", "dynaudnorm",
+			"-c:a", "libmp3lame", "-b:a", "128k",
+			"-f", "mp3", "-",
+		})
+			psi.ArgumentList.Add(arg);
+
+		var process = Process.Start(psi);
+		if (process == null)
+		{
+			Util.Log("orf", "audio ffmpeg failed to start — running without game audio");
+			return null;
+		}
+
+		var broadcaster = new AudioBroadcaster();
+		AudioBroadcaster.Instance = broadcaster;
+		audioPumpTask = broadcaster.PumpAsync(process.StandardOutput.BaseStream, CancellationToken.None);
+		return process;
 	}
 
 	Process SpawnFfmpeg(string runDir, Spec spec)
@@ -438,7 +536,7 @@ public sealed class MatchRunner(Spec spec, string specPath)
 
 	void KillChildren()
 	{
-		foreach (var p in new[] { ffmpegProcess, gameProcess, xvfbProcess })
+		foreach (var p in new[] { ffmpegProcess, audioFfmpegProcess, gameProcess, xvfbProcess })
 		{
 			try
 			{
@@ -449,6 +547,8 @@ public sealed class MatchRunner(Spec spec, string specPath)
 			{
 			}
 		}
+
+		AudioBroadcaster.Instance = null;
 
 		try
 		{

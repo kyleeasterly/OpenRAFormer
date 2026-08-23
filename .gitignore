@@ -60,3 +60,4 @@ runs/
 
 # Track our dashboard HTML despite the upstream *.html ignore above
 !orf/wwwroot/*.html
+orf/specs/*.uploaded.yaml

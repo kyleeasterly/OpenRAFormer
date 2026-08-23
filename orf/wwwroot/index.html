@@ -33,6 +33,13 @@
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
   #liveBadge.finished { color: #ffd75e; }
   #liveBadge.finished .dot { background: #ffd75e; animation: none; }
+  #audioBtn {
+    background: #222; color: #ccc; border: 1px solid #333; border-radius: 4px;
+    font-size: 13px; padding: 1px 8px; cursor: pointer;
+  }
+  #audioBtn.on { background: #143d14; border-color: #2a5; }
+  #audioBtn.unavailable { opacity: .4; cursor: default; }
+  #audioBtn.pending { background: #4a3505; border-color: #ffce54; animation: pulse 1.2s infinite; }
 
   main {
     display: grid; grid-template-columns: 300px 1fr 300px;
@@ -141,6 +148,17 @@
     color: #999; border: 1px solid #333; border-radius: 3px; padding: 0 4px;
   }
   .pmodel { color: #777; font-size: 10px; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; }
+  /* Cadence line: live request/response timing so viewers can read each agent's tempo. */
+  .cadence { display: flex; align-items: center; gap: 6px; font-size: 10px; margin-bottom: 2px; min-height: 14px; }
+  .cadpill { border-radius: 8px; padding: 0 6px; background: #262626; color: #888; white-space: nowrap; }
+  .cadpill.thinking { background: #4a3505; color: #ffce54; }
+  .cadpill.errstate { background: #4a1414; color: #ff8f8f; }
+  .cadavg { color: #777; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .modlane .mlabel {
+    color: #7a9a7a; font-size: 9px; text-transform: uppercase; letter-spacing: .5px;
+    border: 1px solid #2c3a2c; border-radius: 3px; padding: 0 4px; white-space: nowrap;
+  }
+  .modlane .cadpill.thinking { background: #143d3d; color: #6fd7d7; }
   .statgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 8px; margin: 3px 0; }
   .tile { min-width: 0; }
   .tile .k {
@@ -191,7 +209,10 @@
     <span class="hdim">tick <span id="tick" class="mono">–</span></span>
     <span class="hdim"><span id="alive">–</span> alive</span>
     <span class="hdim mono" title="total LLM spend (provider-reported)">$<span id="totalCost">0.0000</span></span>
+    <span class="hdim mono" title="this match's LLM throughput, rolling 60s window (drivers + advisor modules)"><span id="tokRate">–</span> tok/s · <span id="tokMin">–</span> tok/min · <span id="reqMin">–</span> req/min</span>
     <span id="liveBadge"><span class="dot"></span><span id="liveText">LIVE</span></span>
+    <a id="hubLink" href="../../" style="display:none" title="all matches">⌂ matches</a>
+    <button id="audioBtn" title="game sound (combat ambience)">🔇</button>
     <span id="runId" class="hdim mono"></span>
   </header>
   <div id="graphStrip">
@@ -427,9 +448,10 @@ async function toggleTurn(item, open) {
   }
 
   const msg = d.response && d.response.choices && d.response.choices[0] && d.response.choices[0].message;
-  if (msg && msg.reasoning_content) {
+  const reasoningText = msg && (msg.reasoning_content || msg.reasoning); // DeepInfra vs Nous/OpenRouter field names
+  if (reasoningText) {
     el("h4", null, body).textContent = "agent reasoning";
-    el("pre", null, body).textContent = msg.reasoning_content;
+    el("pre", null, body).textContent = reasoningText;
   }
   if (msg && msg.content) {
     el("h4", null, body).textContent = "agent commentary";
@@ -441,7 +463,7 @@ async function toggleTurn(item, open) {
       .map(tc => `${tc.function?.name ?? "?"} ${prettyArgs(tc.function?.arguments)}`)
       .join("\n\n");
   }
-  const gistText = (msg && msg.content) || (msg && msg.reasoning_content) || "";
+  const gistText = (msg && msg.content) || reasoningText || "";
   if (gistText)
     item.querySelector(".gist").textContent = gistText.slice(0, 90);
 
@@ -468,7 +490,15 @@ async function toggleTurn(item, open) {
 const graph = { data: [], colors: {}, names: {} };
 
 (async () => {
-  try { graph.data = await (await fetch("api/history")).json(); } catch { }
+  try {
+    const text = await (await fetch("api/history")).text();
+    try { graph.data = JSON.parse(text); }
+    catch {
+      // Salvage runs recorded before the history writer-leak fix: pluck the
+      // intact rows out from around any torn line instead of losing the graph.
+      graph.data = (text.match(/\{"second":\d+,"points":\{[^{}]*\}\}/g) || []).map(JSON.parse);
+    }
+  } catch { }
   drawGraph();
 })();
 
@@ -488,6 +518,24 @@ function pushGamePoint(game, players) {
 }
 
 const fmtK = v => v >= 1000 ? (v / 1000).toFixed(v >= 10000 ? 0 : 1) + "k" : Math.round(v);
+
+// --- Match throughput (header): rolling 60s window over the whole match's
+// cumulative token/request counters (drivers + advisor modules, all providers).
+// Naturally declines as players are eliminated — that's the honest number.
+const thru = []; // [{t, tokens, requests}]
+function pushThroughput(tokens, requests) {
+  const now = Date.now();
+  thru.push({ t: now, tokens, requests });
+  while (thru.length > 2 && thru[0].t < now - 65000) thru.shift();
+  const a = thru[0], b = thru[thru.length - 1];
+  const dt = (b.t - a.t) / 1000;
+  if (dt < 5) return;
+  const tps = Math.max(0, (b.tokens - a.tokens) / dt);
+  const rpm = Math.max(0, (b.requests - a.requests) / dt * 60);
+  document.getElementById("tokRate").textContent = fmtK(tps);
+  document.getElementById("tokMin").textContent = fmtK(tps * 60);
+  document.getElementById("reqMin").textContent = Math.round(rpm);
+}
 
 function drawGraph() {
   const cv = document.getElementById("pointsChart");
@@ -591,6 +639,15 @@ function makeCard(p, parent) {
   const model = el("div", "pmodel", card);
   model.textContent = `${p.model} · ${p.provider}`;
 
+  const cadence = el("div", "cadence", card);
+  const cadPill = el("span", "cadpill", cadence);
+  cadPill.textContent = "–";
+  const cadAvg = el("span", "cadavg", cadence);
+
+  // Add-on module lanes (advisor etc.) are created lazily as modules report in.
+  const modlanesEl = el("div", "modlanes", card);
+  const modLanes = new Map();
+
   card.classList.add("clickable");
   card.title = "click for full agent history";
   card.addEventListener("click", () => openHistory(p));
@@ -611,7 +668,7 @@ function makeCard(p, parent) {
   const summary = el("div", "summary", card);
   const goals = el("div", "goals", card);
 
-  cards.set(p.slug, { card, chip, faction, badge, summary, goals, stats, queues });
+  cards.set(p.slug, { card, chip, faction, badge, summary, goals, stats, queues, cadPill, cadAvg, modlanesEl, modLanes });
 }
 
 function iconSlug(name) {
@@ -663,6 +720,10 @@ function render(data) {
   const game = data.game;
   const players = data.players || [];
 
+  latestPlayers = players;
+  if (data.nowUtc)
+    serverClockOffsetMs = Date.parse(data.nowUtc) - Date.now();
+
   // Build cards once, in spec order: 0..3 left, 4..7 right.
   if (cards.size === 0 && players.length > 0) {
     const left = document.getElementById("colLeft");
@@ -673,9 +734,21 @@ function render(data) {
 
   document.getElementById("runId").textContent = data.runId || "";
 
-  let totalCost = 0;
-  for (const p of players)
-    if (p.status && typeof p.status.totalCostUsd === "number") totalCost += p.status.totalCostUsd;
+  let totalCost = 0, totalTokens = 0, totalRequests = 0;
+  for (const p of players) {
+    if (p.status) {
+      if (typeof p.status.totalCostUsd === "number") totalCost += p.status.totalCostUsd;
+      totalTokens += (p.status.totalPromptTokens || 0) + (p.status.totalCompletionTokens || 0);
+      totalRequests += p.status.turn || 0;
+    }
+    for (const m of Array.isArray(p.modules) ? p.modules : []) {
+      if (!m) continue;
+      if (typeof m.totalCostUsd === "number") totalCost += m.totalCostUsd;
+      totalTokens += (m.totalPromptTokens || 0) + (m.totalCompletionTokens || 0);
+      totalRequests += m.cycles || 0;
+    }
+  }
+  pushThroughput(totalTokens, totalRequests);
   document.getElementById("totalCost").textContent = totalCost.toFixed(4);
 
   pushGamePoint(game, players);
@@ -771,10 +844,127 @@ function render(data) {
   }
 }
 
+// When served through the hub proxy (/r/<runId>/), show the way back to the overview.
+if (/\/r\/[^/]+\/$/.test(location.pathname))
+  document.getElementById("hubLink").style.display = "";
+
 const es = new EventSource("api/live");
 es.onmessage = e => {
   try { render(JSON.parse(e.data)); } catch (err) { console.error(err); }
 };
+
+// Cadence ticker: latency pills tick every 250ms between SSE frames, using the
+// server clock (payload nowUtc) so agent timestamps never fight the browser clock.
+let latestPlayers = [];
+let serverClockOffsetMs = 0;
+
+// Shared pill logic: driver status and add-on module statuses publish the same
+// cadence field names, so one updater serves every lane.
+function updateLane(pill, avgEl, st, serverNow, avgLabel) {
+  // Red pill = this lane's last cycle failed; tooltip carries the error and any
+  // rate-limit tally so provider trouble is visible without digging in logs.
+  pill.classList.toggle("errstate", !!st.lastError);
+  pill.title = [st.lastError ? "last error: " + st.lastError : "",
+    st.rateLimited429s ? `rate-limited ${st.rateLimited429s}x this match` : ""].filter(Boolean).join("\n");
+
+  if (st.requestStartedAtUtc) {
+    const secs = Math.max(0, (serverNow - Date.parse(st.requestStartedAtUtc)) / 1000);
+    pill.textContent = `⟳ thinking · ${secs.toFixed(1)}s`;
+    pill.classList.add("thinking");
+  } else if (st.lastResponseAtUtc) {
+    const secs = Math.max(0, (serverNow - Date.parse(st.lastResponseAtUtc)) / 1000);
+    pill.textContent = `idle · ${secs < 10 ? secs.toFixed(1) : Math.round(secs)}s`;
+    pill.classList.remove("thinking");
+  } else {
+    pill.textContent = "waiting";
+    pill.classList.remove("thinking");
+  }
+
+  if (typeof st.avgTurnSeconds === "number") {
+    avgEl.textContent = `${avgLabel} ${st.avgTurnSeconds}s`
+      + (typeof st.lastTurnSeconds === "number" ? ` · last ${st.lastTurnSeconds.toFixed(1)}s` : "")
+      + (typeof st.cycles === "number" ? ` · ${st.cycles} reviews` : "");
+  }
+}
+
+function updateCadence() {
+  const serverNow = Date.now() + serverClockOffsetMs;
+  for (const p of latestPlayers) {
+    const c = cards.get(p.slug);
+    if (!c || !c.cadPill) continue;
+
+    if (p.status)
+      updateLane(c.cadPill, c.cadAvg, p.status, serverNow, "avg turn");
+
+    // One extra lane per attached module (advisor etc.), created on first sight.
+    for (const m of Array.isArray(p.modules) ? p.modules : []) {
+      if (!m || !m.name) continue;
+      let lane = c.modLanes.get(m.name);
+      if (!lane) {
+        const row = el("div", "cadence modlane", c.modlanesEl);
+        const label = el("span", "mlabel", row);
+        label.textContent = m.name;
+        lane = { row, pill: el("span", "cadpill", row), avg: el("span", "cadavg", row) };
+        c.modLanes.set(m.name, lane);
+      }
+      lane.row.title = `${m.model || ""}${m.reasoningEffort ? " @ " + m.reasoningEffort : ""}`
+        + (m.basedOnTurns ? `\nlast review: turns ${m.basedOnTurns}` : "")
+        + (m.lastAdvice ? `\n\nlatest advice:\n${m.lastAdvice}` : "")
+        + (m.lastError ? `\n\nlast error: ${m.lastError}` : "");
+      updateLane(lane.pill, lane.avg, m, serverNow, "avg");
+    }
+  }
+}
+setInterval(updateCadence, 250);
+
+// Game sound: live MP3 broadcast at ./audio (404 when the run has no audio).
+// The on/off preference persists in localStorage so switching between matches
+// (same origin via the hub proxy) keeps sound on. Browsers may still demand a
+// user gesture after navigation — then the button pulses "🔊?" until clicked.
+let audioEl = null;
+const audioBtn = document.getElementById("audioBtn");
+
+function stopAudio(save) {
+  if (audioEl) { audioEl.pause(); audioEl.src = ""; audioEl = null; }
+  audioBtn.textContent = "🔇";
+  audioBtn.classList.remove("on", "pending");
+  if (save) localStorage.setItem("orfAudio", "0");
+}
+
+function startAudio(save) {
+  audioEl = new Audio("audio");
+  audioEl.onerror = () => {
+    audioEl = null;
+    audioBtn.textContent = "🔇 n/a";
+    audioBtn.classList.add("unavailable");
+    audioBtn.classList.remove("on", "pending");
+  };
+  audioEl.play().then(() => {
+    audioBtn.textContent = "🔊";
+    audioBtn.classList.add("on");
+    audioBtn.classList.remove("pending");
+    if (save) localStorage.setItem("orfAudio", "1");
+  }).catch(err => {
+    if (!audioEl) return; // onerror already handled a 404
+    if (err && err.name === "NotAllowedError") {
+      // Autoplay blocked: preference stays on, ask for one click.
+      audioEl = null;
+      audioBtn.textContent = "🔊?";
+      audioBtn.classList.add("pending");
+    } else {
+      audioEl.onerror();
+    }
+  });
+}
+
+audioBtn.addEventListener("click", () => {
+  if (audioBtn.classList.contains("unavailable")) return;
+  if (audioEl) stopAudio(true);
+  else startAudio(true);
+});
+
+if (localStorage.getItem("orfAudio") === "1")
+  startAudio(false);
 </script>
 </body>
 </html>

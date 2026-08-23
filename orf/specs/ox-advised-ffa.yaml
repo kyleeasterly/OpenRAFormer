@@ -1,0 +1,34 @@
+# Ox Alpha advisor-architecture experiment (2026-08-22): does an async deep
+# reviewer make a fast shallow driver better? 8-player FFA, checkerboard:
+# 4x plain low-effort drivers vs 4x low-effort drivers with a high-effort
+# advisor module reviewing their last 10 turns and injecting advice.
+# Driver config identical in both arms — the advisor add-on is the ONLY variable.
+# Rationale: ox-ffa-8 showed cadence dominates in FFA (both high-effort players
+# with slow turns died first); this keeps low's cadence AND adds high's depth.
+name: ox-advised-ffa
+map: scorched-earth.oramap
+web: { port: 5199 }
+display: ":97"
+resolution: [2540, 2540]
+stream: { fps: 6, scale: 2048, quality: 6 }
+stateFormat: markdown
+turnIntervalSeconds: 0
+maxTurnsPerPlayer: 0
+players:
+  # Spawns: 1=(42,7) 2=(67,7) 3=(92,7) 4=(117,7) | 5=(42,90) 6=(67,90) 7=(92,90) 8=(117,90)
+  # Checkerboard: top row S A S A, bottom row A S A S (S=solo, A=advised).
+  - { slug: solo-a, display: Ox-Solo-A, provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 1, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: low, maxTokens: 4000, timeoutSeconds: 120 }
+  - { slug: adv-a,  display: Ox-Advised-A, provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 2, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: low, maxTokens: 4000, timeoutSeconds: 120,
+      advisor: { model: stealth/ox-alpha, reasoningEffort: high, maxTokens: 16000, timeoutSeconds: 300, windowTurns: 10, minNewTurns: 3 } }
+  - { slug: solo-b, display: Ox-Solo-B, provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 3, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: low, maxTokens: 4000, timeoutSeconds: 120 }
+  - { slug: adv-b,  display: Ox-Advised-B, provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 4, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: low, maxTokens: 4000, timeoutSeconds: 120,
+      advisor: { model: stealth/ox-alpha, reasoningEffort: high, maxTokens: 16000, timeoutSeconds: 300, windowTurns: 10, minNewTurns: 3 } }
+  - { slug: adv-c,  display: Ox-Advised-C, provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 5, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: low, maxTokens: 4000, timeoutSeconds: 120,
+      advisor: { model: stealth/ox-alpha, reasoningEffort: high, maxTokens: 16000, timeoutSeconds: 300, windowTurns: 10, minNewTurns: 3 } }
+  - { slug: solo-c, display: Ox-Solo-C, provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 6, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: low, maxTokens: 4000, timeoutSeconds: 120 }
+  - { slug: adv-d,  display: Ox-Advised-D, provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 7, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: low, maxTokens: 4000, timeoutSeconds: 120,
+      advisor: { model: stealth/ox-alpha, reasoningEffort: high, maxTokens: 16000, timeoutSeconds: 300, windowTurns: 10, minNewTurns: 3 } }
+  - { slug: solo-d, display: Ox-Solo-D, provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 8, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: low, maxTokens: 4000, timeoutSeconds: 120 }
+providers:
+  nous: { baseUrl: "https://inference-api.nousresearch.com/v1", apiKeyEnv: NOUS_API_KEY }
+  test: { baseUrl: "", apiKeyEnv: "" }

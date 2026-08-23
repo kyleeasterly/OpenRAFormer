@@ -1,0 +1,29 @@
+# Ox Alpha archetype FFA — replicate r5 (2026-08-22). Same config as r1-r3,
+# spawn permutation [SH,AL,SL,AH]; first replicate with advisors on the
+# OpenRouter lane (drivers remain on Nous) to spread per-key rate limits.
+name: ox-arch-r5
+map: scorched-earth.oramap
+web: { port: 5199 }
+display: ":97"
+resolution: [2540, 2540]
+stream: { fps: 6, scale: 2048, quality: 6 }
+stateFormat: markdown
+turnIntervalSeconds: 0
+maxTurnsPerPlayer: 0
+players:
+  - { slug: ahigh-a, display: Adv-High-A, provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 4, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: high, maxTokens: 16000, timeoutSeconds: 300,
+      advisor: { provider: openrouter, model: stealth/ox-alpha, reasoningEffort: high, maxTokens: 16000, timeoutSeconds: 300, windowTurns: 10, minNewTurns: 3 } }
+  - { slug: slow-a, display: Solo-Low-A, provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 3, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: low, maxTokens: 4000, timeoutSeconds: 120 }
+  - { slug: alow-a, display: Adv-Low-A, provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 2, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: low, maxTokens: 4000, timeoutSeconds: 120,
+      advisor: { provider: openrouter, model: stealth/ox-alpha, reasoningEffort: high, maxTokens: 16000, timeoutSeconds: 300, windowTurns: 10, minNewTurns: 3 } }
+  - { slug: shigh-a, display: Solo-High-A, provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 1, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: high, maxTokens: 16000, timeoutSeconds: 300 }
+  - { slug: shigh-b, display: Solo-High-B, provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 8, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: high, maxTokens: 16000, timeoutSeconds: 300 }
+  - { slug: alow-b, display: Adv-Low-B, provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 7, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: low, maxTokens: 4000, timeoutSeconds: 120,
+      advisor: { provider: openrouter, model: stealth/ox-alpha, reasoningEffort: high, maxTokens: 16000, timeoutSeconds: 300, windowTurns: 10, minNewTurns: 3 } }
+  - { slug: slow-b, display: Solo-Low-B, provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 6, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: low, maxTokens: 4000, timeoutSeconds: 120 }
+  - { slug: ahigh-b, display: Adv-High-B, provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 5, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: high, maxTokens: 16000, timeoutSeconds: 300,
+      advisor: { provider: openrouter, model: stealth/ox-alpha, reasoningEffort: high, maxTokens: 16000, timeoutSeconds: 300, windowTurns: 10, minNewTurns: 3 } }
+providers:
+  nous:       { baseUrl: "https://inference-api.nousresearch.com/v1", apiKeyEnv: NOUS_API_KEY }
+  openrouter: { baseUrl: "https://openrouter.ai/api/v1", apiKeyEnv: OPENROUTER_API_KEY }
+  test:       { baseUrl: "", apiKeyEnv: "" }

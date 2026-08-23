@@ -1,0 +1,28 @@
+# Ox Alpha 8-player FFA reasoning-effort experiment (2026-08-22): follow-up to
+# ox-2v2 (high effort won 20:14, cadence penalty only ~25-40% fewer turns).
+# 4x low vs 4x high effort, checkerboard spawns (no same-effort neighbors),
+# free-for-all (team: 0) so placement order gives a per-player effort signal.
+# First match with the Barracks name-resolution fix — infantry is playable.
+name: ox-ffa-8
+map: scorched-earth.oramap
+web: { port: 5199 }
+display: ":97"
+resolution: [2540, 2540]
+stream: { fps: 6, scale: 2048, quality: 6 }
+stateFormat: markdown
+turnIntervalSeconds: 0
+maxTurnsPerPlayer: 0
+players:
+  # Spawns: 1=(42,7) 2=(67,7) 3=(92,7) 4=(117,7) | 5=(42,90) 6=(67,90) 7=(92,90) 8=(117,90)
+  # Checkerboard: top row L H L H, bottom row H L H L.
+  - { slug: low-a,  display: Ox-Low-A,  provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 1, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: low,  maxTokens: 4000,  timeoutSeconds: 120 }
+  - { slug: high-a, display: Ox-High-A, provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 2, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: high, maxTokens: 16000, timeoutSeconds: 300 }
+  - { slug: low-b,  display: Ox-Low-B,  provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 3, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: low,  maxTokens: 4000,  timeoutSeconds: 120 }
+  - { slug: high-b, display: Ox-High-B, provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 4, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: high, maxTokens: 16000, timeoutSeconds: 300 }
+  - { slug: high-c, display: Ox-High-C, provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 5, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: high, maxTokens: 16000, timeoutSeconds: 300 }
+  - { slug: low-c,  display: Ox-Low-C,  provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 6, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: low,  maxTokens: 4000,  timeoutSeconds: 120 }
+  - { slug: high-d, display: Ox-High-D, provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 7, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: high, maxTokens: 16000, timeoutSeconds: 300 }
+  - { slug: low-d,  display: Ox-Low-D,  provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 8, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: low,  maxTokens: 4000,  timeoutSeconds: 120 }
+providers:
+  nous: { baseUrl: "https://inference-api.nousresearch.com/v1", apiKeyEnv: NOUS_API_KEY }
+  test: { baseUrl: "", apiKeyEnv: "" }

@@ -14,14 +14,30 @@ const string Usage =
 	      Execute exactly one agent turn offline against a state fixture. Writes the
 	      inbox order file and turn artifacts under <dir>.
 
-	  orf stop [runId]
-	      Request a clean shutdown of a running match by writing runs/<id>/stop.
-	      Without runId, targets the newest run that has not finished.
+	  orf advisor-once --spec <path> --slug <slug> --rundir <dir>
+	      Run one advisor review cycle offline against an existing run dir's turn
+	      history (the player must have an advisor in the spec). Writes advice and
+	      module status under <dir>/agents/<slug>/.
 
-	  orf hub [--port N]
-	      Landing page over all runs on one fixed port (default 5100). Lists live and
-	      finished matches and proxies each run's dashboard under /r/<runId>/, so a
-	      single tunnel reaches everything. Only the open dashboard streams video.
+	  orf launch --spec <path> [--node http://host:5100]
+	      Validate a spec locally, then start it as a detached match on the target
+	      node's hub (default: this machine's hub). No shell access needed on the
+	      node — hubs are the runner control plane.
+
+	  orf fleet [--node http://host:5100]...
+	      One line per node (localhost + --node/ORF_NODES): host, cores, load,
+	      and its live matches.
+
+	  orf stop [runId] [--node http://host:5100]
+	      Request a clean shutdown of a running match by writing runs/<id>/stop.
+	      Without runId, targets the newest local unfinished run. With --node,
+	      stops the match on that node (runId required).
+
+	  orf hub [--port N] [--node http://host:5100]...
+	      Landing page over all runs on one fixed port (default 5100): live score
+	      graphs for running matches, proxied dashboards under /r/<runId>/. --node
+	      (repeatable; or ORF_NODES=host:port,host:port) federates peer machines'
+	      hubs so one page shows the whole fleet. Only open dashboards stream video.
 	""";
 
 if (args.Length == 0)
@@ -38,8 +54,14 @@ try
 			return await RunCommand(args[1..]);
 		case "agent-turn":
 			return await AgentTurnCommand(args[1..]);
+		case "advisor-once":
+			return await AdvisorOnceCommand(args[1..]);
+		case "launch":
+			return await LaunchCommand(args[1..]);
+		case "fleet":
+			return await FleetCommand(args[1..]);
 		case "stop":
-			return StopCommand(args[1..]);
+			return await StopCommand(args[1..]);
 		case "hub":
 			return await HubCommand(args[1..]);
 		case "-h" or "--help" or "help":
@@ -118,6 +140,51 @@ static async Task<int> RunCommand(string[] args)
 	return await new MatchRunner(spec, specPath).RunAsync(port, noGame, noWeb, cts.Token);
 }
 
+static async Task<int> AdvisorOnceCommand(string[] args)
+{
+	string? specPath = null, slug = null, runDir = null;
+
+	for (var i = 0; i < args.Length; i++)
+	{
+		switch (args[i])
+		{
+			case "--spec":
+				specPath = Expect(args, ref i, "--spec");
+				break;
+			case "--slug":
+				slug = Expect(args, ref i, "--slug");
+				break;
+			case "--rundir":
+				runDir = Expect(args, ref i, "--rundir");
+				break;
+			default:
+				throw new ArgumentException($"Unknown option '{args[i]}' for 'advisor-once'");
+		}
+	}
+
+	if (specPath == null || slug == null || runDir == null)
+		throw new ArgumentException("advisor-once requires --spec, --slug and --rundir");
+
+	specPath = Util.ResolveInputPath(specPath);
+	var spec = Spec.Load(specPath);
+	var player = spec.Players.FirstOrDefault(p => p.Slug == slug)
+		?? throw new ArgumentException($"No player with slug '{slug}' in spec");
+	if (player.Advisor == null)
+		throw new ArgumentException($"Player '{slug}' has no advisor in the spec");
+
+	var specDir = Path.GetDirectoryName(Path.GetFullPath(specPath)) ?? ".";
+	var advisor = new AdvisorLoop(Path.GetFullPath(runDir), spec, player, specDir);
+
+	if (!await advisor.RunOnceAsync(CancellationToken.None))
+	{
+		Util.Log("orf", $"no completed turns found under {runDir}/agents/{slug}/turns");
+		return 1;
+	}
+
+	Util.Log("orf", $"advisor-once complete; see {runDir}/agents/{slug}/advice and modules");
+	return 0;
+}
+
 static async Task<int> AgentTurnCommand(string[] args)
 {
 	string? specPath = null, slug = null, statePath = null, outDir = null;
@@ -171,24 +238,134 @@ static async Task<int> AgentTurnCommand(string[] args)
 static async Task<int> HubCommand(string[] args)
 {
 	var port = 5100;
+	var nodes = new List<string>();
 	for (var i = 0; i < args.Length; i++)
 	{
 		if (args[i] == "--port")
 			port = int.Parse(Expect(args, ref i, "--port"));
+		else if (args[i] == "--node")
+			nodes.Add(Expect(args, ref i, "--node").TrimEnd('/'));
 		else
 			throw new ArgumentException($"Unknown option '{args[i]}' for 'hub'");
 	}
+
+	// Peer hubs can also come from the environment so a service definition or
+	// shell profile can pin the fleet without editing commands.
+	var envNodes = Environment.GetEnvironmentVariable("ORF_NODES");
+	if (!string.IsNullOrWhiteSpace(envNodes))
+		nodes.AddRange(envNodes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+			.Select(n => n.TrimEnd('/')));
 
 	using var cts = new CancellationTokenSource();
 	Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 	using var sigterm = System.Runtime.InteropServices.PosixSignalRegistration.Create(
 		System.Runtime.InteropServices.PosixSignal.SIGTERM, ctx => { ctx.Cancel = true; cts.Cancel(); });
 
-	return await Hub.RunAsync(port, cts.Token);
+	return await Hub.RunAsync(port, nodes, cts.Token);
 }
 
-static int StopCommand(string[] args)
+static async Task<int> LaunchCommand(string[] args)
 {
+	string? specPath = null;
+	var node = "http://127.0.0.1:5100";
+
+	for (var i = 0; i < args.Length; i++)
+	{
+		switch (args[i])
+		{
+			case "--spec":
+				specPath = Expect(args, ref i, "--spec");
+				break;
+			case "--node":
+				node = Expect(args, ref i, "--node").TrimEnd('/');
+				break;
+			default:
+				throw new ArgumentException($"Unknown option '{args[i]}' for 'launch'");
+		}
+	}
+
+	if (specPath == null)
+		throw new ArgumentException("launch requires --spec");
+
+	specPath = Util.ResolveInputPath(specPath);
+	var spec = Spec.Load(specPath); // validate before shipping it anywhere
+
+	using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+	var response = await http.PostAsync($"{node}/api/launch",
+		new StringContent(File.ReadAllText(specPath), System.Text.Encoding.UTF8, "text/yaml"));
+	var body = await response.Content.ReadAsStringAsync();
+	if (!response.IsSuccessStatusCode)
+		throw new InvalidOperationException($"launch failed on {node}: {(int)response.StatusCode} {body}");
+
+	Util.Log("orf", $"launched '{spec.Name}' on {node}: {body}");
+	return 0;
+}
+
+static async Task<int> FleetCommand(string[] args)
+{
+	var nodes = new List<string> { "http://127.0.0.1:5100" };
+	for (var i = 0; i < args.Length; i++)
+	{
+		if (args[i] == "--node")
+			nodes.Add(Expect(args, ref i, "--node").TrimEnd('/'));
+		else
+			throw new ArgumentException($"Unknown option '{args[i]}' for 'fleet'");
+	}
+
+	var envNodes = Environment.GetEnvironmentVariable("ORF_NODES");
+	if (!string.IsNullOrWhiteSpace(envNodes))
+		nodes.AddRange(envNodes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+			.Select(n => n.TrimEnd('/')));
+
+	using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+	foreach (var node in nodes.Distinct())
+	{
+		try
+		{
+			var info = JsonNode.Parse(await http.GetStringAsync($"{node}/api/node")) as JsonObject;
+			var runs = JsonNode.Parse(await http.GetStringAsync($"{node}/api/runs?localOnly=1")) as JsonArray ?? [];
+			var live = runs.OfType<JsonObject>().Where(r => r["live"]?.GetValue<bool>() == true).ToList();
+			Console.WriteLine($"{node}  [{info?["host"]}]  cores={info?["cores"]}  load1={info?["load1"]}  live={live.Count}");
+			foreach (var run in live)
+				Console.WriteLine($"    {run["runId"]}  {run["players"]}p");
+		}
+		catch (Exception ex)
+		{
+			Console.WriteLine($"{node}  UNREACHABLE ({ex.Message})");
+		}
+	}
+
+	return 0;
+}
+
+static async Task<int> StopCommand(string[] args)
+{
+	string? nodeArg = null;
+	var rest = new List<string>();
+	for (var i = 0; i < args.Length; i++)
+	{
+		if (args[i] == "--node")
+			nodeArg = Expect(args, ref i, "--node").TrimEnd('/');
+		else
+			rest.Add(args[i]);
+	}
+
+	args = [.. rest];
+
+	if (nodeArg != null)
+	{
+		if (args.Length == 0)
+			throw new ArgumentException("stop --node requires an explicit runId");
+
+		using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+		var response = await http.PostAsync($"{nodeArg}/api/stop/{args[0]}", null);
+		if (!response.IsSuccessStatusCode)
+			throw new InvalidOperationException($"stop failed on {nodeArg}: {(int)response.StatusCode} {await response.Content.ReadAsStringAsync()}");
+
+		Util.Log("orf", $"stop requested for {args[0]} on {nodeArg}");
+		return 0;
+	}
+
 	var runsDir = Path.Combine(Util.FindRepoRoot(), "runs");
 	string? runDir = null;
 

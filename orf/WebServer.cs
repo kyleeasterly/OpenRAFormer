@@ -49,6 +49,42 @@ public static class WebServer
 			}
 		});
 
+		app.MapGet("/audio", async context =>
+		{
+			var broadcaster = AudioBroadcaster.Instance;
+			if (broadcaster == null)
+			{
+				context.Response.StatusCode = 404;
+				return;
+			}
+
+			context.Response.ContentType = "audio/mpeg";
+			context.Response.Headers.CacheControl = "no-store";
+			var ct = context.RequestAborted;
+			var channel = broadcaster.Subscribe();
+
+			try
+			{
+				await context.Response.Body.FlushAsync(ct);
+				await foreach (var chunk in channel.Reader.ReadAllAsync(ct))
+				{
+					await context.Response.Body.WriteAsync(chunk, ct);
+					await context.Response.Body.FlushAsync(ct);
+				}
+			}
+			catch (Exception) when (ct.IsCancellationRequested)
+			{
+				// client went away
+			}
+			catch (IOException)
+			{
+			}
+			finally
+			{
+				broadcaster.Unsubscribe(channel);
+			}
+		});
+
 		app.MapGet("/stream", async context =>
 		{
 			context.Response.ContentType = "multipart/x-mixed-replace; boundary=frame";
@@ -155,9 +191,43 @@ public static class WebServer
 			return Results.Content($"{{\"request\":{request},\"response\":{response},\"orders\":{orders}}}", "application/json");
 		});
 
-		// Points history: one row per engine tick advance, persisted so the graph
-		// survives page reloads and is analyzable after the match.
 		var historyPath = Path.Combine(runDir, "history.jsonl");
+
+		app.MapGet("/api/history", () =>
+		{
+			try
+			{
+				if (!File.Exists(historyPath))
+					return Results.Content("[]", "application/json");
+
+				// Drop unparseable rows: older runs suffered a writer-leak bug (one
+				// extra writer per failed port-bind attempt) whose concurrent appends
+				// could tear lines; one bad row must not blank the whole graph.
+				var lines = File.ReadLines(historyPath).TakeLast(7200).Where(l =>
+				{
+					try
+					{
+						return System.Text.Json.Nodes.JsonNode.Parse(l) != null;
+					}
+					catch (System.Text.Json.JsonException)
+					{
+						return false;
+					}
+				});
+				return Results.Content("[" + string.Join(",", lines) + "]", "application/json");
+			}
+			catch
+			{
+				return Results.Content("[]", "application/json");
+			}
+		});
+
+		await app.StartAsync();
+
+		// Points history: one row per engine tick advance, persisted so the graph
+		// survives page reloads and is analyzable after the match. Started ONLY
+		// after the port bind succeeded: StartAsync throwing on a busy port used
+		// to leak one immortal writer per retry (torn lines, multiplied rows).
 		_ = Task.Run(async () =>
 		{
 			long lastTick = -1;
@@ -191,24 +261,6 @@ public static class WebServer
 				await Task.Delay(1000);
 			}
 		});
-
-		app.MapGet("/api/history", () =>
-		{
-			try
-			{
-				if (!File.Exists(historyPath))
-					return Results.Content("[]", "application/json");
-
-				var lines = File.ReadLines(historyPath).TakeLast(7200);
-				return Results.Content("[" + string.Join(",", lines) + "]", "application/json");
-			}
-			catch
-			{
-				return Results.Content("[]", "application/json");
-			}
-		});
-
-		await app.StartAsync();
 		Util.Log("orf", $"dashboard: http://0.0.0.0:{port}/");
 		return app;
 	}
@@ -233,6 +285,18 @@ public static class WebServer
 					});
 			}
 
+			// Add-on modules (advisor etc.): each publishes agents/<slug>/modules/<name>.json;
+			// the dashboard renders one cadence lane per module.
+			JsonArray? modules = null;
+			var modulesDir = Path.Combine(runDir, "agents", p.Slug, "modules");
+			if (Directory.Exists(modulesDir))
+			{
+				modules = [];
+				foreach (var file in Directory.GetFiles(modulesDir, "*.json").OrderBy(f => f, StringComparer.Ordinal))
+					if (Util.TryReadJson(file) is JsonObject module)
+						modules.Add(module);
+			}
+
 			players.Add(new JsonObject
 			{
 				["slug"] = p.Slug,
@@ -241,6 +305,7 @@ public static class WebServer
 				["model"] = p.Model,
 				["faction"] = p.Faction,
 				["status"] = Util.TryReadJson(Path.Combine(runDir, "agents", p.Slug, "status.json")),
+				["modules"] = modules,
 				["production"] = production,
 			});
 		}
@@ -248,6 +313,7 @@ public static class WebServer
 		var payload = new JsonObject
 		{
 			["runId"] = runId,
+			["nowUtc"] = DateTime.UtcNow.ToString("o"),
 			["game"] = Util.TryReadJson(Path.Combine(runDir, "state", "game.json")),
 			["players"] = players,
 			["finished"] = Util.TryReadJson(Path.Combine(runDir, "result.json")),

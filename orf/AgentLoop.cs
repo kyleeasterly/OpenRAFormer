@@ -34,6 +34,17 @@ public sealed class AgentLoop
 	string summaryLine = "";
 	string seqStr = "000000";
 
+	// Optional add-on: over-the-shoulder advisor (runs its own async loop).
+	readonly AdvisorLoop? advisorLoop;
+
+	// Cadence telemetry for the dashboard: when a provider request is in flight,
+	// when the last response landed, and a rolling window of full-turn latencies.
+	DateTime? requestStartedAtUtc;
+	DateTime? lastResponseAtUtc;
+	double? lastTurnSeconds;
+	readonly Queue<double> turnLatencies = new();
+	const int LatencyWindow = 10;
+
 	public AgentLoop(string runDir, Spec spec, PlayerSpec player, int index, string specDir)
 	{
 		this.runDir = runDir;
@@ -59,7 +70,11 @@ public sealed class AgentLoop
 			var apiKey = Environment.GetEnvironmentVariable(provider.ApiKeyEnv);
 			if (string.IsNullOrEmpty(apiKey))
 				throw new InvalidOperationException($"Provider '{player.Provider}' requires env var {provider.ApiKeyEnv} to be set");
-			llm = new LlmClient(provider.BaseUrl, apiKey);
+			llm = new LlmClient(provider.BaseUrl, apiKey, player.TimeoutSeconds,
+				msg => AppendErrorLog($"retry: {msg}"));
+
+			if (player.Advisor != null)
+				advisorLoop = new AdvisorLoop(runDir, spec, player, specDir);
 		}
 
 		seqCounter = ScanExistingSeq();
@@ -71,6 +86,10 @@ public sealed class AgentLoop
 
 	public async Task RunAsync(CancellationToken ct)
 	{
+		// The advisor rides alongside on the same cancellation token; the driver
+		// loop never waits on it, so a slow (or dead) advisor cannot stall play.
+		_ = advisorLoop?.RunAsync(ct);
+
 		try
 		{
 			await Task.Delay(index * (spec.TurnIntervalSeconds > 0 ? 1500 : 300), ct);
@@ -207,6 +226,7 @@ public sealed class AgentLoop
 		Directory.CreateDirectory(turnDir);
 		Util.WriteAtomic(Path.Combine(turnDir, "state.json"), state.ToJsonString(Util.Indented));
 
+		var turnStartedUtc = DateTime.UtcNow;
 		JsonArray orders;
 		try
 		{
@@ -217,9 +237,15 @@ public sealed class AgentLoop
 		}
 		catch
 		{
+			requestStartedAtUtc = null;
 			WriteStatus();
 			throw;
 		}
+
+		lastTurnSeconds = (DateTime.UtcNow - turnStartedUtc).TotalSeconds;
+		turnLatencies.Enqueue(lastTurnSeconds.Value);
+		while (turnLatencies.Count > LatencyWindow)
+			turnLatencies.Dequeue();
 
 		if (orders.Count > 0)
 		{
@@ -255,14 +281,32 @@ public sealed class AgentLoop
 			["model"] = player.Model,
 			["messages"] = messages,
 			["temperature"] = player.Temperature,
-			["max_tokens"] = 2000,
+			["max_tokens"] = player.MaxTokens,
 			["tools"] = ToolSchema.Tools(),
 			["tool_choice"] = "auto",
 		};
 
+		if (player.ReasoningEffort != null)
+			payload["reasoning_effort"] = player.ReasoningEffort;
+
 		Util.WriteAtomic(Path.Combine(turnDir, "request.json"), payload.ToJsonString(Util.Indented));
 
-		var raw = await llm!.ChatAsync(payload, ct);
+		// Publish the in-flight window so the dashboard can show a live
+		// "thinking for N seconds" indicator while we wait on the provider.
+		requestStartedAtUtc = DateTime.UtcNow;
+		WriteStatus();
+
+		string raw;
+		try
+		{
+			raw = await llm!.ChatAsync(payload, ct);
+		}
+		finally
+		{
+			lastResponseAtUtc = DateTime.UtcNow;
+			requestStartedAtUtc = null;
+		}
+
 		Util.WriteAtomic(Path.Combine(turnDir, "response.json"), raw);
 
 		var response = JsonNode.Parse(raw) as JsonObject
@@ -273,9 +317,11 @@ public sealed class AgentLoop
 			totalPromptTokens += usage["prompt_tokens"]?.GetValue<long>() ?? 0;
 			totalCompletionTokens += usage["completion_tokens"]?.GetValue<long>() ?? 0;
 
-			// DeepInfra reports exact spend per request; other providers may not.
+			// DeepInfra reports exact spend as estimated_cost; Nous Portal as cost.
 			if (usage["estimated_cost"] is JsonValue cost)
 				totalCostUsd += cost.GetValue<double>();
+			else if (usage["cost"] is JsonValue nousCost)
+				totalCostUsd += nousCost.GetValue<double>();
 		}
 
 		var message = response["choices"]?[0]?["message"] as JsonObject
@@ -461,6 +507,12 @@ public sealed class AgentLoop
 			? "\n\nYour long-term goals (update with set_goals):\n" + string.Join("\n", goals.Select(g => "  - " + g))
 			: "\n\nYou have no long-term goals set. Use set_goals to record your strategic plan.";
 
+		// Advisor module: inject the latest review (sticky until superseded) so
+		// slow, deep guidance persists across the driver's fast turns.
+		var advice = advisorLoop?.CurrentAdvice;
+		if (advice != null)
+			text += "\n\nADVISOR GUIDANCE — a deeper model reviewed your recent turns; weigh this seriously:\n" + advice;
+
 		return text;
 	}
 
@@ -499,6 +551,12 @@ public sealed class AgentLoop
 			["turn"] = turnCount,
 			["seq"] = seqStr,
 			["lastTurnAtUtc"] = DateTime.UtcNow.ToString("o"),
+			["requestStartedAtUtc"] = requestStartedAtUtc?.ToString("o"),
+			["lastResponseAtUtc"] = lastResponseAtUtc?.ToString("o"),
+			["lastTurnSeconds"] = lastTurnSeconds,
+			["avgTurnSeconds"] = turnLatencies.Count > 0 ? Math.Round(turnLatencies.Average(), 1) : null,
+			["latencyWindow"] = turnLatencies.Count,
+			["rateLimited429s"] = llm?.RateLimited429s ?? 0,
 			["model"] = player.Model,
 			["provider"] = player.Provider,
 			["summaryLine"] = summaryLine,

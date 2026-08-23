@@ -50,7 +50,18 @@ public sealed class Spec
 			throw new InvalidOperationException($"Duplicate player slugs: {string.Join(", ", dupes)}");
 
 		foreach (var p in spec.Players)
+		{
 			spec.ProviderFor(p); // validates provider references
+
+			if (p.Advisor != null)
+			{
+				if (string.IsNullOrWhiteSpace(p.Advisor.Model))
+					throw new InvalidOperationException($"Player '{p.Slug}' advisor is missing 'model'");
+				var advisorProvider = p.Advisor.Provider ?? p.Provider;
+				if (!spec.Providers.ContainsKey(advisorProvider))
+					throw new InvalidOperationException($"Player '{p.Slug}' advisor references unknown provider '{advisorProvider}'");
+			}
+		}
 
 		return spec;
 	}
@@ -80,6 +91,42 @@ public sealed class PlayerSpec
 	public double Temperature { get; set; } = 0.6;
 	public string? PromptFile { get; set; }
 	public bool RecentActions { get; set; } = true;
+
+	/// <summary>Passed through as reasoning_effort when set (e.g. "low"/"high"/"max" for stealth/ox-alpha).</summary>
+	public string? ReasoningEffort { get; set; }
+
+	/// <summary>Completion budget per turn. Reasoning models spend this on thinking too — give them room.</summary>
+	public int MaxTokens { get; set; } = 2000;
+
+	/// <summary>Per-request timeout. High reasoning efforts can legitimately exceed the old 120s default.</summary>
+	public int TimeoutSeconds { get; set; } = 120;
+
+	/// <summary>Optional add-on module: a second model that reviews this player's recent turns
+	/// asynchronously and feeds advice into its prompts. Never blocks the driver's turn loop.</summary>
+	public AdvisorSpec? Advisor { get; set; }
+}
+
+/// <summary>Config for the over-the-shoulder advisor add-on.</summary>
+public sealed class AdvisorSpec
+{
+	/// <summary>Lane label in the dashboard and modules/<name>.json filename.</summary>
+	public string Name { get; set; } = "advisor";
+
+	/// <summary>Provider key; defaults to the driver player's provider.</summary>
+	public string? Provider { get; set; }
+
+	public string Model { get; set; } = "";
+	public string? ReasoningEffort { get; set; }
+	public double Temperature { get; set; } = 1.0;
+	public int MaxTokens { get; set; } = 16000;
+	public int TimeoutSeconds { get; set; } = 300;
+	public string? PromptFile { get; set; }
+
+	/// <summary>How many recent driver turns each review covers.</summary>
+	public int WindowTurns { get; set; } = 10;
+
+	/// <summary>Minimum new driver turns before the next review fires (advisor is otherwise idle).</summary>
+	public int MinNewTurns { get; set; } = 3;
 }
 
 public sealed class ProviderSpec

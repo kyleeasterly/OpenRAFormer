@@ -1,0 +1,26 @@
+# Ox Alpha reasoning-effort A/B (2026-08-22): first match on the free stealth
+# model (stealth/ox-alpha via Nous Portal, $0/$0 during preview week).
+# 2v2, north team at reasoning_effort=low vs south team at high — the effort
+# knob is the ONLY variable (same model, prompt v6, temperature, format).
+# Question: does deliberation depth beat turn cadence when both are the same
+# brain? (GPT-OSS's parked-army pathology, but tunable this time.)
+# High arm gets a bigger completion budget + timeout because reasoning tokens
+# count against max_tokens and long thinks can exceed 120s.
+name: ox-2v2
+map: scorched-earth.oramap
+web: { port: 5199 }
+display: ":97"
+resolution: [2540, 2540]
+stream: { fps: 6, scale: 2048, quality: 6 }
+stateFormat: markdown
+turnIntervalSeconds: 0
+maxTurnsPerPlayer: 0
+players:
+  # corners: 1=(42,7) 4=(117,7) north; 5=(42,90) 8=(117,90) south
+  - { slug: low-a,  display: Ox-Low-A,  provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 1, team: 1, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: low,  maxTokens: 4000,  timeoutSeconds: 120 }
+  - { slug: low-b,  display: Ox-Low-B,  provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 4, team: 1, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: low,  maxTokens: 4000,  timeoutSeconds: 120 }
+  - { slug: high-a, display: Ox-High-A, provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 5, team: 2, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: high, maxTokens: 16000, timeoutSeconds: 300 }
+  - { slug: high-b, display: Ox-High-B, provider: nous, model: stealth/ox-alpha, faction: gdi, spawn: 8, team: 2, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: high, maxTokens: 16000, timeoutSeconds: 300 }
+providers:
+  nous: { baseUrl: "https://inference-api.nousresearch.com/v1", apiKeyEnv: NOUS_API_KEY }
+  test: { baseUrl: "", apiKeyEnv: "" }
