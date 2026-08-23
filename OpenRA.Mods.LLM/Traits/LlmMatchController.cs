@@ -38,6 +38,7 @@ namespace OpenRA.Mods.LLM.Traits
 		IResourceLayer resourceLayer;
 		int interval;
 		bool resultWritten;
+		int exitAtTick = -1;
 
 		public LlmMatchController(LlmMatchControllerInfo info)
 		{
@@ -118,6 +119,17 @@ namespace OpenRA.Mods.LLM.Traits
 			catch (Exception e)
 			{
 				Log.Write("debug", $"LlmMatchController: export failed: {e}");
+			}
+
+			// After game over, linger briefly (end screen for the stream/capture),
+			// then exit cleanly so the replay recorder finalizes its metadata and
+			// the orchestrator can archive the file without hitting a lock.
+			if (resultWritten)
+			{
+				if (exitAtTick < 0)
+					exitAtTick = world.WorldTick + 10000 / world.Timestep; // ~10s
+				else if (world.WorldTick >= exitAtTick)
+					Game.Exit();
 			}
 		}
 

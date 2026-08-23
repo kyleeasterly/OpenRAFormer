@@ -80,10 +80,17 @@ namespace OpenRA.Mods.LLM
 				return null;
 
 			input = input.Trim();
-			if (world.Map.Rules.Actors.ContainsKey(input.ToLowerInvariant()))
-				return input.ToLowerInvariant();
 
-			return For(world).ToInternal.TryGetValue(input, out var internalName) ? internalName : null;
+			// Display names take precedence: agents are taught display names, and
+			// internal keys can shadow them — cnc defines a dummy prerequisite actor
+			// keyed 'barracks', so "Barracks" resolved to it instead of PYLE and
+			// infantry production was rejected for every player (found 2026-08-22).
+			if (For(world).ToInternal.TryGetValue(input, out var internalName))
+				return internalName;
+
+			return world.Map.Rules.Actors.ContainsKey(input.ToLowerInvariant())
+				? input.ToLowerInvariant()
+				: null;
 		}
 	}
 }

@@ -12,6 +12,7 @@ Player:
 
 ^Building:
 	LlmDamageReporter:
+	SpectatorBuildSound:
 
 ^Plane:
 	LlmDamageReporter:
