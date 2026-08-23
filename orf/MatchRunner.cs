@@ -75,6 +75,11 @@ public sealed class MatchRunner(Spec spec, string specPath)
 				Util.Log("orf", "--no-game: skipping Xvfb/game/ffmpeg spawn");
 			}
 
+			if (spec.HasHumans)
+				Util.Log("orf", $"human slot(s) open — lobby holds until they join and Ready up. " +
+					$"Connect via Multiplayer → Direct IP: {LanAddress()}:{spec.ListenPort}" +
+					(string.IsNullOrEmpty(spec.Password) ? "" : $" (password: {spec.Password})"));
+
 			// Agents start once the engine begins exporting state.
 			var stopPath = Path.Combine(runDir, "stop");
 			var gameJson = Path.Combine(runDir, "state", "game.json");
@@ -100,9 +105,21 @@ public sealed class MatchRunner(Spec spec, string specPath)
 			Util.Log("orf", "game state detected, starting agent loops");
 
 			using var agentCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-			var agentTasks = spec.Players
-				.Select((p, i) => new AgentLoop(runDir, spec, p, i, specDir).RunAsync(agentCts.Token))
-				.ToList();
+			var agentTasks = new List<Task>();
+			foreach (var (p, i) in spec.Players.Select((p, i) => (p, i)))
+			{
+				if (p.IsHuman)
+					continue;
+
+				if (p.IsSwarm)
+				{
+					// Swarm player: the coordinator owns the whole lifecycle — bootstrap
+					// commander, handoff to specialists, dynamic scaling, shared strategist.
+					agentTasks.Add(new SwarmCoordinator(runDir, spec, p, i, specDir).RunAsync(agentCts.Token));
+				}
+				else
+					agentTasks.Add(new AgentLoop(runDir, spec, p, i, specDir).RunAsync(agentCts.Token));
+			}
 
 			// Wait for game over (result.json), a stop request, or game process exit.
 			var resultPath = Path.Combine(runDir, "result.json");
@@ -160,10 +177,28 @@ public sealed class MatchRunner(Spec spec, string specPath)
 		}
 	}
 
+	/// <summary>Best-effort LAN IPv4 for "join at this address" logs (no packets sent).</summary>
+	static string LanAddress()
+	{
+		try
+		{
+			using var socket = new System.Net.Sockets.Socket(
+				System.Net.Sockets.AddressFamily.InterNetwork,
+				System.Net.Sockets.SocketType.Dgram,
+				System.Net.Sockets.ProtocolType.Udp);
+			socket.Connect("8.8.8.8", 53);
+			return ((System.Net.IPEndPoint)socket.LocalEndPoint!).Address.ToString();
+		}
+		catch
+		{
+			return "<this-machine>";
+		}
+	}
+
 	void CreateRunDir(string runDir, string runId, int? allocatedDisplay, int? allocatedPort)
 	{
 		Directory.CreateDirectory(Path.Combine(runDir, "state"));
-		foreach (var p in spec.Players)
+		foreach (var p in spec.Players.Where(p => !p.IsHuman))
 		{
 			Directory.CreateDirectory(Path.Combine(runDir, "orders", p.Slug, "inbox"));
 			Directory.CreateDirectory(Path.Combine(runDir, "orders", p.Slug, "results"));
@@ -176,7 +211,7 @@ public sealed class MatchRunner(Spec spec, string specPath)
 			{
 				["slug"] = p.Slug,
 				["display"] = p.Display,
-				["bot"] = "llm",
+				["bot"] = p.IsHuman ? "human" : "llm",
 				["faction"] = p.Faction,
 				["spawn"] = p.Spawn,
 				["team"] = p.Team,
@@ -192,6 +227,14 @@ public sealed class MatchRunner(Spec spec, string specPath)
 			["webPort"] = allocatedPort,
 			["players"] = players,
 		};
+
+		if (spec.HasHumans)
+		{
+			match["listenPort"] = spec.ListenPort;
+			match["serverName"] = spec.ServerName ?? $"OpenRAFormer {spec.Name}";
+			if (!string.IsNullOrEmpty(spec.Password))
+				match["password"] = spec.Password;
+		}
 
 		Util.WriteAtomic(Path.Combine(runDir, "match.json"), match.ToJsonString(Util.Indented));
 	}

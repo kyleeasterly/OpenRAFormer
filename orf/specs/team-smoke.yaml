@@ -1,0 +1,17 @@
+# Alliance smoke: two scripted players on team 2 vs one solo. Verifies the lobby
+# team assignment works and allies don't appear in each other's visibleEnemies.
+name: team-smoke
+map: scorched-earth.oramap
+web: { port: 5199 }
+display: ":97"
+resolution: [2540, 2540]
+stream: { fps: 6, scale: 2048, quality: 6 }
+stateFormat: markdown
+turnIntervalSeconds: 0
+maxTurnsPerPlayer: 0
+players:
+  - { slug: ally-a, display: Ally-A, provider: test, faction: gdi, spawn: 7, team: 2 }
+  - { slug: ally-b, display: Ally-B, provider: test, faction: gdi, spawn: 8, team: 2 }
+  - { slug: foe,    display: Foe,    provider: test, faction: gdi, spawn: 1 }
+providers:
+  test: { baseUrl: "", apiKeyEnv: "" }

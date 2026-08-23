@@ -24,6 +24,66 @@ public static class WebServer
 		app.MapGet("/", () => Results.File(Path.Combine(wwwroot, "index.html"), "text/html; charset=utf-8"));
 		app.UseStaticFiles();
 
+		// Baked web renderer assets (utility --llm-export-web-assets writes here).
+		var webAssets = Path.Combine(Util.FindRepoRoot(), "webassets");
+		if (Directory.Exists(webAssets))
+			app.UseStaticFiles(new StaticFileOptions
+			{
+				FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(webAssets),
+				RequestPath = "/webassets",
+			});
+
+		// Observer actor feed: pushes each new actors.json frame (~8 Hz, written
+		// by the engine) as SSE for the browser renderer.
+		app.MapGet("/api/actors", async context =>
+		{
+			context.Response.Headers.ContentType = "text/event-stream";
+			context.Response.Headers.CacheControl = "no-cache";
+			var ct = context.RequestAborted;
+			var actorsPath = Path.Combine(runDir, "state", "actors.json");
+			var lastWrite = DateTime.MinValue;
+
+			try
+			{
+				await context.Response.Body.FlushAsync(ct);
+				while (!ct.IsCancellationRequested)
+				{
+					if (File.Exists(actorsPath))
+					{
+						var write = File.GetLastWriteTimeUtc(actorsPath);
+						if (write != lastWrite)
+						{
+							lastWrite = write;
+							string? frame = null;
+							try
+							{
+								frame = File.ReadAllText(actorsPath);
+							}
+							catch (IOException)
+							{
+								// mid-write; retry next poll
+							}
+
+							if (frame != null && frame.StartsWith('{') && frame.EndsWith('}'))
+							{
+								await context.Response.WriteAsync($"data: {frame}\n\n", ct);
+								await context.Response.Body.FlushAsync(ct);
+							}
+						}
+					}
+
+					await Task.Delay(100, ct);
+				}
+			}
+			catch (Exception) when (ct.IsCancellationRequested)
+			{
+				// client went away
+			}
+			catch (IOException)
+			{
+			}
+		});
+
 		app.MapGet("/api/live", async context =>
 		{
 			context.Response.Headers.ContentType = "text/event-stream";
@@ -163,9 +223,11 @@ public static class WebServer
 			if (!Directory.Exists(turnsDir))
 				return Results.Json(Array.Empty<object>());
 
+			// Newest-first by mtime, not name: swarm turn dirs are role-prefixed, so
+			// ordinal name order would group by role instead of the actual timeline.
 			var turns = Directory.GetDirectories(turnsDir)
 				.Select(d => new DirectoryInfo(d))
-				.OrderByDescending(d => d.Name, StringComparer.Ordinal)
+				.OrderByDescending(d => d.LastWriteTimeUtc)
 				.Take(1000)
 				.Select(d => new { seq = d.Name, atUtc = d.LastWriteTimeUtc.ToString("o") })
 				.ToList();
@@ -175,7 +237,9 @@ public static class WebServer
 
 		app.MapGet("/api/agents/{slug}/turns/{seq}", (string slug, string seq) =>
 		{
-			if (!validSlugs.Contains(slug) || seq.Length != 6 || !seq.All(char.IsAsciiDigit))
+			// Classic seqs are 6 digits; swarm seqs are role-prefixed (boot-000023).
+			if (!validSlugs.Contains(slug) || seq.Length is 0 or > 40
+				|| !seq.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_'))
 				return Results.NotFound();
 
 			var turnDir = Path.Combine(runDir, "agents", slug, "turns", seq);

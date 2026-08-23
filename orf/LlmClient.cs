@@ -53,7 +53,20 @@ public sealed class LlmClient(string baseUrl, string apiKey, int timeoutSeconds 
 				var text = await response.Content.ReadAsStringAsync(timeoutCts.Token);
 
 				if (response.IsSuccessStatusCode)
+				{
+					// Some providers (observed: OpenRouter/Stealth 2026-08-23) return
+					// HTTP 200 with an empty message and native_finish_reason
+					// "network_error" when their upstream flakes. Treating that as a
+					// completed turn left an agent braindead for a whole match —
+					// retry it like any other transport failure.
+					if (IsEmptyProviderGlitch(text))
+					{
+						last = new HttpRequestException($"provider returned empty message (upstream network_error) from {endpoint}");
+						continue;
+					}
+
 					return text;
+				}
 
 				if (response.StatusCode == HttpStatusCode.TooManyRequests)
 				{
@@ -80,6 +93,29 @@ public sealed class LlmClient(string baseUrl, string apiKey, int timeoutSeconds 
 		}
 
 		throw last ?? new HttpRequestException($"Request to {endpoint} failed");
+	}
+
+	/// <summary>True when a 200 response carries no usable message: null/empty content
+	/// AND no tool calls (a legit "pass" always has at least text). Unparseable bodies
+	/// are NOT treated as glitches — downstream error handling reports those better.</summary>
+	static bool IsEmptyProviderGlitch(string body)
+	{
+		try
+		{
+			if (JsonNode.Parse(body) is not JsonObject obj)
+				return false;
+
+			if (obj["choices"]?[0] is not JsonObject choice || choice["message"] is not JsonObject message)
+				return false;
+
+			var content = message["content"]?.GetValue<string>();
+			var hasToolCalls = message["tool_calls"] is JsonArray { Count: > 0 };
+			return string.IsNullOrEmpty(content) && !hasToolCalls;
+		}
+		catch
+		{
+			return false;
+		}
 	}
 
 	static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "…";

@@ -1,0 +1,39 @@
+# The title match: Kyle vs Boot-Solo, straight up — no ally, no asterisk.
+# Boot-Solo: deterministic bootstrap (Power -> Refinery -> Barracks at machine
+# speed) handing off to ONE full-authority champion-style driver (Adv-Low lineage,
+# v6 prompt, 6-exchange history) + high-effort advisor. Winner of the 2v1 A/B.
+name: ox-bootsolo-1v1-or
+map: scorched-earth.oramap
+web: { port: 5199 }
+display: ":97"
+resolution: [2540, 2540]
+stream: { fps: 6, scale: 2048, quality: 6 }
+stateFormat: markdown
+turnIntervalSeconds: 0
+maxTurnsPerPlayer: 0
+listenPort: 1301
+serverName: OpenRAFormer title match
+players:
+  - { slug: kyle, display: Kyle, provider: human, spawn: 1 }
+  - slug: solo
+    display: Boot-Solo
+    provider: openrouter
+    model: stealth/ox-alpha
+    faction: gdi
+    spawn: 8
+    temperature: 1.0
+    reasoningEffort: low
+    maxTokens: 4000
+    timeoutSeconds: 120
+    advisor: { provider: openrouter, model: stealth/ox-alpha, reasoningEffort: high, maxTokens: 4000, timeoutSeconds: 300, windowTurns: 10, minNewTurns: 3 }
+    swarm:
+      bootstrap:
+        deterministic: true
+        handoffBuilding: Barracks
+        handoffAtSeconds: 240
+      roles:
+        - { name: cmdr, promptFile: ../prompts/system-v6.md, historyTurns: 6 }
+providers:
+  nous:       { baseUrl: "https://inference-api.nousresearch.com/v1", apiKeyEnv: NOUS_API_KEY }
+  openrouter: { baseUrl: "https://openrouter.ai/api/v1", apiKeyEnv: OPENROUTER_API_KEY }
+  test:       { baseUrl: "", apiKeyEnv: "" }

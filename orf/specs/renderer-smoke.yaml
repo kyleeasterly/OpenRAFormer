@@ -1,0 +1,16 @@
+# Bots-only scripted 1v1: exercises the live actor feed (ExportActors) and the
+# browser renderer against a real match without any API keys or humans.
+name: renderer-smoke
+map: scorched-earth.oramap
+web: { port: 5199 }
+display: ":97"
+resolution: [2540, 2540]
+stream: { fps: 6, scale: 2048, quality: 6 }
+stateFormat: markdown
+turnIntervalSeconds: 0
+maxTurnsPerPlayer: 0
+players:
+  - { slug: alpha, display: Alpha, provider: test, faction: gdi, spawn: 1 }
+  - { slug: beta, display: Beta, provider: test, faction: gdi, spawn: 5 }
+providers:
+  test: { baseUrl: "", apiKeyEnv: "" }

@@ -1,0 +1,31 @@
+# Plumbing smoke for swarm v2: scripted bootstrap -> handoff at t=30s -> core roles,
+# plus a dynamic thread spawning at t=60s. Validates the coordinator lifecycle,
+# role-prefixed inbox/results routing, order+queue whitelists, board/requests dirs,
+# and dashboard module lanes — no API keys.
+name: swarm-smoke
+map: scorched-earth.oramap
+web: { port: 5199 }
+display: ":97"
+resolution: [2540, 2540]
+stream: { fps: 6, scale: 2048, quality: 6 }
+stateFormat: markdown
+turnIntervalSeconds: 0
+maxTurnsPerPlayer: 0
+players:
+  - slug: swarm
+    display: Swarm-Test
+    provider: test
+    faction: gdi
+    spawn: 1
+    swarm:
+      bootstrap: { deterministic: true, handoffBuilding: Barracks, handoffAtSeconds: 120 }
+      roles:
+        - { name: build,   orders: [start_production, cancel_production, place_building, sell, repair], queues: [Building, Defense, Support] }
+        - { name: produce, orders: [start_production, cancel_production, set_rally], queues: [Infantry, Vehicle, Aircraft] }
+        - { name: army,    orders: [move, attack_move, attack, guard, stop, deploy, capture, resign] }
+        - { name: econ,    orders: [move, deploy, guard, stop] }
+      dynamic:
+        - { name: defense, trigger: "at_seconds:60", cap: 1, orders: [move, attack_move, attack, guard, stop] }
+  - { slug: solo, display: Solo-Test, provider: test, faction: gdi, spawn: 8 }
+providers:
+  test: { baseUrl: "", apiKeyEnv: "" }

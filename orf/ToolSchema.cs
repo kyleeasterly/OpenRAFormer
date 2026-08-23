@@ -73,5 +73,51 @@ public static class ToolSchema
 		]
 		""";
 
-	public static JsonArray Tools() => (JsonArray)JsonNode.Parse(ToolsJson)!;
+	const string SwarmToolsJson =
+		"""
+		[
+		  {
+		    "type": "function",
+		    "function": {
+		      "name": "post_request",
+		      "description": "Post a structured request to a teammate specialist (the demand system). Use this when you NEED something outside your own authority: the army needs rocket soldiers -> ask produce; econ needs a refinery placed near new tiberium -> ask build. Requests appear in the target's prompt until resolved. Don't spam duplicates — check OPEN REQUESTS first.",
+		      "parameters": {
+		        "type": "object",
+		        "properties": {
+		          "to": { "type": "string", "description": "Target role name (e.g. build, produce, army, econ) or 'any'." },
+		          "need": { "type": "string", "description": "One line: what you need, concretely (e.g. '6 Rocket Soldiers to staging [80,50]')." },
+		          "why": { "type": "string", "description": "One line of context so the target can prioritize (e.g. 'enemy tank push forming west')." },
+		          "priority": { "type": "string", "enum": ["low", "normal", "urgent"], "description": "How urgent this is. Default normal." }
+		        },
+		        "required": ["to", "need"]
+		      }
+		    }
+		  },
+		  {
+		    "type": "function",
+		    "function": {
+		      "name": "resolve_request",
+		      "description": "Mark a request addressed to you as done (or decline it with a reason). Do this the turn you fulfil it so the requester stops waiting.",
+		      "parameters": {
+		        "type": "object",
+		        "properties": {
+		          "id": { "type": "string", "description": "The request id shown in OPEN REQUESTS FOR YOU." },
+		          "note": { "type": "string", "description": "Short outcome note (e.g. '5 rockets queued, rally set' or 'declined: no cash')." }
+		        },
+		        "required": ["id"]
+		      }
+		    }
+		  }
+		]
+		""";
+
+	public static JsonArray Tools(bool swarm = false)
+	{
+		var tools = (JsonArray)JsonNode.Parse(ToolsJson)!;
+		if (swarm)
+			foreach (var extra in (JsonArray)JsonNode.Parse(SwarmToolsJson)!)
+				tools.Add(extra!.DeepClone());
+
+		return tools;
+	}
 }

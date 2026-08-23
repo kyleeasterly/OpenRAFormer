@@ -1,0 +1,68 @@
+# 2v1 architecture A/B: Kyle alone vs TWO allied bots under identical conditions.
+#   lean  — "Lean-Swarm" (swarm v4): deterministic bootstrap -> specialist swarm with
+#           the v3 autopsy fixes: 2-exchange role history, capped strategist memos,
+#           mass-before-attack gate (no more lone-scout death marches), JSON rescue.
+#   solo  — "Boot-Solo": deterministic bootstrap -> ONE full-authority champion-style
+#           driver (Adv-Low lineage, v6 prompt, 6-exchange history) + advisor.
+# Same map, same model, same bootstrap, allied on team 2 — whichever carries the
+# fight tells us if the swarm earns its complexity. All lanes on Nous.
+name: ox-duo-2v1
+map: scorched-earth.oramap
+web: { port: 5199 }
+display: ":97"
+resolution: [2540, 2540]
+stream: { fps: 6, scale: 2048, quality: 6 }
+stateFormat: markdown
+turnIntervalSeconds: 0
+maxTurnsPerPlayer: 0
+listenPort: 1301
+serverName: OpenRAFormer 2v1
+players:
+  - { slug: kyle, display: Kyle, provider: human, spawn: 1 }
+  - slug: lean
+    display: Lean-Swarm
+    provider: nous
+    model: stealth/ox-alpha
+    faction: gdi
+    spawn: 7
+    team: 2
+    temperature: 1.0
+    reasoningEffort: low
+    maxTokens: 4000
+    timeoutSeconds: 120
+    advisor: { provider: nous, model: stealth/ox-alpha, reasoningEffort: high, maxTokens: 4000, timeoutSeconds: 300, windowTurns: 16, minNewTurns: 8 }
+    swarm:
+      bootstrap:
+        deterministic: true
+        handoffBuilding: Barracks
+        handoffAtSeconds: 240
+      roles:
+        - { name: build,   promptFile: ../prompts/swarm/build.md,   orders: [start_production, cancel_production, place_building, sell, repair], queues: [Building, Defense, Support] }
+        - { name: produce, promptFile: ../prompts/swarm/produce.md, orders: [start_production, cancel_production, set_rally], queues: [Infantry, Vehicle, Aircraft] }
+        - { name: army,    promptFile: ../prompts/swarm/army.md,    orders: [move, attack_move, attack, guard, stop, deploy, capture, resign], minAttackGroup: 6 }
+        - { name: econ,    promptFile: ../prompts/swarm/econ.md,    orders: [move, deploy, guard, stop] }
+      dynamic:
+        - { name: defense, promptFile: ../prompts/swarm/defense.md, trigger: under_attack, cap: 2, orders: [move, attack_move, attack, guard, stop] }
+  - slug: solo
+    display: Boot-Solo
+    provider: nous
+    model: stealth/ox-alpha
+    faction: gdi
+    spawn: 8
+    team: 2
+    temperature: 1.0
+    reasoningEffort: low
+    maxTokens: 4000
+    timeoutSeconds: 120
+    advisor: { provider: nous, model: stealth/ox-alpha, reasoningEffort: high, maxTokens: 4000, timeoutSeconds: 300, windowTurns: 10, minNewTurns: 3 }
+    swarm:
+      bootstrap:
+        deterministic: true
+        handoffBuilding: Barracks
+        handoffAtSeconds: 240
+      roles:
+        - { name: cmdr, promptFile: ../prompts/system-v6.md, historyTurns: 6 }
+providers:
+  nous:       { baseUrl: "https://inference-api.nousresearch.com/v1", apiKeyEnv: NOUS_API_KEY }
+  openrouter: { baseUrl: "https://openrouter.ai/api/v1", apiKeyEnv: OPENROUTER_API_KEY }
+  test:       { baseUrl: "", apiKeyEnv: "" }

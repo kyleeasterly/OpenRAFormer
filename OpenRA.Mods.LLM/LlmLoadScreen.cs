@@ -48,6 +48,8 @@ namespace OpenRA.Mods.LLM
 
 			OrderManager om = null;
 			var phase = 0;
+			var botCount = match.Players.Count(p => !p.IsHuman);
+			var configuredHumans = new HashSet<int>();
 
 			void OnLobbyInfoChanged()
 			{
@@ -67,8 +69,16 @@ namespace OpenRA.Mods.LLM
 							Order.Command("spectate")
 						};
 
+						// Bots fill their designated slots; human slots stay open (a
+						// joining client is auto-assigned the first empty slot); every
+						// slot beyond the configured players is closed so humans can
+						// only land where the config expects them.
 						for (var i = 0; i < match.Players.Count && i < slots.Count; i++)
-							orders.Add(Order.Command($"slot_bot {slots[i]} {om.Connection.LocalClientId} {match.Players[i].Bot}"));
+							if (!match.Players[i].IsHuman)
+								orders.Add(Order.Command($"slot_bot {slots[i]} {om.Connection.LocalClientId} {match.Players[i].Bot}"));
+
+						for (var i = match.Players.Count; i < slots.Count; i++)
+							orders.Add(Order.Command($"slot_close {slots[i]}"));
 
 						foreach (var option in match.Options)
 							orders.Add(Order.Command($"option {option.Key} {option.Value}"));
@@ -83,11 +93,10 @@ namespace OpenRA.Mods.LLM
 					else if (phase == 1)
 					{
 						var bots = lobby.Clients.Where(c => c.Bot != null).ToList();
-						if (bots.Count < Math.Min(match.Players.Count, lobby.Slots.Count))
+						if (bots.Count < Math.Min(botCount, lobby.Slots.Count))
 							return;
 
 						phase = 2;
-						Game.LobbyInfoChanged -= OnLobbyInfoChanged;
 
 						var slots = SortedSlots(lobby);
 						var orders = new List<Order>();
@@ -108,10 +117,61 @@ namespace OpenRA.Mods.LLM
 								orders.Add(Order.Command($"team {bot.Index} {pc.Team}"));
 						}
 
-						orders.Add(Order.Command($"state {Session.ClientState.Ready}"));
-						orders.Add(Order.Command("startgame"));
+						// With humans expected, hold the lobby open: the admin must NOT
+						// go Ready yet — CheckAutoStart launches the game the moment
+						// every non-bot client (i.e. just this spectator) is Ready.
+						// Phase 2 readies up and starts once every human slot is filled
+						// and Ready.
+						if (!match.HasHumans)
+						{
+							Game.LobbyInfoChanged -= OnLobbyInfoChanged;
+							orders.Add(Order.Command($"state {Session.ClientState.Ready}"));
+							orders.Add(Order.Command("startgame"));
+						}
+
 						foreach (var order in orders)
 							om.IssueOrder(order);
+					}
+					else if (phase == 2)
+					{
+						var slots = SortedSlots(lobby);
+
+						// Seed each newly joined human with their configured
+						// faction/spawn/team (once — they may change it afterwards).
+						for (var i = 0; i < match.Players.Count && i < slots.Count; i++)
+						{
+							var pc = match.Players[i];
+							if (!pc.IsHuman)
+								continue;
+
+							var client = lobby.ClientInSlot(slots[i]);
+							if (client == null || client.Bot != null || !configuredHumans.Add(client.Index))
+								continue;
+
+							if (!string.IsNullOrEmpty(pc.Faction) && pc.Faction != "Random")
+								om.IssueOrder(Order.Command($"faction {client.Index} {pc.Faction}"));
+
+							if (pc.Spawn > 0)
+								om.IssueOrder(Order.Command($"spawn {client.Index} {pc.Spawn}"));
+
+							if (pc.Team > 0)
+								om.IssueOrder(Order.Command($"team {client.Index} {pc.Team}"));
+						}
+
+						for (var i = 0; i < match.Players.Count && i < slots.Count; i++)
+						{
+							if (!match.Players[i].IsHuman)
+								continue;
+
+							var client = lobby.ClientInSlot(slots[i]);
+							if (client == null || client.Bot != null || client.State != Session.ClientState.Ready)
+								return;
+						}
+
+						phase = 3;
+						Game.LobbyInfoChanged -= OnLobbyInfoChanged;
+						om.IssueOrder(Order.Command($"state {Session.ClientState.Ready}"));
+						om.IssueOrder(Order.Command("startgame"));
 					}
 				}
 				catch (Exception e)
@@ -122,7 +182,25 @@ namespace OpenRA.Mods.LLM
 			}
 
 			Game.LobbyInfoChanged += OnLobbyInfoChanged;
-			om = Game.JoinServer(Game.CreateLocalServer(map.Uid), "");
+
+			// Human slots need a network-reachable server; bot-only matches keep the
+			// loopback-only local server.
+			if (match.HasHumans && match.ListenPort > 0)
+			{
+				var settings = new ServerSettings
+				{
+					Name = string.IsNullOrEmpty(match.ServerName) ? "OpenRAFormer " + match.RunId : match.ServerName,
+					ListenPort = match.ListenPort,
+					AdvertiseOnline = false,
+					AdvertiseOnLocalNetwork = true,
+					Password = match.Password ?? "",
+					Map = map.Uid
+				};
+
+				om = Game.JoinServer(Game.CreateServer(settings), settings.Password);
+			}
+			else
+				om = Game.JoinServer(Game.CreateLocalServer(map.Uid), "");
 		}
 
 		static List<string> SortedSlots(Session lobby)

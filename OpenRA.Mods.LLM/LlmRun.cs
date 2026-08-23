@@ -24,6 +24,14 @@ namespace OpenRA.Mods.LLM
 		public int StateIntervalTicks { get; set; } = 25;
 		public Dictionary<string, string> Options { get; set; } = [];
 		public List<LlmPlayerConfig> Players { get; set; } = [];
+
+		/// <summary>When > 0 (and any player is human), host a LAN-joinable multiplayer
+		/// server on this port instead of a loopback-only local server.</summary>
+		public int ListenPort { get; set; }
+		public string ServerName { get; set; }
+		public string Password { get; set; }
+
+		public bool HasHumans => Players.Exists(p => p.IsHuman);
 	}
 
 	public sealed class LlmPlayerConfig
@@ -34,6 +42,10 @@ namespace OpenRA.Mods.LLM
 		public string Faction { get; set; } = "Random";
 		public int Spawn { get; set; }
 		public int Team { get; set; }
+
+		/// <summary>Human slot: left open in the lobby for a real player to join over
+		/// the network. No LlmBot, no state export, no order channel.</summary>
+		public bool IsHuman => Bot == "human";
 	}
 
 	public static class LlmRun

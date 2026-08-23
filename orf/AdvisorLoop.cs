@@ -125,9 +125,14 @@ public sealed class AdvisorLoop
 		if (!Directory.Exists(TurnsDir))
 			return [];
 
+		// Sorted chronologically by completion time, not name: swarm turn dirs are
+		// role-prefixed (army-000004, build-000007, …), so ordinal name order would
+		// group by role instead of interleaving the actual timeline.
 		return [.. Directory.GetDirectories(TurnsDir)
-			.Where(d => File.Exists(Path.Combine(d, "orders.json")))
-			.OrderBy(d => d, StringComparer.Ordinal)];
+			.Select(d => (Dir: d, Orders: Path.Combine(d, "orders.json")))
+			.Where(x => File.Exists(x.Orders))
+			.OrderBy(x => File.GetLastWriteTimeUtc(x.Orders))
+			.Select(x => x.Dir)];
 	}
 
 	async Task AdviseAsync(List<string> turns, CancellationToken ct)

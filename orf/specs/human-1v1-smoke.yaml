@@ -1,0 +1,19 @@
+# Smoke test for human-join: scripted TestAgent opponent, no API keys needed.
+# Verifies the LAN server binds, the lobby holds for the human, and a Direct IP
+# client can join. Not for real play — use human-1v1.yaml for that.
+name: human-1v1-smoke
+map: scorched-earth.oramap
+web: { port: 5199 }
+display: ":97"
+resolution: [2540, 2540]
+stream: { fps: 6, scale: 2048, quality: 6 }
+stateFormat: markdown
+turnIntervalSeconds: 0
+maxTurnsPerPlayer: 0
+listenPort: 1301
+serverName: OpenRAFormer smoke
+players:
+  - { slug: kyle, display: Kyle, provider: human, spawn: 1 }
+  - { slug: bot, display: Scripted, provider: test, faction: gdi, spawn: 8 }
+providers:
+  test: { baseUrl: "", apiKeyEnv: "" }

@@ -1,0 +1,24 @@
+# Human vs the champion: Kyle joins over LAN against Adv-Low (the archetype that
+# took the podium in the ox-arch clean series). The lobby holds open until the
+# human connects (Multiplayer -> Direct IP -> <host>:1301) and clicks Ready;
+# pick your faction/spawn in the lobby before readying up.
+name: human-1v1
+map: scorched-earth.oramap
+web: { port: 5199 }
+display: ":97"
+resolution: [2540, 2540]
+stream: { fps: 6, scale: 2048, quality: 6 }
+stateFormat: markdown
+turnIntervalSeconds: 0
+maxTurnsPerPlayer: 0
+listenPort: 1301
+serverName: OpenRAFormer 1v1
+# Spawn 1 = top-left, spawn 8 = bottom-right: maximum diagonal separation.
+players:
+  - { slug: kyle, display: Kyle, provider: human, spawn: 1 }
+  - { slug: alow, display: Adv-Low, provider: openrouter, model: stealth/ox-alpha, faction: gdi, spawn: 8, team: 0, temperature: 1.0, promptFile: ../prompts/system-v6.md, reasoningEffort: low, maxTokens: 4000, timeoutSeconds: 120,
+      advisor: { provider: openrouter, model: stealth/ox-alpha, reasoningEffort: high, maxTokens: 16000, timeoutSeconds: 300, windowTurns: 10, minNewTurns: 3 } }
+providers:
+  nous:       { baseUrl: "https://inference-api.nousresearch.com/v1", apiKeyEnv: NOUS_API_KEY }
+  openrouter: { baseUrl: "https://openrouter.ai/api/v1", apiKeyEnv: OPENROUTER_API_KEY }
+  test:       { baseUrl: "", apiKeyEnv: "" }

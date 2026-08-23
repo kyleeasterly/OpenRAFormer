@@ -17,12 +17,22 @@ public sealed class Spec
 	public List<PlayerSpec> Players { get; set; } = [];
 	public Dictionary<string, ProviderSpec> Providers { get; set; } = [];
 
+	/// <summary>Port for the LAN-joinable game server when any player is human
+	/// (provider: human). Human matches default to 1301.</summary>
+	public int ListenPort { get; set; }
+	public string? ServerName { get; set; }
+	public string? Password { get; set; }
+
+	public bool HasHumans => Players.Any(p => p.IsHuman);
+
 	public int DisplayNumber => int.TryParse(Display.TrimStart(':'), out var n) ? n : 97;
 	public int Width => Resolution.Count > 0 ? Resolution[0] : 2540;
 	public int Height => Resolution.Count > 1 ? Resolution[1] : 2540;
 
 	public ProviderSpec ProviderFor(PlayerSpec player)
 	{
+		if (player.IsHuman)
+			throw new InvalidOperationException($"Player '{player.Slug}' is human and has no provider");
 		if (!Providers.TryGetValue(player.Provider, out var provider))
 			throw new InvalidOperationException($"Player '{player.Slug}' references unknown provider '{player.Provider}'");
 		return provider;
@@ -49,9 +59,43 @@ public sealed class Spec
 		if (dupes.Count > 0)
 			throw new InvalidOperationException($"Duplicate player slugs: {string.Join(", ", dupes)}");
 
+		if (spec.HasHumans && spec.ListenPort <= 0)
+			spec.ListenPort = 1301;
+
 		foreach (var p in spec.Players)
 		{
+			if (p.IsHuman)
+			{
+				if (p.Advisor != null)
+					throw new InvalidOperationException($"Player '{p.Slug}' is human and cannot have an advisor");
+				continue;
+			}
+
 			spec.ProviderFor(p); // validates provider references
+
+			if (p.IsSwarm)
+			{
+				if (p.Swarm!.Bootstrap is { } boot && string.IsNullOrWhiteSpace(boot.Name))
+					boot.Name = "boot";
+
+				var roleDupes = p.Swarm!.AllRoles().CountBy(r => r.Name).Where(kv => kv.Value > 1).Select(kv => kv.Key).ToList();
+				if (roleDupes.Count > 0)
+					throw new InvalidOperationException($"Player '{p.Slug}' has duplicate swarm roles: {string.Join(", ", roleDupes)}");
+
+				foreach (var role in p.Swarm!.AllRoles())
+				{
+					if (string.IsNullOrWhiteSpace(role.Name) || !role.Name.All(c => char.IsAsciiLetterOrDigit(c) || c == '_'))
+						throw new InvalidOperationException($"Player '{p.Slug}' swarm role name '{role.Name}' must be a non-empty alphanumeric identifier");
+
+					var roleProvider = role.Provider ?? p.Provider;
+					if (!spec.Providers.ContainsKey(roleProvider))
+						throw new InvalidOperationException($"Player '{p.Slug}' role '{role.Name}' references unknown provider '{roleProvider}'");
+				}
+
+				foreach (var d in p.Swarm!.Dynamic)
+					if (d.Trigger != "under_attack" && !d.Trigger.StartsWith("at_seconds:", StringComparison.Ordinal))
+						throw new InvalidOperationException($"Player '{p.Slug}' dynamic role '{d.Name}' has unknown trigger '{d.Trigger}'");
+			}
 
 			if (p.Advisor != null)
 			{
@@ -84,6 +128,10 @@ public sealed class PlayerSpec
 	public string Slug { get; set; } = "";
 	public string Display { get; set; } = "";
 	public string Provider { get; set; } = "test";
+
+	/// <summary>provider: human — the slot is left open in the lobby for a real
+	/// player to join over the LAN. No agent loop, no orders, no state export.</summary>
+	public bool IsHuman => Provider == "human";
 	public string Model { get; set; } = "scripted";
 	public string Faction { get; set; } = "Random";
 	public int Spawn { get; set; }
@@ -104,6 +152,101 @@ public sealed class PlayerSpec
 	/// <summary>Optional add-on module: a second model that reviews this player's recent turns
 	/// asynchronously and feeds advice into its prompts. Never blocks the driver's turn loop.</summary>
 	public AdvisorSpec? Advisor { get; set; }
+
+	/// <summary>Swarm mode: multiple concurrent specialist loops playing this one player
+	/// slot — optionally opening with a solo bootstrap commander that hands off once the
+	/// base is established, and growing dynamically as the game heats up. The player-level
+	/// Advisor (if set) becomes the shared strategist: its advice is injected into every
+	/// thread's prompts.</summary>
+	public SwarmSpec? Swarm { get; set; }
+
+	public bool IsSwarm => Swarm != null && (Swarm.Roles.Count > 0 || Swarm.Bootstrap != null);
+}
+
+/// <summary>Swarm composition: bootstrap commander, core roles, and dynamic spawn rules.</summary>
+public sealed class SwarmSpec
+{
+	/// <summary>Solo commander that opens the game alone (full order authority) and hands
+	/// off to the core roles once the handoff condition is met.</summary>
+	public BootstrapSpec? Bootstrap { get; set; }
+
+	/// <summary>Core specialists spawned at handoff (or at game start when no bootstrap).</summary>
+	public List<RoleSpec> Roles { get; set; } = [];
+
+	/// <summary>Threads spawned mid-game when their trigger fires (the swarm scales with the fight).</summary>
+	public List<DynamicRoleSpec> Dynamic { get; set; } = [];
+
+	public IEnumerable<RoleSpec> AllRoles()
+	{
+		if (Bootstrap != null)
+			yield return Bootstrap;
+		foreach (var r in Roles)
+			yield return r;
+		foreach (var d in Dynamic)
+			yield return d;
+	}
+}
+
+/// <summary>One specialist thread of a swarm player. Unset model fields inherit the player's.</summary>
+public class RoleSpec
+{
+	public string Name { get; set; } = "";
+	public string? PromptFile { get; set; }
+	public string? Provider { get; set; }
+	public string? Model { get; set; }
+	public string? ReasoningEffort { get; set; }
+	public double? Temperature { get; set; }
+	public int? MaxTokens { get; set; }
+	public int? TimeoutSeconds { get; set; }
+
+	/// <summary>Allowed order types (e.g. move, attack_move, start_production). Orders of
+	/// other types are dropped by the harness with a note in the tool result. Empty = all.</summary>
+	public List<string> Orders { get; set; } = [];
+
+	/// <summary>Allowed production queues by base name (Building, Defense, Support, Infantry,
+	/// Vehicle, Aircraft). start_production/cancel_production orders for items belonging to
+	/// other queues are dropped — this is what stops the unit chief from building a Barracks.
+	/// Empty = all queues.</summary>
+	public List<string> Queues { get; set; } = [];
+
+	/// <summary>Per-role cadence; 0 = as fast as the provider allows (per fresh state).</summary>
+	public int TurnIntervalSeconds { get; set; }
+
+	/// <summary>Message-history exchanges kept in the prompt. 0 = default (2 for role
+	/// lanes — each exchange embeds a full state snapshot, and fat prompts were the
+	/// 25-40s turn killer of swarm v3).</summary>
+	public int HistoryTurns { get; set; }
+
+	/// <summary>Mass-before-attack gate: attack_move orders targeting cells far from our
+	/// spawn are dropped unless they move at least this many units. Stops the lone-scout
+	/// death trickle (v3: 34 units lost in ones and twos). 0 = off.</summary>
+	public int MinAttackGroup { get; set; }
+}
+
+/// <summary>The opening commander: plays solo with full authority, then hands off.</summary>
+public sealed class BootstrapSpec : RoleSpec
+{
+	/// <summary>Scripted opening (no LLM): Power -> Refinery -> Barracks at machine
+	/// speed, placed the second they're ready. The LLM swarm takes over at handoff
+	/// with the base already standing — zero thinking-latency in the opening.</summary>
+	public bool Deterministic { get; set; }
+
+	/// <summary>Hand off once this building exists (e.g. "Weapons Factory").</summary>
+	public string? HandoffBuilding { get; set; } = "Weapons Factory";
+
+	/// <summary>Hard handoff deadline in game seconds, in case the building never lands.</summary>
+	public int HandoffAtSeconds { get; set; } = 420;
+}
+
+/// <summary>A thread the coordinator spawns mid-game when its trigger fires.</summary>
+public sealed class DynamicRoleSpec : RoleSpec
+{
+	/// <summary>Spawn trigger. Supported: "under_attack" (sustained incoming damage after
+	/// handoff), "at_seconds:N" (game clock).</summary>
+	public string Trigger { get; set; } = "";
+
+	/// <summary>Maximum instances of this thread (instances get -2, -3 name suffixes).</summary>
+	public int Cap { get; set; } = 1;
 }
 
 /// <summary>Config for the over-the-shoulder advisor add-on.</summary>

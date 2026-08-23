@@ -1,0 +1,41 @@
+# The swarm rematch: Kyle vs a multi-threaded Ox Alpha player. Four low-effort
+# specialists run concurrently (structures / unit production / army / economy),
+# each with its own cadence, role prompt, and order whitelist, coordinating via
+# the team board — plus one high-effort strategist (advisor) feeding all of them.
+# All lanes on Nous after OpenRouter/Stealth's network_error night (2026-08-23).
+#
+# Expected footprint at full speed: ~35-50 req/min, ~200-300k tokens/min — well
+# inside the ~150 req/min / 1.5M tok/min we sustained on Nous during the fleet runs.
+name: ox-swarm-1v1
+map: scorched-earth.oramap
+web: { port: 5199 }
+display: ":97"
+resolution: [2540, 2540]
+stream: { fps: 6, scale: 2048, quality: 6 }
+stateFormat: markdown
+turnIntervalSeconds: 0
+maxTurnsPerPlayer: 0
+listenPort: 1301
+serverName: OpenRAFormer swarm 1v1
+players:
+  - { slug: kyle, display: Kyle, provider: human, spawn: 1 }
+  - slug: swarm
+    display: Ox-Swarm
+    provider: nous
+    model: stealth/ox-alpha
+    faction: gdi
+    spawn: 8
+    temperature: 1.0
+    reasoningEffort: low
+    maxTokens: 4000
+    timeoutSeconds: 120
+    advisor: { provider: nous, model: stealth/ox-alpha, reasoningEffort: high, maxTokens: 16000, timeoutSeconds: 300, windowTurns: 16, minNewTurns: 8 }
+    swarm:
+      - { name: build,   promptFile: ../prompts/swarm/build.md,   orders: [start_production, cancel_production, place_building, sell, repair] }
+      - { name: produce, promptFile: ../prompts/swarm/produce.md, orders: [start_production, cancel_production, set_rally] }
+      - { name: army,    promptFile: ../prompts/swarm/army.md,    orders: [move, attack_move, attack, guard, stop, deploy, capture, resign] }
+      - { name: econ,    promptFile: ../prompts/swarm/econ.md,    orders: [move, deploy, guard, stop] }
+providers:
+  nous:       { baseUrl: "https://inference-api.nousresearch.com/v1", apiKeyEnv: NOUS_API_KEY }
+  openrouter: { baseUrl: "https://openrouter.ai/api/v1", apiKeyEnv: OPENROUTER_API_KEY }
+  test:       { baseUrl: "", apiKeyEnv: "" }

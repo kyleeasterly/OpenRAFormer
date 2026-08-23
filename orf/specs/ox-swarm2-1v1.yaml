@@ -1,0 +1,48 @@
+# Swarm v2 rematch: Kyle vs a lifecycle swarm.
+#   Phase 1  boot     — solo commander, strict scripted opening, full authority
+#   Phase 2  handoff  — when the Weapons Factory lands (or t=420s), four specialists
+#                       take over: build / produce / army / econ, queue-scoped,
+#                       coordinating via the team board + structured demand system
+#   Phase 3  scaling  — a defense commander spawns when the base takes sustained
+#                       damage (cap 2: second front gets its own thread)
+# One high-effort strategist advises every thread throughout. All lanes on Nous.
+name: ox-swarm2-1v1
+map: scorched-earth.oramap
+web: { port: 5199 }
+display: ":97"
+resolution: [2540, 2540]
+stream: { fps: 6, scale: 2048, quality: 6 }
+stateFormat: markdown
+turnIntervalSeconds: 0
+maxTurnsPerPlayer: 0
+listenPort: 1301
+serverName: OpenRAFormer swarm v2
+players:
+  - { slug: kyle, display: Kyle, provider: human, spawn: 1 }
+  - slug: swarm
+    display: Ox-Swarm-v2
+    provider: nous
+    model: stealth/ox-alpha
+    faction: gdi
+    spawn: 8
+    temperature: 1.0
+    reasoningEffort: low
+    maxTokens: 4000
+    timeoutSeconds: 120
+    advisor: { provider: nous, model: stealth/ox-alpha, reasoningEffort: high, maxTokens: 16000, timeoutSeconds: 300, windowTurns: 16, minNewTurns: 8 }
+    swarm:
+      bootstrap:
+        promptFile: ../prompts/swarm/bootstrap.md
+        handoffBuilding: Weapons Factory
+        handoffAtSeconds: 420
+      roles:
+        - { name: build,   promptFile: ../prompts/swarm/build.md,   orders: [start_production, cancel_production, place_building, sell, repair], queues: [Building, Defense, Support] }
+        - { name: produce, promptFile: ../prompts/swarm/produce.md, orders: [start_production, cancel_production, set_rally], queues: [Infantry, Vehicle, Aircraft] }
+        - { name: army,    promptFile: ../prompts/swarm/army.md,    orders: [move, attack_move, attack, guard, stop, deploy, capture, resign] }
+        - { name: econ,    promptFile: ../prompts/swarm/econ.md,    orders: [move, deploy, guard, stop] }
+      dynamic:
+        - { name: defense, promptFile: ../prompts/swarm/defense.md, trigger: under_attack, cap: 2, orders: [move, attack_move, attack, guard, stop] }
+providers:
+  nous:       { baseUrl: "https://inference-api.nousresearch.com/v1", apiKeyEnv: NOUS_API_KEY }
+  openrouter: { baseUrl: "https://openrouter.ai/api/v1", apiKeyEnv: OPENROUTER_API_KEY }
+  test:       { baseUrl: "", apiKeyEnv: "" }

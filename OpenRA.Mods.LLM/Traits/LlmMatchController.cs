@@ -32,6 +32,10 @@ namespace OpenRA.Mods.LLM.Traits
 
 	public sealed class LlmMatchController : ITick, ITickRender, IWorldLoaded, IGameOver
 	{
+		// Observer actor feed for the browser renderer: a compact frame written
+		// every few ticks (~8 Hz), consumed by the dashboard's /api/actors stream.
+		const int ActorExportInterval = 3;
+
 		readonly LlmMatchControllerInfo info;
 
 		Dictionary<Player, LlmPlayerConfig> configs;
@@ -39,6 +43,10 @@ namespace OpenRA.Mods.LLM.Traits
 		int interval;
 		bool resultWritten;
 		int exitAtTick = -1;
+
+		readonly Dictionary<string, int> actorTypeIds = [];
+		readonly List<string> actorTypeNames = [];
+		Dictionary<Player, int> playerIds;
 
 		public LlmMatchController(LlmMatchControllerInfo info)
 		{
@@ -99,13 +107,26 @@ namespace OpenRA.Mods.LLM.Traits
 				return;
 
 			var world = self.World;
+			if (world.WorldTick > 0 && world.WorldTick % ActorExportInterval == 0)
+			{
+				try
+				{
+					ExportActors(world);
+				}
+				catch (Exception e)
+				{
+					Log.Write("debug", $"LlmMatchController: actor export failed: {e}");
+				}
+			}
+
 			if (world.WorldTick == 0 || world.WorldTick % interval != 0)
 				return;
 
 			try
 			{
 				foreach (var (player, cfg) in configs)
-					LlmRun.WriteJsonAtomic(Path.Combine(LlmRun.StateDir, cfg.Slug + ".json"), PlayerState(world, player, cfg));
+					if (!cfg.IsHuman)
+						LlmRun.WriteJsonAtomic(Path.Combine(LlmRun.StateDir, cfg.Slug + ".json"), PlayerState(world, player, cfg));
 
 				LlmRun.WriteJsonAtomic(Path.Combine(LlmRun.StateDir, "game.json"), GameState(world));
 
@@ -131,6 +152,54 @@ namespace OpenRA.Mods.LLM.Traits
 				else if (world.WorldTick >= exitAtTick)
 					Game.Exit();
 			}
+		}
+
+		/// <summary>Compact observer frame for the browser renderer: id, type, owner, px, py, pz, facing, turret, hp%.</summary>
+		void ExportActors(World world)
+		{
+			if (playerIds == null)
+			{
+				playerIds = [];
+				foreach (var p in configs.Keys)
+					playerIds[p] = playerIds.Count;
+			}
+
+			var rows = new List<int[]>();
+			foreach (var actor in world.Actors)
+			{
+				// OccupiesSpace == null covers position-less actors (e.g. the per-player
+				// PlayerActor, which is owned by a tracked player but has no location).
+				if (actor.IsDead || !actor.IsInWorld || actor.Owner == null || actor.OccupiesSpace == null)
+					continue;
+
+				if (!playerIds.TryGetValue(actor.Owner, out var ownerId))
+					continue;
+
+				if (!actorTypeIds.TryGetValue(actor.Info.Name, out var typeId))
+				{
+					typeId = actorTypeNames.Count;
+					actorTypeIds[actor.Info.Name] = typeId;
+					actorTypeNames.Add(actor.Info.Name);
+				}
+
+				var pos = actor.CenterPosition;
+				var facing = actor.TraitOrDefault<IFacing>()?.Facing.Angle ?? -1;
+				var turret = actor.TraitsImplementing<Turreted>().FirstOrDefault()?.WorldOrientation.Yaw.Angle ?? -1;
+				var health = actor.TraitOrDefault<IHealth>();
+				var hp = health != null && health.MaxHP > 0 ? 100 * health.HP / health.MaxHP : 100;
+
+				// Positions in terrain pixels (24 px per 1024 world units per cell).
+				rows.Add([(int)actor.ActorID, typeId, ownerId,
+					pos.X * 24 / 1024, pos.Y * 24 / 1024, pos.Z * 24 / 1024, facing, turret, hp]);
+			}
+
+			LlmRun.WriteJsonAtomic(Path.Combine(LlmRun.StateDir, "actors.json"), new
+			{
+				t = world.WorldTick,
+				types = actorTypeNames,
+				players = configs.Values.Select(c => c.Slug).ToList(),
+				a = rows,
+			});
 		}
 
 		void IGameOver.GameOver(World world)
