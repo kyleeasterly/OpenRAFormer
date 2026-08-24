@@ -65,6 +65,22 @@ public static class StateMarkdown
 				var buildable = Join(q["buildable"], n => n is JsonObject b ? $"{b["name"]} ${b["cost"]}" : Scalar(n));
 				sb.AppendLine($"|{q["queue"]}|{(True(q["busy"]) ? "yes" : "no")}|{current}|{queued}|{buildable}|");
 			}
+
+			// Locked items with their missing prerequisites. Agents have lost whole
+			// matches ordering a unit 21 times without ever learning what unlocks it.
+			var locked = production.OfType<JsonObject>()
+				.SelectMany(q => (q["locked"] as JsonArray ?? []).OfType<JsonObject>())
+				.ToList();
+
+			if (locked.Count > 0)
+			{
+				sb.AppendLine();
+				sb.AppendLine("## locked — NOT buildable yet, and exactly what each one needs first");
+				sb.AppendLine("|Item|Cost|Requires|Blocked by|");
+				sb.AppendLine("|---|---|---|---|");
+				foreach (var l in locked)
+					sb.AppendLine($"|{l["name"]}|${l["cost"]}|{Join(l["requires"], Scalar)}|{Join(l["blockedBy"], Scalar)}|");
+			}
 		}
 
 		if (state["pendingPlacement"] is JsonArray pending && pending.Count > 0)

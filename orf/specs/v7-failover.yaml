@@ -1,0 +1,30 @@
+# Failover regression test: the primary model is deliberately invalid, so the lane
+# must fall back to the free Nemotron and keep playing. Verified 2026-08-24 —
+# switched on the first failure and reached turn 5 on the fallback.
+name: v7-failover
+map: scorched-earth.oramap
+web: { port: 5202 }
+display: ":95"
+resolution: [1280, 1280]
+stream: { fps: 2, scale: 1024, quality: 4 }
+stateFormat: markdown
+turnIntervalSeconds: 0
+maxTurnsPerPlayer: 0
+players:
+  - slug: v7
+    display: Commander-v7
+    provider: openrouter
+    model: bogus/does-not-exist
+    faction: gdi
+    spawn: 1
+    temperature: 1.0
+    reasoningEffort: low
+    maxTokens: 4000
+    timeoutSeconds: 120
+    promptFile: ../prompts/system-v7.md
+    fallbackModels: [nvidia/nemotron-3-ultra-550b-a55b:free]
+    fallbackAfterFailures: 1  # deliberately hair-trigger: this spec tests the switch
+  - { slug: dummy, display: Dummy, provider: test, faction: gdi, spawn: 8 }
+providers:
+  openrouter: { baseUrl: "https://openrouter.ai/api/v1", apiKeyEnv: OPENROUTER_API_KEY }
+  test:       { baseUrl: "", apiKeyEnv: "" }

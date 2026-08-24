@@ -19,6 +19,11 @@ const string Usage =
 	      history (the player must have an advisor in the spec). Writes advice and
 	      module status under <dir>/agents/<slug>/.
 
+	  orf plan-test --state <fixture.json> [--plan "Item:placement,Item:placement"]
+	                [--rules "Item:count,Item:count"]
+	      Dry-run the plan executor against a state fixture: prints the orders it
+	      would submit and the plan/status text the agent would see. No network.
+
 	  orf launch --spec <path> [--node http://host:5100]
 	      Validate a spec locally, then start it as a detached match on the target
 	      node's hub (default: this machine's hub). No shell access needed on the
@@ -56,6 +61,8 @@ try
 			return await AgentTurnCommand(args[1..]);
 		case "advisor-once":
 			return await AdvisorOnceCommand(args[1..]);
+		case "plan-test":
+			return PlanTestCommand(args[1..]);
 		case "launch":
 			return await LaunchCommand(args[1..]);
 		case "fleet":
@@ -394,4 +401,73 @@ static string Expect(string[] args, ref int i, string flag)
 	if (i + 1 >= args.Length)
 		throw new ArgumentException($"{flag} requires a value");
 	return args[++i];
+}
+
+static int PlanTestCommand(string[] args)
+{
+	string? statePath = null, planArg = null, rulesArg = null;
+	for (var i = 0; i < args.Length; i++)
+	{
+		switch (args[i])
+		{
+			case "--state":
+				statePath = Expect(args, ref i, "--state");
+				break;
+			case "--plan":
+				planArg = Expect(args, ref i, "--plan");
+				break;
+			case "--rules":
+				rulesArg = Expect(args, ref i, "--rules");
+				break;
+		}
+	}
+
+	if (statePath == null)
+	{
+		Console.Error.WriteLine("plan-test requires --state <fixture.json>");
+		return 1;
+	}
+
+	if (JsonNode.Parse(File.ReadAllText(statePath)) is not JsonObject state)
+	{
+		Console.Error.WriteLine("state fixture is not a JSON object");
+		return 1;
+	}
+
+	var executor = new PlanExecutor();
+
+	var steps = new JsonArray();
+	foreach (var part in (planArg ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
+	{
+		var bits = part.Split(':');
+		steps.Add(new JsonObject
+		{
+			["item"] = bits[0].Trim(),
+			["placement"] = bits.Length > 1 ? bits[1].Trim() : "near_base",
+		});
+	}
+
+	var rules = new JsonArray();
+	foreach (var part in (rulesArg ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
+	{
+		var bits = part.Split(':');
+		rules.Add(new JsonObject
+		{
+			["item"] = bits[0].Trim(),
+			["maintain"] = bits.Length > 1 && int.TryParse(bits[1], out var n) ? n : 1,
+		});
+	}
+
+	Console.WriteLine("set_build_plan       -> " + executor.SetPlan(steps));
+	Console.WriteLine("set_production_rules -> " + executor.SetRules(rules));
+
+	var orders = executor.Tick(state, new HashSet<string>());
+	Console.WriteLine($"\nORDERS THE EXECUTOR WOULD SUBMIT ({orders.Count}):");
+	foreach (var o in orders)
+		Console.WriteLine("  " + o!.ToJsonString());
+
+	Console.WriteLine("\nWHAT THE AGENT WOULD SEE:");
+	Console.WriteLine(executor.Render() ?? "  (no plan)");
+	Console.WriteLine(executor.DrainActivity() ?? "  (no activity)");
+	return 0;
 }

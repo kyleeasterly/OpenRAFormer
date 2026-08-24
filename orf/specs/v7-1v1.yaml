@@ -1,0 +1,56 @@
+# v7: Kyle vs the overhauled agent.
+#
+# No deterministic bootstrap — the opening is authored by the model on turn 1 via
+# set_build_plan / set_production_rules, which the harness then executes at ~1 Hz
+# between turns. Everything else the agent gains is instructions (system-v7 +
+# rewritten strategy guide with the real tech tree) or tools: named unit groups,
+# a permanent notepad (remember), an intent line per turn, transport orders
+# (enter/unload), harvester tasking, stances, and honest per-order rejections
+# that name the missing prerequisite.
+name: v7-1v1
+map: scorched-earth.oramap
+web: { port: 5199 }
+display: ":97"
+resolution: [2540, 2540]
+stream: { fps: 6, scale: 2048, quality: 6 }
+stateFormat: markdown
+turnIntervalSeconds: 0
+maxTurnsPerPlayer: 0
+listenPort: 1301
+serverName: OpenRAFormer v7
+# Spawn 1 = top-left, spawn 8 = bottom-right: maximum diagonal separation.
+players:
+  - { slug: kyle, display: Kyle, provider: human, spawn: 1 }
+  - slug: v7
+    display: Commander-v7
+    provider: openrouter
+    model: stealth/ox-alpha
+    faction: gdi
+    spawn: 8
+    temperature: 1.0
+    reasoningEffort: low
+    maxTokens: 4000
+    timeoutSeconds: 120
+    promptFile: ../prompts/system-v7.md
+    # Provider failover: after 2 consecutive turns with no usable answer (timeout,
+    # HTTP-200 empty body, parse failure) the lane switches model and plays on.
+    # Both entries are $0 on OpenRouter; verified free 2026-08-24.
+    fallbackModels: [nvidia/nemotron-3-ultra-550b-a55b:free]
+    fallbackAfterFailures: 2
+    # Advisor is OFF. It is a drop-in module — paste the block below back to re-enable.
+    # Last outing it did active harm: four consecutive memos told the commander to
+    # keep retrying an unbuildable Medium Tank, with a fabricated causal theory the
+    # commander then adopted. Re-test it once the tech-tree fix has a clean baseline.
+    #
+    # advisor:
+    #   provider: openrouter
+    #   model: stealth/ox-alpha
+    #   reasoningEffort: high
+    #   maxTokens: 4000
+    #   timeoutSeconds: 300
+    #   windowTurns: 10
+    #   minNewTurns: 3
+providers:
+  nous:       { baseUrl: "https://inference-api.nousresearch.com/v1", apiKeyEnv: NOUS_API_KEY }
+  openrouter: { baseUrl: "https://openrouter.ai/api/v1", apiKeyEnv: OPENROUTER_API_KEY }
+  test:       { baseUrl: "", apiKeyEnv: "" }

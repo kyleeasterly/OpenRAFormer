@@ -40,6 +40,66 @@ public sealed class AgentLoop
 	readonly HashSet<string> exploredSpawns = [];
 	long totalCompletionTokens;
 	readonly Queue<string> actionLog = new();
+
+	// Agent-authored memory. `facts` is an append-only notepad (remember) that
+	// survives the rolling history window — the cure for re-deriving the same
+	// wrong conclusion every turn. `groups` are named unit sets the harness keeps
+	// pruned against live state, so a commander never issues orders to the dead.
+	// `intents` is the agent's own one-line rationale per turn, replayed back as
+	// continuity that provider `reasoning` fields do not survive.
+	readonly List<string> facts = [];
+	readonly Dictionary<string, List<long>> groups = new(StringComparer.OrdinalIgnoreCase);
+	readonly Queue<string> intents = new();
+
+	// Provider failover. The lane, not the model, is what usually loses a match:
+	// a degraded endpoint answers slowly or returns HTTP-200 empty bodies, and the
+	// agent silently stops playing. Count consecutive bad turns and switch model.
+	int modelIndex;
+	int consecutiveFailures;
+	string ActiveModel
+	{
+		get
+		{
+			var primary = role?.Model ?? player.Model;
+			return modelIndex <= 0 || modelIndex > player.FallbackModels.Count
+				? primary
+				: player.FallbackModels[modelIndex - 1];
+		}
+	}
+
+	/// <summary>Records the outcome of one provider turn and rotates the model after
+	/// enough consecutive failures. Returns true when the lane switched.</summary>
+	bool NoteTurnOutcome(bool ok)
+	{
+		if (ok)
+		{
+			consecutiveFailures = 0;
+			return false;
+		}
+
+		if (++consecutiveFailures < Math.Max(1, player.FallbackAfterFailures)
+			|| modelIndex >= player.FallbackModels.Count)
+			return false;
+
+		var from = ActiveModel;
+		modelIndex++;
+		consecutiveFailures = 0;
+		Util.Log(Lane, $"provider failover: '{from}' failed {player.FallbackAfterFailures}x in a row — switching to '{ActiveModel}'");
+		AppendErrorLog($"failover: {from} -> {ActiveModel}");
+
+		// The history carries provider-shaped tool_call ids; a fresh model should
+		// not have to reconcile another model's transcript.
+		history.Clear();
+		return true;
+	}
+
+	// Standing plans the agent wrote for itself, executed between its turns.
+	// The executor runs on its own loop, so everything it shares with the driver
+	// loop (inbox submission, action log, in-flight set) is guarded by planLock.
+	readonly PlanExecutor planExecutor = new();
+	readonly object planLock = new();
+	readonly Dictionary<string, HashSet<string>> inFlightByFile = [];
+	int planSeqCounter;
 	string? lastError;
 	string summaryLine = "";
 	string seqStr = "000000";
@@ -88,7 +148,7 @@ public sealed class AgentLoop
 		if (File.Exists(guidePath))
 			systemPrompt += "\n\n" + File.ReadAllText(guidePath);
 
-		if (!provider.IsTest && role is not BootstrapSpec { Deterministic: true })
+		if (!provider.IsTest)
 		{
 			var apiKey = Environment.GetEnvironmentVariable(provider.ApiKeyEnv);
 			if (string.IsNullOrEmpty(apiKey))
@@ -126,6 +186,13 @@ public sealed class AgentLoop
 		// Shared (swarm) advisors are started by the runner, not by role loops.
 		if (ownsAdvisor)
 			_ = advisorLoop?.RunAsync(ct);
+
+		// The plan executor runs on its OWN loop, deliberately: the driver loop is
+		// blocked inside the provider call for 8-40 s at a time, which is exactly
+		// the window a human uses to place a refinery and queue five rifles. The
+		// agent's standing plan must keep running while the agent is thinking.
+		if (role == null && !provider.IsTest)
+			_ = PlanLoopAsync(ct);
 
 		try
 		{
@@ -198,6 +265,108 @@ public sealed class AgentLoop
 		return !IsDecided(state);
 	}
 
+	/// <summary>
+	/// Carries out the agent's standing build plan and production rules at state
+	/// rate (~1 Hz), independently of the provider round trip. This is what lets a
+	/// commander who thinks every 8-40 seconds still open at human tempo — the
+	/// plan is the agent's own, written by tool call; only the clockwork is ours.
+	/// </summary>
+	async Task PlanLoopAsync(CancellationToken ct)
+	{
+		var statePath = Path.Combine(runDir, "state", $"{player.Slug}.json");
+		var lastPlanTick = -1L;
+
+		try
+		{
+			while (!ct.IsCancellationRequested)
+			{
+				await Task.Delay(1000, ct);
+
+				try
+				{
+					if (!File.Exists(statePath))
+						continue;
+
+					var state = await ReadStateWithRetryAsync(statePath, ct);
+					if (state == null)
+						continue;
+
+					var tick = state["tick"]?.GetValue<long>() ?? -1;
+					if (tick == lastPlanTick)
+						continue;
+
+					lastPlanTick = tick;
+					if (state["you"]?["defeated"]?.GetValue<bool>() == true)
+						return;
+
+					JsonArray orders;
+					lock (planLock)
+						orders = planExecutor.Tick(state, InFlightKeys());
+
+					if (orders.Count > 0)
+						SubmitOrders(state, orders, $"plan-{++planSeqCounter:D6}");
+				}
+				catch (OperationCanceledException)
+				{
+					return;
+				}
+				catch (Exception ex)
+				{
+					AppendErrorLog($"plan executor: {ex.Message}");
+				}
+			}
+		}
+		catch (OperationCanceledException)
+		{
+		}
+	}
+
+	/// <summary>Item-level keys for orders submitted but not yet confirmed by the engine.</summary>
+	HashSet<string> InFlightKeys()
+	{
+		var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (var set in inFlightByFile.Values)
+			keys.UnionWith(set);
+
+		return keys;
+	}
+
+	static HashSet<string> OrderKeys(JsonArray orders)
+	{
+		var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (var o in orders.OfType<JsonObject>())
+		{
+			var type = o["type"]?.GetValue<string>();
+			var item = o["item"]?.GetValue<string>();
+			if (item == null)
+				continue;
+
+			if (type == "start_production")
+				keys.Add("start:" + item);
+			else if (type == "place_building")
+				keys.Add("place:" + item);
+		}
+
+		return keys;
+	}
+
+	/// <summary>Writes one order batch to the engine inbox. Shared by both loops.</summary>
+	void SubmitOrders(JsonObject state, JsonArray orders, string seq)
+	{
+		lock (planLock)
+		{
+			Util.WriteAtomic(Path.Combine(InboxDir, $"{seq}.json"),
+				new JsonObject { ["orders"] = orders.DeepClone() }.ToJsonString(Util.Indented));
+
+			RecordActions(state, orders);
+			planExecutor.NoteSubmitted(orders, state["tick"]?.GetValue<long>() ?? 0);
+
+			pendingSubmissions[seq + ".json"] = string.Join("; ", orders.OfType<JsonObject>()
+				.Select(o => $"{o["type"]?.GetValue<string>()}{(o["item"] != null ? " " + o["item"]!.GetValue<string>() : "")}"));
+			inFlightByFile[seq + ".json"] = OrderKeys(orders);
+		}
+	}
+
 	bool IsDecided(JsonObject state)
 	{
 		if (state["you"]?["defeated"]?.GetValue<bool>() == true)
@@ -254,7 +423,12 @@ public sealed class AgentLoop
 			if (!seenResults.Add(name))
 				continue;
 
-			pendingSubmissions.Remove(name);
+			lock (planLock)
+			{
+				pendingSubmissions.Remove(name);
+				inFlightByFile.Remove(name);
+			}
+
 			if (Util.TryReadJson(file) is JsonObject result)
 				found.Add(result);
 		}
@@ -311,23 +485,16 @@ public sealed class AgentLoop
 		JsonArray orders;
 		try
 		{
-			if (role is BootstrapSpec { Deterministic: true })
-			{
-				(orders, summaryLine) = BootstrapScript.Decide(state);
-				summaryLine = Truncate(summaryLine, 160);
-			}
-			else
-			{
-				orders = provider.IsTest
-					? TestTurn(state, turnDir)
-					: await LlmTurnAsync(state, results, turnDir, ct);
-			}
+			orders = provider.IsTest
+				? TestTurn(state, turnDir)
+				: await LlmTurnAsync(state, results, turnDir, ct);
 
 			lastError = null;
 		}
 		catch
 		{
 			requestStartedAtUtc = null;
+			NoteTurnOutcome(false);
 			WriteStatus();
 			throw;
 		}
@@ -387,16 +554,7 @@ public sealed class AgentLoop
 			turnLatencies.Dequeue();
 
 		if (orders.Count > 0)
-		{
-			var inboxFile = Path.Combine(InboxDir, $"{seqStr}.json");
-			Util.WriteAtomic(inboxFile, new JsonObject { ["orders"] = orders.DeepClone() }.ToJsonString(Util.Indented));
-			RecordActions(state, orders);
-
-			// Track until the engine's result comes back so the next prompt can say
-			// "already submitted, don't re-issue" (fast turns outrun the engine).
-			pendingSubmissions[seqStr + ".json"] = string.Join("; ", orders.OfType<JsonObject>()
-				.Select(o => $"{o["type"]?.GetValue<string>()}{(o["item"] != null ? " " + o["item"]!.GetValue<string>() : "")}"));
-		}
+			SubmitOrders(state, orders, seqStr);
 
 		Util.WriteAtomic(Path.Combine(turnDir, "orders.json"), new JsonObject { ["orders"] = orders.DeepClone() }.ToJsonString(Util.Indented));
 		WriteStatus();
@@ -423,7 +581,7 @@ public sealed class AgentLoop
 
 		var payload = new JsonObject
 		{
-			["model"] = role?.Model ?? player.Model,
+			["model"] = ActiveModel,
 			["messages"] = messages,
 			["temperature"] = role?.Temperature ?? player.Temperature,
 			["max_tokens"] = role?.MaxTokens ?? player.MaxTokens,
@@ -511,17 +669,121 @@ public sealed class AgentLoop
 				continue;
 
 			var toolName = call["function"]?["name"]?.GetValue<string>();
-			var toolResult = $"{{\"submitted\": true, \"seq\": \"{seqStr}\"}}";
+			var toolResult = $"{{\"ok\": false, \"reason\": \"unknown tool '{toolName}'\"}}";
 			try
 			{
 				var args = JsonNode.Parse(call["function"]?["arguments"]?.GetValue<string>() ?? "{}");
 				switch (toolName)
 				{
 					case "issue_orders":
+					{
+						if (args?["intent"]?.GetValue<string>() is { } intent && intent.Trim().Length > 0)
+							RecordIntent(state, intent.Trim());
+
+						var batch = new JsonArray();
 						foreach (var order in args?["orders"] as JsonArray ?? [])
 							if (order != null)
-								orders.Add(order.DeepClone());
+								batch.Add(order.DeepClone());
+
+						// Validate here, before the model is told anything. The old loop
+						// answered every tool call with {"submitted": true} — including
+						// orders the harness then dropped — so lanes retried forever
+						// against a success they never got. Now the answer is the truth.
+						var (kept, rejected, notes) = ValidateOrders(state, batch);
+						foreach (var o in kept.OfType<JsonObject>().ToList())
+						{
+							kept.Remove(o);
+							orders.Add(o);
+						}
+
+						var report = new JsonObject { ["accepted"] = orders.Count, ["seq"] = seqStr };
+						if (rejected.Count > 0)
+						{
+							var arr = new JsonArray();
+							foreach (var r in rejected)
+								arr.Add(r);
+							report["rejected"] = arr;
+						}
+
+						if (notes.Count > 0)
+						{
+							var arr = new JsonArray();
+							foreach (var n in notes)
+								arr.Add(n);
+							report["notes"] = arr;
+						}
+
+						toolResult = report.ToJsonString();
 						break;
+					}
+
+					case "set_build_plan":
+						toolResult = planExecutor.SetPlan(args?["steps"] as JsonArray);
+						PersistPlanning();
+						break;
+
+					case "set_production_rules":
+						toolResult = planExecutor.SetRules(args?["rules"] as JsonArray);
+						PersistPlanning();
+						break;
+
+					case "set_group":
+					{
+						var name = args?["name"]?.GetValue<string>()?.Trim();
+						if (string.IsNullOrEmpty(name))
+						{
+							toolResult = "{\"ok\": false, \"reason\": \"missing group name\"}";
+							break;
+						}
+
+						var ids = (args?["actorIds"] as JsonArray ?? [])
+							.OfType<JsonValue>()
+							.Select(v => v.TryGetValue<long>(out var id) ? id : -1)
+							.Where(id => id >= 0)
+							.Distinct()
+							.ToList();
+
+						if (ids.Count == 0)
+						{
+							groups.Remove(name);
+							toolResult = $"{{\"ok\": true, \"deleted\": \"{name}\"}}";
+						}
+						else
+						{
+							var live = LiveActorIds(state);
+							var alive = ids.Where(live.Contains).ToList();
+							groups[name] = alive;
+							PersistPlanning();
+							toolResult = $"{{\"ok\": true, \"group\": \"{name}\", \"members\": {alive.Count}, \"dropped_dead\": {ids.Count - alive.Count}}}";
+						}
+
+						break;
+					}
+
+					case "remember":
+					{
+						var fact = args?["fact"]?.GetValue<string>()?.Trim();
+						if (string.IsNullOrEmpty(fact))
+						{
+							toolResult = "{\"ok\": false, \"reason\": \"empty fact\"}";
+							break;
+						}
+
+						fact = Truncate(fact, 220);
+						if (facts.Any(f => string.Equals(f, fact, StringComparison.OrdinalIgnoreCase)))
+						{
+							toolResult = "{\"ok\": true, \"note\": \"already recorded\"}";
+							break;
+						}
+
+						facts.Add(fact);
+						while (facts.Count > 24)
+							facts.RemoveAt(0);
+
+						PersistPlanning();
+						toolResult = $"{{\"ok\": true, \"facts\": {facts.Count}}}";
+						break;
+					}
 
 					case "set_goals":
 						goals.Clear();
@@ -613,6 +875,11 @@ public sealed class AgentLoop
 			});
 		}
 
+		// A turn that came back with no tool call at all is a provider glitch, not a
+		// decision — that shape (HTTP 200, null content) once ate 108 turns of a match.
+		if (NoteTurnOutcome(toolMessages.Count > 0 || textFallbackUsed))
+			return orders;
+
 		// Rolling history: keep the last 6 exchange pairs, each a protocol-correct group.
 		var assistantMsg = new JsonObject { ["role"] = "assistant", ["content"] = content };
 		if (message["tool_calls"] is JsonArray tcs && tcs.Count > 0)
@@ -641,6 +908,193 @@ public sealed class AgentLoop
 	// Rolling factual log of the agent's own issued orders. The 6-exchange message
 	// history only spans seconds at fast cadence; this digest spans minutes, so the
 	// agent can see it already ordered/cancelled something before doing it again.
+	/// <summary>Every actor id the player currently owns (units and buildings).</summary>
+	static HashSet<long> LiveActorIds(JsonObject state)
+	{
+		var live = new HashSet<long>();
+		foreach (var key in (string[])["units", "buildings"])
+			foreach (var a in state[key] as JsonArray ?? [])
+				if ((a as JsonObject)?["id"]?.GetValue<long>() is { } id)
+					live.Add(id);
+
+		return live;
+	}
+
+	/// <summary>Items the engine says are not buildable yet, mapped to the prerequisites they need.</summary>
+	static Dictionary<string, string> LockedIndex(JsonObject state)
+	{
+		var locked = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		foreach (var q in state["production"] as JsonArray ?? [])
+			foreach (var l in (q as JsonObject)?["locked"] as JsonArray ?? [])
+			{
+				if (l is not JsonObject item || item["name"]?.GetValue<string>() is not { } name)
+					continue;
+
+				var requires = string.Join(", ", (item["requires"] as JsonArray ?? [])
+					.OfType<JsonValue>()
+					.Select(v => v.TryGetValue<string>(out var s) ? s : null)
+					.Where(s => s != null));
+
+				locked.TryAdd(name, requires.Length > 0 ? requires : "unmet prerequisites");
+			}
+
+		return locked;
+	}
+
+	/// <summary>
+	/// Resolves group references to live actor ids, drops dead ids, and refuses
+	/// orders that provably cannot work — so the model learns this turn instead of
+	/// two turns later, and never burns a turn commanding corpses.
+	/// </summary>
+	(JsonArray Kept, List<string> Rejected, List<string> Notes) ValidateOrders(JsonObject state, JsonArray batch)
+	{
+		var kept = new JsonArray();
+		var rejected = new List<string>();
+		var notes = new List<string>();
+		if (batch.Count == 0)
+			return (kept, rejected, notes);
+
+		var live = LiveActorIds(state);
+		var locked = LockedIndex(state);
+
+		foreach (var o in batch.OfType<JsonObject>().ToList())
+		{
+			batch.Remove(o);
+			var type = o["type"]?.GetValue<string>() ?? "";
+
+			// Models routinely try to call the planning tools as order types. Absorb
+			// it instead of spending the turn teaching them the difference.
+			if (type == "set_group")
+			{
+				var gname = (o["name"] ?? o["group"])?.GetValue<string>()?.Trim();
+				var gids = (o["actorIds"] as JsonArray ?? [])
+					.OfType<JsonValue>()
+					.Select(v => v.TryGetValue<long>(out var gid) ? gid : -1)
+					.Where(id => id >= 0)
+					.ToList();
+
+				if (!string.IsNullOrEmpty(gname) && gids.Count > 0)
+				{
+					groups[gname] = gids.Where(LiveActorIds(state).Contains).ToList();
+					PersistPlanning();
+					notes.Add($"set_group is a separate tool, not an order type — handled it for you: '{gname}' now has {groups[gname].Count} members.");
+				}
+
+				continue;
+			}
+
+			// Models mix up the singular and plural forms constantly, and the engine
+			// rejects the mismatch with "missing 'actorIds'" — two wasted turns in the
+			// first live test, on the very first order of the match. Normalise instead.
+			if (o["actorIds"] is not JsonArray && o["actorId"] is JsonValue single
+				&& type is "deploy" or "move" or "attack_move" or "attack" or "capture"
+					or "guard" or "stop" or "enter" or "harvest" or "set_stance" or "scatter"
+				&& single.TryGetValue<long>(out var soloId))
+			{
+				o["actorIds"] = new JsonArray(soloId);
+			}
+			else if (o["actorId"] is not JsonValue && type is "sell" or "repair" or "set_rally" or "unload"
+				&& o["actorIds"] is JsonArray { Count: >= 1 } many
+				&& many[0] is JsonValue first && first.TryGetValue<long>(out var firstId))
+			{
+				o["actorId"] = firstId;
+			}
+
+			// Group -> live ids. A named group is the whole point: it cannot go stale.
+			if (o["group"]?.GetValue<string>() is { } groupName)
+			{
+				o.Remove("group");
+				if (!groups.TryGetValue(groupName, out var members))
+				{
+					rejected.Add($"{type}: no group named '{groupName}' — create it with set_group first");
+					continue;
+				}
+
+				members.RemoveAll(id => !live.Contains(id));
+				if (members.Count == 0)
+				{
+					rejected.Add($"{type}: group '{groupName}' has no surviving members — it was wiped out");
+					continue;
+				}
+
+				var arr = new JsonArray();
+				foreach (var id in members)
+					arr.Add(id);
+				o["actorIds"] = arr;
+			}
+			else if (o["actorIds"] is JsonArray ids)
+			{
+				var alive = ids.OfType<JsonValue>()
+					.Select(v => v.TryGetValue<long>(out var id) ? id : -1)
+					.Where(live.Contains)
+					.ToList();
+
+				if (alive.Count == 0)
+				{
+					rejected.Add($"{type}: none of those units are alive any more — check the units table");
+					continue;
+				}
+
+				var arr = new JsonArray();
+				foreach (var id in alive)
+					arr.Add(id);
+				o["actorIds"] = arr;
+			}
+
+			// `guard` protects an ACTOR, not a cell. The model guessed both ways and
+			// wrote two contradictory facts into its own notepad trying to work it out.
+			if (type is "guard" or "attack" or "capture" && o["targetActorId"] is not JsonValue)
+			{
+				rejected.Add($"{type}: needs 'targetActorId' (the actor to {(type == "guard" ? "protect" : "target")}). "
+					+ (type == "guard"
+						? "To hold ground instead, use attack_move to that cell, or set_stance defend."
+						: "The target must be visible to you — check visibleEnemies."));
+				continue;
+			}
+
+			// Placement is only legal for a structure that has finished building and
+			// is sitting in pendingPlacement. Models guess at this constantly; telling
+			// them now beats a rejection two turns later.
+			if (type == "place_building" && o["item"]?.GetValue<string>() is { } placeItem)
+			{
+				var ready = (state["pendingPlacement"] as JsonArray ?? [])
+					.OfType<JsonObject>()
+					.Select(p => p["item"]?.GetValue<string>())
+					.Where(i => i != null)
+					.ToList();
+
+				if (!ready.Any(i => string.Equals(i, placeItem, StringComparison.OrdinalIgnoreCase)))
+				{
+					rejected.Add(ready.Count > 0
+						? $"place_building {placeItem}: not finished yet. Ready to place right now: {string.Join(", ", ready)}."
+						: $"place_building {placeItem}: nothing is waiting for placement — you can only place a structure once it has finished building.");
+					continue;
+				}
+			}
+
+			// The prerequisite trap that cost a whole match: refuse the order and
+			// name the missing building, rather than letting it fail silently.
+			if (type == "start_production" && o["item"]?.GetValue<string>() is { } item
+				&& locked.TryGetValue(item, out var requires))
+			{
+				rejected.Add($"start_production {item}: NOT BUILDABLE YET — requires {requires}. Build that first; do not retry this order.");
+				continue;
+			}
+
+			kept.Add(o);
+		}
+
+		return (kept, rejected, notes);
+	}
+
+	void RecordIntent(JsonObject state, string intent)
+	{
+		var sec = state["second"]?.GetValue<long>() ?? 0;
+		intents.Enqueue($"t={sec / 60}:{sec % 60:D2} {Truncate(intent, 180)}");
+		while (intents.Count > 8)
+			intents.Dequeue();
+	}
+
 	void RecordActions(JsonObject state, JsonArray orders)
 	{
 		var sec = state["second"]?.GetValue<long>() ?? 0;
@@ -681,13 +1135,59 @@ public sealed class AgentLoop
 			}
 		}
 
-		if (player.RecentActions && actionLog.Count > 0)
-			text += "\n\nYour recent actions (already done — do not repeat them):\n"
-				+ string.Join("\n", actionLog.Select(a => "  " + a));
+		// The opportunity ledger. Earlier prompts stacked three separate "do not
+		// repeat yourself" warnings and agents read them as "do nothing" — 16-31%
+		// of turns issued no orders while thousands of credits sat idle. State the
+		// unspent capacity as a checklist instead: it is much harder to argue that
+		// there is nothing to do when the nothing is itemised.
+		var opportunities = OpportunityLedger(state);
+		if (opportunities != null)
+			text += opportunities;
 
-		if (pendingSubmissions.Count > 0)
-			text += "\n\nORDERS ALREADY SUBMITTED, awaiting engine confirmation — do NOT re-issue these:\n"
-				+ string.Join("\n", pendingSubmissions.Values.TakeLast(5).Select(p => "  " + p));
+		// Snapshot everything the executor loop also mutates.
+		string? executed;
+		List<string> actionsSnapshot;
+		List<string> inFlightSnapshot;
+		lock (planLock)
+		{
+			executed = planExecutor.DrainActivity();
+			actionsSnapshot = [.. actionLog];
+			inFlightSnapshot = [.. pendingSubmissions.Values];
+		}
+
+		if (executed != null)
+			text += executed;
+
+		if (player.RecentActions && actionsSnapshot.Count > 0)
+			text += "\n\nYour recent actions (for continuity — repeating one is fine if the situation calls for it):\n"
+				+ string.Join("\n", actionsSnapshot.Select(a => "  " + a));
+
+		if (intents.Count > 0)
+			text += "\n\nYour recent intents (what you said you were doing — stay on plan or say why it changed):\n"
+				+ string.Join("\n", intents.Select(i => "  " + i));
+
+		if (inFlightSnapshot.Count > 0)
+			text += "\n\nIn flight (submitted, engine confirmation pending — these are already handled, so spend this turn on something else rather than waiting):\n"
+				+ string.Join("\n", inFlightSnapshot.TakeLast(5).Select(p => "  " + p));
+
+		if (facts.Count > 0)
+			text += "\n\nCONFIRMED FACTS (you verified these yourself — treat them as settled, do not re-litigate):\n"
+				+ string.Join("\n", facts.Select(f => "  - " + f));
+
+		if (groups.Count > 0)
+		{
+			var live = LiveActorIds(state);
+			var lines = groups.Select(g =>
+			{
+				g.Value.RemoveAll(id => !live.Contains(id));
+				return $"  {g.Key}: {g.Value.Count} alive";
+			});
+			text += "\n\nYOUR GROUPS (command them with \"group\": \"<name>\"):\n" + string.Join("\n", lines);
+		}
+
+		var plan = planExecutor.Render();
+		if (plan != null)
+			text += plan;
 
 		// The elimination checklist only concerns roles that can actually attack;
 		// build/econ specialists shouldn't burn tokens reasoning about it.
@@ -732,6 +1232,131 @@ public sealed class AgentLoop
 		return text;
 	}
 
+	/// <summary>
+	/// Itemises everything the player owns that is currently doing nothing:
+	/// idle queues, unspent cash, idle combat units, buildings waiting to be
+	/// placed, thinning tiberium. This is the anti-passivity mechanism — a
+	/// concrete list of unused capacity, rendered every turn.
+	/// </summary>
+	static string? OpportunityLedger(JsonObject state)
+	{
+		var lines = new List<string>();
+
+		var cash = state["you"]?["cash"]?.GetValue<long>() ?? 0;
+
+		// Losing the Construction Yard takes the whole Building queue with it: no
+		// structures, ever again, including the Power Plant needed to dig out of a
+		// deficit. In the 2026-08-24 match the agent played six more minutes without
+		// once noticing. It is the only truly unrecoverable state, so it leads.
+		var hasBuildQueue = (state["production"] as JsonArray ?? [])
+			.OfType<JsonObject>()
+			.Any(q => q["queue"]?.GetValue<string>()?.StartsWith("Building", StringComparison.Ordinal) == true);
+
+		var units = (state["units"] as JsonArray ?? []).OfType<JsonObject>().ToList();
+		var mcv = units.FirstOrDefault(u =>
+			u["name"]?.GetValue<string>()?.Contains("Construction Vehicle", StringComparison.OrdinalIgnoreCase) == true);
+
+		if (!hasBuildQueue)
+		{
+			lines.Add(mcv != null
+				? $"*** CRITICAL: you have NO Construction Yard — you cannot build any structure. You DO have an MCV (id {mcv["id"]}). `deploy` it RIGHT NOW. Nothing else matters this turn. ***"
+				: "*** CRITICAL: your Construction Yard is GONE — you cannot build any structure, ever, until you replace it. Buy a Mobile Construction Vehicle ($3000, from the Weapons Factory/Airstrip — it has no tech prerequisite) and `deploy` it. Do this before anything else; every turn you spend attacking instead is a turn closer to losing. ***");
+		}
+		else if (mcv != null && mcv["idle"]?.GetValue<bool>() == true)
+		{
+			lines.Add($"You have an idle MCV (id {mcv["id"]}) — `deploy` it to add a second Construction Yard, or move it to a new tiberium field first and expand.");
+		}
+		var idleQueues = new List<string>();
+		foreach (var q in state["production"] as JsonArray ?? [])
+		{
+			if (q is not JsonObject queue || queue["busy"]?.GetValue<bool>() == true)
+				continue;
+
+			var name = queue["queue"]?.GetValue<string>()?.Split('.')[0] ?? "?";
+			var affordable = (queue["buildable"] as JsonArray ?? [])
+				.OfType<JsonObject>()
+				.Where(b => (b["cost"]?.GetValue<long>() ?? 0) <= cash)
+				.Select(b => $"{b["name"]?.GetValue<string>()} ${b["cost"]?.GetValue<long>()}")
+				.Take(4)
+				.ToList();
+
+			if (affordable.Count > 0)
+				idleQueues.Add($"{name} queue is IDLE — you can afford: {string.Join("; ", affordable)}");
+		}
+
+		lines.AddRange(idleQueues);
+
+		// Only call out floating cash when something can actually be bought with it.
+		// Crying wolf while the build queue is legitimately busy teaches the model to
+		// ignore the whole block, which is how the old prompt lost its authority.
+		var anythingAffordable = (state["production"] as JsonArray ?? [])
+			.OfType<JsonObject>()
+			.SelectMany(q => (q["buildable"] as JsonArray ?? []).OfType<JsonObject>())
+			.Any(b => (b["cost"]?.GetValue<long>() ?? 0) <= cash);
+
+		if (cash >= 2000 && anythingAffordable)
+			lines.Add($"${cash} is sitting unspent. Money in the bank wins nothing — convert it into army, economy or defence this turn.");
+		else if (cash >= 4000)
+			lines.Add($"${cash} banked with nothing affordable to add right now — your build plan is the bottleneck. Consider revising set_build_plan, or spend the turn scouting and positioning.");
+
+		var pending = (state["pendingPlacement"] as JsonArray ?? [])
+			.OfType<JsonObject>()
+			.Select(p => p["item"]?.GetValue<string>())
+			.Where(i => i != null)
+			.ToList();
+
+		if (pending.Count > 0)
+			lines.Add($"FINISHED AND WAITING FOR YOU TO PLACE IT: {string.Join(", ", pending)} — place it now or it is dead capital.");
+
+		var idleUnits = (state["units"] as JsonArray ?? [])
+			.OfType<JsonObject>()
+			.Where(u => u["idle"]?.GetValue<bool>() == true
+				&& u["name"]?.GetValue<string>()?.Contains("Harvester", StringComparison.OrdinalIgnoreCase) != true)
+			.Select(u => u["id"]?.GetValue<long>() ?? 0)
+			.ToList();
+
+		if (idleUnits.Count > 0)
+			lines.Add($"{idleUnits.Count} combat unit(s) standing idle with no orders: {string.Join(", ", idleUnits.Take(20))}. Units do nothing between your turns unless you tell them to.");
+
+		var harvesters = (state["units"] as JsonArray ?? [])
+			.OfType<JsonObject>()
+			.Count(u => u["name"]?.GetValue<string>()?.Contains("Harvester", StringComparison.OrdinalIgnoreCase) == true);
+
+		var income = state["you"]?["incomePerMinute"]?.GetValue<long>() ?? 0;
+		if (harvesters > 0 && income < 700)
+			lines.Add($"Income is only {income}/min with {harvesters} harvester(s) — your tiberium patch may be exhausted. Check exploredResources and move or expand to a fresh field.");
+
+		var provided = state["you"]?["powerProvided"]?.GetValue<long>() ?? 0;
+		var drained = state["you"]?["powerDrained"]?.GetValue<long>() ?? 0;
+		if (drained > provided)
+			lines.Add($"POWER DEFICIT ({drained} drained vs {provided} provided) — production is slowed and defences are offline until you build a Power Plant.");
+
+		// Two matches running, this agent has destroyed zero enemy buildings because
+		// it never found them. Scouts die and are never replaced, and it attacks
+		// anyway. Make the blindness impossible to overlook.
+		var knownEnemy = (state["lastKnownEnemyBuildings"] as JsonArray)?.Count ?? 0;
+		var visible = (state["visibleEnemies"] as JsonArray)?.Count ?? 0;
+		if (knownEnemy == 0 && visible == 0)
+		{
+			var spawnCell = (state["enemySpawns"] as JsonArray ?? [])
+				.OfType<JsonObject>()
+				.FirstOrDefault(s => s["explored"]?.GetValue<bool>() != true)?["cell"] as JsonArray;
+
+			// JsonNode.ToString() pretty-prints arrays across lines; render it inline.
+			var target = spawnCell is { Count: >= 2 } ? $"[{spawnCell[0]},{spawnCell[1]}]" : null;
+
+			lines.Add(target != null
+				? $"YOU ARE BLIND: you have never seen a single enemy building. You cannot kill a base you have not found, and an army sent at an unscouted spawn dies for nothing. Send one cheap unit to {target} now, and replace it every time a scout dies."
+				: "YOU ARE BLIND: no enemy units or buildings are known to you. Send a cheap scout out before committing your army anywhere.");
+		}
+
+		if (lines.Count == 0)
+			return null;
+
+		return "\n\nOPPORTUNITIES — unused capacity you own right now. Every line here is a turn you are wasting; clear them before doing anything speculative:\n  "
+			+ string.Join("\n  ", lines);
+	}
+
 	void SyncChecklistFromState(JsonObject state)
 	{
 		foreach (var spawn in state["enemySpawns"] as JsonArray ?? [])
@@ -771,8 +1396,28 @@ public sealed class AgentLoop
 		foreach (var (key, done) in checklist)
 			checklistArr.Add(new JsonObject { ["cell"] = key, ["done"] = done });
 
-		Util.WriteAtomic(Path.Combine(AgentDir, "planning.json"),
-			new JsonObject { ["goals"] = goalsArr, ["checklist"] = checklistArr }.ToJsonString(Util.Indented));
+		var factsArr = new JsonArray();
+		foreach (var f in facts)
+			factsArr.Add(f);
+
+		var groupsObj = new JsonObject();
+		foreach (var (name, members) in groups)
+		{
+			var arr = new JsonArray();
+			foreach (var id in members)
+				arr.Add(id);
+			groupsObj[name] = arr;
+		}
+
+		Util.WriteAtomic(Path.Combine(AgentDir, "planning.json"), new JsonObject
+		{
+			["goals"] = goalsArr,
+			["checklist"] = checklistArr,
+			["facts"] = factsArr,
+			["groups"] = groupsObj,
+			["buildPlan"] = planExecutor.PlanCount,
+			["productionRules"] = planExecutor.RuleCount,
+		}.ToJsonString(Util.Indented));
 	}
 
 	/// <summary>Demand-system digest: open requests addressed to this role (act on them,
@@ -900,7 +1545,8 @@ public sealed class AgentLoop
 			["avgTurnSeconds"] = turnLatencies.Count > 0 ? Math.Round(turnLatencies.Average(), 1) : null,
 			["latencyWindow"] = turnLatencies.Count,
 			["rateLimited429s"] = llm?.RateLimited429s ?? 0,
-			["model"] = player.Model,
+			["model"] = ActiveModel,
+			["modelFallbackIndex"] = modelIndex,
 			["provider"] = player.Provider,
 			["summaryLine"] = summaryLine,
 			["totalPromptTokens"] = totalPromptTokens,

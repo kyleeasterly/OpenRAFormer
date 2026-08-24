@@ -62,3 +62,7 @@ runs/
 !orf/wwwroot/*.html
 orf/specs/*.uploaded.yaml
 webassets/
+
+# Python bytecode from orf/tools helpers
+__pycache__/
+*.pyc

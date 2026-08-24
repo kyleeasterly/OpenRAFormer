@@ -52,6 +52,14 @@ namespace OpenRA.Mods.LLM.Traits
 
 	public sealed class LlmBot : IBot, ITick
 	{
+		static readonly Dictionary<string, UnitStance> Stances = new(StringComparer.OrdinalIgnoreCase)
+		{
+			{ "hold_fire", UnitStance.HoldFire },
+			{ "return_fire", UnitStance.ReturnFire },
+			{ "defend", UnitStance.Defend },
+			{ "attack_anything", UnitStance.AttackAnything }
+		};
+
 		static CVec[] placementOffsets;
 
 		readonly LlmBotInfo info;
@@ -197,6 +205,11 @@ namespace OpenRA.Mods.LLM.Traits
 					"capture" => TargetActorOrder(world, order, "CaptureActor"),
 					"guard" => TargetActorOrder(world, order, "Guard"),
 					"stop" => ForEachActor(world, order, a => new Order("Stop", a, false)),
+					"scatter" => ForEachActor(world, order, a => new Order("Scatter", a, false)),
+					"enter" => EnterTransport(world, order),
+					"unload" => Unload(world, order),
+					"harvest" => Harvest(world, order),
+					"set_stance" => SetStance(world, order),
 					"sell" => SingleActorOrder(world, order, a => new Order("Sell", a, false)),
 					"repair" => SingleActorOrder(world, order,
 						a => new Order("RepairBuilding", player.PlayerActor, Target.FromActor(a), false)),
@@ -238,7 +251,15 @@ namespace OpenRA.Mods.LLM.Traits
 
 			var queue = Queues(world).FirstOrDefault(q => q.BuildableItems().Any(b => b.Name == item));
 			if (queue == null)
-				return $"'{requested}' is not buildable right now (missing prerequisites or wrong faction)";
+			{
+				// Name the missing prerequisite instead of leaving the agent to guess:
+				// one agent spent 21 orders and 3 minutes of a 9-minute match working
+				// out that the Medium Tank wanted a Communications Center.
+				var producible = Queues(world).SelectMany(q => q.AllItems())
+					.Select(a => a.Name).ToHashSet(StringComparer.Ordinal);
+
+				return PrerequisiteInfo.Explain(world, player, world.Map.Rules.Actors[item], requested, producible);
+			}
 
 			var count = GetInt(order, "count", 1).Clamp(1, 10);
 			pending.Enqueue(Order.StartProduction(queue.Actor, item, count));
@@ -313,6 +334,94 @@ namespace OpenRA.Mods.LLM.Traits
 				: null);
 		}
 
+		// Loading infantry into an APC, driving it across the map and unloading inside a
+		// base is how a human beat the agents; the scaffold has to expose it.
+		string EnterTransport(World world, JsonElement order)
+		{
+			var targetId = GetInt(order, "targetActorId", -1);
+			if (targetId < 0)
+				return "missing 'targetActorId'";
+
+			var transport = world.GetActorById((uint)targetId);
+			if (transport == null || transport.IsDead || !transport.IsInWorld
+				|| player.RelationshipWith(transport.Owner) != PlayerRelationship.Ally)
+				return $"transport {targetId} is not one of your or your allies' live actors";
+
+			var cargo = transport.TraitOrDefault<Cargo>();
+			if (cargo == null)
+				return $"{LlmNames.Display(world, transport.Info)} {targetId} is not a transport";
+
+			var queued = GetBool(order, "queued");
+			return ForEachActor(world, order,
+				a => a.Info.TraitInfoOrDefault<PassengerInfo>() is PassengerInfo pi && cargo.Info.Types.Contains(pi.CargoType)
+					? new Order("EnterTransport", a, Target.FromActor(transport), queued)
+					: null,
+				a => $"{LlmNames.Display(world, a.Info)} {a.ActorID} cannot ride in a {LlmNames.Display(world, transport.Info)}");
+		}
+
+		string Unload(World world, JsonElement order)
+		{
+			var id = GetInt(order, "actorId", -1);
+			if (id < 0)
+				return "missing 'actorId'";
+
+			var transport = OwnActor(world, (uint)id);
+			if (transport == null)
+				return $"actor {id} is not one of your live actors";
+
+			var cargo = transport.TraitOrDefault<Cargo>();
+			if (cargo == null)
+				return $"{LlmNames.Display(world, transport.Info)} {id} is not a transport";
+
+			if (cargo.IsEmpty())
+				return $"{LlmNames.Display(world, transport.Info)} {id} is not carrying anybody";
+
+			if (!TryGetOptionalCell(world, order, "cell", out var cell, out var hasCell))
+				return "invalid 'cell'";
+
+			if (!hasCell)
+			{
+				pending.Enqueue(new Order("Unload", transport, false));
+				return null;
+			}
+
+			// The engine's Unload order ignores its target and always drops passengers
+			// beside the transport, so a requested cell becomes a move order first.
+			pending.Enqueue(new Order("Move", transport, Target.FromCell(world, cell), false));
+			pending.Enqueue(new Order("Unload", transport, true));
+			return $"ok:moving to [{cell.X},{cell.Y}] first, then unloading there";
+		}
+
+		// Harvesters that were hand-moved go idle and stay idle; without this the
+		// agent's economy quietly dies and it never learns why.
+		string Harvest(World world, JsonElement order)
+		{
+			if (!TryGetOptionalCell(world, order, "cell", out var cell, out var hasCell))
+				return "invalid 'cell'";
+
+			var queued = GetBool(order, "queued");
+			return ForEachActor(world, order,
+				a => a.Info.HasTraitInfo<HarvesterInfo>()
+					? hasCell
+						? new Order("Harvest", a, Target.FromCell(world, cell), queued)
+						: new Order("Harvest", a, queued)
+					: null,
+				a => $"{LlmNames.Display(world, a.Info)} {a.ActorID} is not a harvester");
+		}
+
+		string SetStance(World world, JsonElement order)
+		{
+			var requested = GetString(order, "stance");
+			if (requested == null || !Stances.TryGetValue(requested.Replace('-', '_'), out var stance))
+				return "'stance' must be one of: hold_fire, return_fire, defend, attack_anything";
+
+			return ForEachActor(world, order,
+				a => a.Info.TraitInfoOrDefault<AutoTargetInfo>() is AutoTargetInfo ati && ati.EnableStances
+					? new Order("SetUnitStance", a, false) { ExtraData = (uint)stance }
+					: null,
+				a => $"{LlmNames.Display(world, a.Info)} {a.ActorID} has no stance to set — it does not auto-target");
+		}
+
 		string SingleActorOrder(World world, JsonElement order, Func<Actor, Order> makeOrder)
 		{
 			var id = GetInt(order, "actorId", -1);
@@ -331,13 +440,19 @@ namespace OpenRA.Mods.LLM.Traits
 			return null;
 		}
 
-		string ForEachActor(World world, JsonElement order, Func<Actor, Order> makeOrder)
+		/// <summary>
+		/// Issues <paramref name="makeOrder"/> to every listed actor. <paramref name="refusal"/>
+		/// names why an actor that cannot take the order was skipped; skipped actors are
+		/// mirrored back rather than silently dropped.
+		/// </summary>
+		string ForEachActor(World world, JsonElement order, Func<Actor, Order> makeOrder, Func<Actor, string> refusal = null)
 		{
 			if (!order.TryGetProperty("actorIds", out var ids) || ids.ValueKind != JsonValueKind.Array)
 				return "missing 'actorIds'";
 
 			var any = false;
 			var missing = new List<int>();
+			var refused = new List<string>();
 			foreach (var idEl in ids.EnumerateArray())
 			{
 				var id = idEl.GetInt32();
@@ -354,14 +469,22 @@ namespace OpenRA.Mods.LLM.Traits
 					pending.Enqueue(o);
 					any = true;
 				}
+				else
+					refused.Add(refusal != null
+						? refusal(actor)
+						: $"{LlmNames.Display(world, actor.Info)} {actor.ActorID} cannot receive this order");
 			}
 
-			if (!any)
-				return missing.Count > 0
-					? $"no valid actors (unknown or not yours: {string.Join(", ", missing)})"
-					: "no valid actors";
+			var notes = new List<string>();
+			if (missing.Count > 0)
+				notes.Add($"unknown or not yours: {string.Join(", ", missing)}");
 
-			return null;
+			notes.AddRange(refused);
+
+			if (!any)
+				return notes.Count > 0 ? $"no valid actors ({string.Join("; ", notes)})" : "no valid actors";
+
+			return notes.Count > 0 ? "ok:skipped — " + string.Join("; ", notes) : null;
 		}
 
 		Actor OwnActor(World world, uint id)
@@ -521,6 +644,14 @@ namespace OpenRA.Mods.LLM.Traits
 		static bool GetBool(JsonElement el, string name)
 		{
 			return el.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.True;
+		}
+
+		/// <summary>Reads a cell that the agent may legitimately omit. Returns false only when one was given but is unusable.</summary>
+		static bool TryGetOptionalCell(World world, JsonElement el, string name, out CPos cell, out bool present)
+		{
+			cell = CPos.Zero;
+			present = el.TryGetProperty(name, out var v) && v.ValueKind != JsonValueKind.Null;
+			return !present || TryGetCell(world, el, name, out cell);
 		}
 
 		static bool TryGetCell(World world, JsonElement el, string name, out CPos cell)

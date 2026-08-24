@@ -1,0 +1,31 @@
+# End-to-end smoke for the v7 agent: real LLM commander vs a scripted test player.
+# Validates that the agent installs a build plan on turn 1, that the plan executor
+# starts and places structures at ~1 Hz between turns, that locked-item prerequisites
+# render, and that the new order types round-trip through the engine.
+name: v7-smoke
+map: scorched-earth.oramap
+web: { port: 5201 }
+display: ":96"
+resolution: [1280, 1280]
+stream: { fps: 2, scale: 1024, quality: 4 }
+stateFormat: markdown
+turnIntervalSeconds: 0
+maxTurnsPerPlayer: 0
+players:
+  - slug: v7
+    display: Commander-v7
+    provider: openrouter
+    model: stealth/ox-alpha
+    faction: gdi
+    spawn: 1
+    temperature: 1.0
+    reasoningEffort: low
+    maxTokens: 4000
+    timeoutSeconds: 120
+    promptFile: ../prompts/system-v7.md
+    fallbackModels: [nvidia/nemotron-3-ultra-550b-a55b:free]
+    fallbackAfterFailures: 3
+  - { slug: dummy, display: Dummy, provider: test, faction: gdi, spawn: 8 }
+providers:
+  openrouter: { baseUrl: "https://openrouter.ai/api/v1", apiKeyEnv: OPENROUTER_API_KEY }
+  test:       { baseUrl: "", apiKeyEnv: "" }

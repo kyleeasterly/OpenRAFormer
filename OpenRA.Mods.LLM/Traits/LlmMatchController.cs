@@ -36,7 +36,14 @@ namespace OpenRA.Mods.LLM.Traits
 		// every few ticks (~8 Hz), consumed by the dashboard's /api/actors stream.
 		const int ActorExportInterval = 3;
 
+		// Enough for the agent to plan a tech path without drowning the prompt.
+		const int LockedItemsPerQueue = 12;
+
 		readonly LlmMatchControllerInfo info;
+
+		// Per-player sighting log for frozen (remembered-under-fog) actors, which carry
+		// no timestamp of their own. Keyed by actor id, valued in world ticks.
+		readonly Dictionary<Player, Dictionary<uint, int>> lastSeenTicks = [];
 
 		Dictionary<Player, LlmPlayerConfig> configs;
 		IResourceLayer resourceLayer;
@@ -246,6 +253,14 @@ namespace OpenRA.Mods.LLM.Traits
 				(int)((resources.Spent - oldSpent) / seconds * 60));
 		}
 
+		Dictionary<uint, int> LastSeenTicks(Player player)
+		{
+			if (!lastSeenTicks.TryGetValue(player, out var seen))
+				lastSeenTicks[player] = seen = [];
+
+			return seen;
+		}
+
 		object PlayerState(World world, Player player, LlmPlayerConfig cfg)
 		{
 			var map = world.Map;
@@ -318,15 +333,42 @@ namespace OpenRA.Mods.LLM.Traits
 				}
 			}
 
+			var queues = world.ActorsWithTrait<ProductionQueue>()
+				.Where(x => x.Actor.Owner == player && x.Trait.Enabled)
+				.Select(x => x.Trait)
+				.ToList();
+
+			// Everything the player's queues could ever offer, used to keep prerequisite
+			// advice faction-correct, plus the prerequisites currently in hand.
+			var producible = queues.SelectMany(q => q.AllItems()).Select(a => a.Name).ToHashSet(StringComparer.Ordinal);
+			var owned = PrerequisiteInfo.Owned(player);
+
 			var production = new List<object>();
 			var busyQueues = 0;
-			foreach (var queue in world.ActorsWithTrait<ProductionQueue>()
-				.Where(x => x.Actor.Owner == player && x.Trait.Enabled)
-				.Select(x => x.Trait))
+			foreach (var queue in queues)
 			{
 				var current = queue.CurrentItem();
 				if (current != null)
 					busyQueues++;
+
+				// The greyed-out half of the palette, with the reason named. Without
+				// this an agent can only guess why an item refuses to be built.
+				var buildableNames = queue.BuildableItems().Select(b => b.Name).ToHashSet(StringComparer.Ordinal);
+				var locked = new List<object>();
+				foreach (var b in queue.AllItems()
+					.Where(b => !buildableNames.Contains(b.Name))
+					.OrderBy(queue.GetProductionCost)
+					.Take(LockedItemsPerQueue))
+				{
+					var (missing, blocking, _) = PrerequisiteInfo.Describe(world, b, owned, producible);
+					locked.Add(new
+					{
+						name = LlmNames.Display(world, b),
+						cost = queue.GetProductionCost(b),
+						requires = missing,
+						blockedBy = blocking
+					});
+				}
 
 				production.Add(new
 				{
@@ -351,16 +393,15 @@ namespace OpenRA.Mods.LLM.Traits
 					{
 						name = LlmNames.Display(world, b),
 						cost = queue.GetProductionCost(b)
-					}).ToList()
+					}).ToList(),
+					locked
 				});
 			}
 
 			// Finished buildings awaiting a place_building decision: give the agent a
 			// legality-annotated view of its base area so it picks position, not rules.
 			var pendingPlacement = new List<object>();
-			foreach (var queue in world.ActorsWithTrait<ProductionQueue>()
-				.Where(x => x.Actor.Owner == player && x.Trait.Enabled)
-				.Select(x => x.Trait))
+			foreach (var queue in queues)
 			{
 				var done = queue.AllQueued().FirstOrDefault(i => i.Done);
 				if (done == null || !world.Map.Rules.Actors.TryGetValue(done.Item, out var ai))
@@ -385,19 +426,32 @@ namespace OpenRA.Mods.LLM.Traits
 			var frozenLayer = player.PlayerActor.TraitOrDefault<FrozenActorLayer>();
 			if (frozenLayer != null)
 			{
+				var seen = LastSeenTicks(player);
 				foreach (var fa in frozenLayer.FrozenActorsInRegion(map.AllCells, false))
 				{
-					if (!fa.IsValid || fa.Owner == null || fa.Owner == player)
+					// Allies used to land in this list and agents duly shelled their own
+					// team's bases: mirror the relationship check visibleEnemies uses.
+					if (!fa.IsValid || fa.Owner == null || fa.Owner == player
+						|| player.RelationshipWith(fa.Owner) != PlayerRelationship.Enemy)
 						continue;
 
 					if (!configs.TryGetValue(fa.Owner, out var ownerCfg))
 						continue;
 
+					// FrozenActor carries no "when did I last see this". Visible is only
+					// set while the footprint sits under fog, so !Visible means the real
+					// actor is in view right now — that is our sighting signal.
+					if (!fa.Visible)
+						seen[fa.ID] = world.WorldTick;
+
 					frozen.Add(new
 					{
 						name = LlmNames.Display(world, fa.Info),
 						owner = ownerCfg.Slug,
-						cell = CellArray(map.CellContaining(fa.CenterPosition))
+						cell = CellArray(map.CellContaining(fa.CenterPosition)),
+						lastSeenSecond = seen.TryGetValue(fa.ID, out var seenTick)
+							? seenTick * world.Timestep / 1000
+							: (int?)null
 					});
 				}
 			}

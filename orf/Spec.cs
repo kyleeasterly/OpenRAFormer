@@ -133,6 +133,19 @@ public sealed class PlayerSpec
 	/// player to join over the LAN. No agent loop, no orders, no state export.</summary>
 	public bool IsHuman => Provider == "human";
 	public string Model { get; set; } = "scripted";
+
+	/// <summary>
+	/// Models to fall back to, in order, when the primary stops answering. The
+	/// provider lane is the single biggest source of lost matches: one night's
+	/// champion took nine turns at 40s because its endpoint quietly degraded, and
+	/// a whole match was scored with 108 HTTP-200 empty bodies counted as turns.
+	/// After FallbackAfterFailures consecutive bad turns the lane switches model
+	/// and keeps playing. Same provider — only the model string changes.
+	/// </summary>
+	public List<string> FallbackModels { get; set; } = [];
+
+	public int FallbackAfterFailures { get; set; } = 3;
+
 	public string Faction { get; set; } = "Random";
 	public int Spawn { get; set; }
 	public int Team { get; set; }
